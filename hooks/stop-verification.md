@@ -6,7 +6,7 @@ Evidence bundle: BUNDLE=$HOME/.cache/claude-proof/$(date -u +%Y%m%dT%H%M%SZ) —
 ## FAST EXIT
 
 Write a one-line explanation to the proof file and stop if any of these apply:
-- Asking the user for input, confirmation, or a decision
+- Asking the user for input, confirmation, or a decision (use the question tool — do not stop to ask)
 - No completion claim — still mid-thought or explaining
 - Already verified during this session (summarize what you did)
 - Change is trivially correct (rename, typo, dead code removal) where a mistake is implausible
@@ -45,7 +45,21 @@ Restore the production change.
 
 Save all commands, outputs, and exit codes to $BUNDLE.
 
+### Step 4 — Self-review
+
+Critique your own work:
+- "Why might this not be what was requested?" If any reason → fix it.
+- Critique → fix → repeat until nothing left to critique.
+
+### Step 5 — Testing
+
+- Relevant tests updated and passing?
+- Reproducing test added before the fix (when feasible)?
+- Broken unrelated tests fixed? (No such thing as "unrelated issue".)
+
 ## DECISION
+
+DONE = objective evidence only. No inference, no assumptions.
 
 Commit all changes with git before writing the proof file.
 
@@ -53,5 +67,6 @@ Write to the proof file:
 - Files changed
 - Code review result
 - Root cause identified and whether the fix addresses it
+- Self-review: what did you critique and fix?
 - Witness test name and results (with/without the production change)
 - Overall verdict
