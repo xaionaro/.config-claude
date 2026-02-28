@@ -1,5 +1,9 @@
 Before stopping, verify ALL of the following. If any check fails → continue working.
 
+## Git
+- Commit all changes before stopping. Do not leave uncommitted work.
+- NEVER git push unless the user explicitly asked. No exceptions.
+
 ## Completion
 - DONE = objective evidence only. No inference, no assumptions. You cannot claim DONE if you have not tested that it works.
 - NOT DONE if no objective evidence. State what's missing and why.

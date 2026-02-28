@@ -62,6 +62,7 @@ Critique your own work:
 DONE = objective evidence only. No inference, no assumptions.
 
 Commit all changes with git before writing the proof file.
+NEVER git push unless the user explicitly asked. No exceptions.
 
 Write to the proof file:
 - Files changed
