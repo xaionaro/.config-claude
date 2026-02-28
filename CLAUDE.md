@@ -77,6 +77,8 @@
 - Reproduce in full system first. Narrow unit-test misbehavior ≠ reproduction.
 - It is only a "**possible** root cause" until objective evidence proves it. Cite evidence when claiming root cause.
 - **5 Whys minimum**: Before claiming you found the root cause, ask "why?" at least 3 times from the symptom. If you can still ask "why?" and get a meaningful answer, you haven't reached the root cause.
+- **Never blame external code without proof**: "It's a framework/library bug" is not a root cause — it's giving up. Before blaming external code, you MUST: (1) read the relevant library source, (2) reproduce the issue in isolation, (3) find the exact line/commit that causes it. If you can't do all three, the bug is in our code.
+- **Never ask permission to investigate**: If there is an unexplained bug, investigate it. Do not ask "would you like me to investigate?" — just investigate. The default is always to find the root cause. Only stop investigating if the user explicitly tells you to.
 
 ## Output verbosity
 - Always provide a concise summary in the end of a long message.
