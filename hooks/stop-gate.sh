@@ -27,7 +27,7 @@ if [ -f "$PROOF" ]; then
   SUMMARY="$PROOF_DIR/summary-to-print.md"
   cp "$PROOF" "$SUMMARY"
   rm -f "$PROOF" "$PROOF_DIR/baseline_head"
-  block "."
+  block "Checking stop criteria."
 fi
 
 # 2. Already sent back (proof printed or no proof written) → allow + cleanup
@@ -56,7 +56,7 @@ CODE_CHANGES=$(
 
 # 4. No code changes → block once with acceptance-criteria reminder
 if [ -z "$CODE_CHANGES" ]; then
-  block "."
+  block "Checking stop criteria."
 fi
 
 # 5. Code changed, no proof → block and send verification protocol
@@ -67,4 +67,4 @@ sed \
   -e "s|{{PROOF}}|$PROOF|g" \
   -e "s|{{PROOF_DIR}}|$PROOF_DIR|g" \
   "$HOOK_DIR/stop-verification.md" > "$INSTRUCTIONS"
-block "."
+block "Checking stop criteria."
