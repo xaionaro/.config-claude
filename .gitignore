@@ -1,0 +1,32 @@
+# Secrets & credentials
+.credentials.json
+settings.local.json
+
+# Session logs, history & caches
+history.jsonl
+cache/
+paste-cache/
+file-history/
+shell-snapshots/
+session-env/
+telemetry/
+debug/
+backups/
+downloads/
+tasks/
+todos/
+
+# Per-project state (contains session memory, not config)
+projects/
+
+# Security warnings state
+security_warnings_state_*.json
+
+# IDE integration state
+ide/
+
+# Plugins (downloaded, not config)
+plugins/
+
+# Plans (ephemeral)
+plans/
