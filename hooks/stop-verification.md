@@ -1,6 +1,6 @@
 STOP BLOCKED — Write verification proof before stopping.
 
-Proof file and directory: provided in the stop hook reason message.
+Proof file: {{PROOF}} (mkdir -p {{PROOF_DIR}} first).
 Evidence bundle: BUNDLE=$HOME/.cache/claude-proof/$(date -u +%Y%m%dT%H%M%SZ) — mkdir -p $BUNDLE, save all commands and outputs there.
 
 ## FAST EXIT

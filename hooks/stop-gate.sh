@@ -22,18 +22,17 @@ block() {
   exit 0
 }
 
-# 1. Proof exists → block once more so Claude prints the summary, then cleanup
+# 1. Proof exists → save summary for Claude to print, then cleanup
 if [ -f "$PROOF" ]; then
-  CONTENT=$(cat "$PROOF")
+  SUMMARY="$PROOF_DIR/summary-to-print.md"
+  cp "$PROOF" "$SUMMARY"
   rm -f "$PROOF" "$PROOF_DIR/baseline_head"
-  rmdir "$PROOF_DIR" 2>/dev/null || true
-  block "Print this verification summary to the user as-is, then stop:
-
-$CONTENT"
+  block "."
 fi
 
-# 2. Already sent back (proof printed or no proof written) → allow
+# 2. Already sent back (proof printed or no proof written) → allow + cleanup
 if [ "$STOP_ACTIVE" = "true" ]; then
+  rm -rf "$PROOF_DIR" 2>/dev/null || true
   exit 0
 fi
 
@@ -57,8 +56,15 @@ CODE_CHANGES=$(
 
 # 4. No code changes → block once with acceptance-criteria reminder
 if [ -z "$CODE_CHANGES" ]; then
-  block "Read and follow $HOOK_DIR/stop-checklist.md before stopping."
+  block "."
 fi
 
 # 5. Code changed, no proof → block and send verification protocol
-block "Read and follow $HOOK_DIR/stop-verification.md — proof file: $PROOF (mkdir -p $PROOF_DIR first)."
+#    Write a session-specific instructions file with the proof path baked in
+INSTRUCTIONS="$PROOF_DIR/instructions.md"
+mkdir -p "$PROOF_DIR"
+sed \
+  -e "s|{{PROOF}}|$PROOF|g" \
+  -e "s|{{PROOF_DIR}}|$PROOF_DIR|g" \
+  "$HOOK_DIR/stop-verification.md" > "$INSTRUCTIONS"
+block "."

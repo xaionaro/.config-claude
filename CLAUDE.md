@@ -1,5 +1,7 @@
 # Memory
 
+- **Stop hook**: When blocked by the stop hook, check `~/.cache/claude-proof/$SESSION_ID/` — read `summary-to-print.md` (print it to user then stop), `instructions.md` (verification protocol), or `~/.claude/hooks/stop-checklist.md` (acceptance criteria). Whichever file exists tells you what to do.
+
 ## Decision-Making Rules
 
 - **Security first**: NEVER suggest disabling security features. Always look for the minimal, targeted solution first (e.g. add an exemption, not disable the whole feature).
