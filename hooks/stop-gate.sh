@@ -16,16 +16,18 @@ fi
 PROOF_DIR="$HOME/.cache/claude-proof/$SESSION_ID"
 PROOF="$PROOF_DIR/proof.md"
 
-# 1. Proof exists → allow + cleanup
+# 1. Proof exists → block once more so Claude prints the summary, then cleanup
 if [ -f "$PROOF" ]; then
+  CONTENT=$(python3 -c 'import sys,json; print(json.dumps(open(sys.argv[1]).read()))' "$PROOF")
   rm -f "$PROOF" "$PROOF_DIR/baseline_head"
   rmdir "$PROOF_DIR" 2>/dev/null || true
+  jq -n --argjson content "$CONTENT" \
+    '{"decision": "block", "reason": ("Print this verification summary to the user as-is, then stop:\n\n" + $content)}'
   exit 0
 fi
 
-# 2. Already sent back once but no proof written → allow to prevent infinite loop
+# 2. Already sent back (proof printed or no proof written) → allow
 if [ "$STOP_ACTIVE" = "true" ]; then
-  echo '{"reason": "Warning: verification was requested but no proof was written."}'
   exit 0
 fi
 
