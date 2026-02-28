@@ -13,7 +13,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/home/streaming/.claude/hooks/session-snapshot.sh"
+            "command": "$HOME/.claude/hooks/session-snapshot.sh"
           }
         ]
       }
@@ -24,7 +24,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/home/streaming/.claude/hooks/stop-gate.sh"
+            "command": "$HOME/.claude/hooks/stop-gate.sh"
           }
         ]
       }
