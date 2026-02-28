@@ -31,8 +31,7 @@ if [ "$STOP_ACTIVE" = "true" ]; then
   exit 0
 fi
 
-# 3. No code files changed → allow immediately
-# Check uncommitted, staged, AND committed-since-session-start changes
+# 3. Check for code changes
 BASELINE_FILE="$PROOF_DIR/baseline_head"
 BASELINE_HEAD=""
 if [ -f "$BASELINE_FILE" ]; then
@@ -50,11 +49,24 @@ CODE_CHANGES=$(
     head -1
 ) || true
 
+# 4. No code changes → block once with acceptance-criteria reminder
 if [ -z "$CODE_CHANGES" ]; then
+  CHECKLIST=$(cat <<'CHECKLIST_EOF'
+Before stopping, check:
+- Root cause identified? (Not just symptoms — why does the problem exist?)
+- If blaming external code: did you read its source, reproduce in isolation, find the exact cause?
+- Investigation complete? (Don't ask permission to investigate — just do it.)
+- If blocked: stated exactly what's missing and what you tried?
+
+If any check fails → continue working. Stop only if all pass.
+CHECKLIST_EOF
+  )
+  jq -n --arg reason "$CHECKLIST" \
+    '{"decision": "block", "reason": $reason}'
   exit 0
 fi
 
-# 4. Code changed, no proof → block and send verification protocol
+# 5. Code changed, no proof → block and send verification protocol
 REASON=$(
   cat <<REASON_EOF
 STOP BLOCKED — Write verification proof before stopping.
