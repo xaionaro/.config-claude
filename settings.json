@@ -37,5 +37,13 @@
     "context7@claude-plugins-official": true,
     "rust-analyzer-lsp@claude-plugins-official": true
   },
+  "extraKnownMarketplaces": {
+    "superpowers-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "obra/superpowers-marketplace"
+      }
+    }
+  },
   "skipDangerousModePermissionPrompt": true
 }
