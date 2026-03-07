@@ -1,7 +1,10 @@
 # Memory
 
+## Execution
+
 - **Stop hook**: When blocked by the stop hook, check `~/.cache/claude-proof/$SESSION_ID/` — read `summary-to-print.md` (print it to user then stop), `instructions.md` (verification protocol), or `~/.claude/hooks/stop-checklist.md` (acceptance criteria). Whichever file exists tells you what to do.
 - **Question**: Never finish your turn just to ask a question; instead always use the question tool to ask a question. Same applies, if you need to get a confirmation from the user.
+- **Delegate**: Do not do the work ourself, delegate it to subagent.
 
 ## Decision-Making Rules
 
@@ -16,6 +19,7 @@
 ## Environment
 
 - **Qt**: Qt is installed in ~/Qt
+- **Android**: Android SDK/NDK is installed in ~/Android
 
 ## Infrastructure
 
@@ -24,7 +28,7 @@
 - **OLLAMA**: There is a MacBook M4 Max 128GB Ollama available by address 192.168.0.171:11434.
 - **Bluetooth**: Bluetooth is available as hci1/hci2 thanks to `DBUS_SYSTEM_BUS_ADDRESS=unix:path=/run/bluez-proxy/system_bus_socket`
 
-## Workflow Preferences
+## Mandatory skills
 
 - **Debugging**: Always use the `superpowers:systematic-debugging` skill when debugging any problem (test failures, bugs, unexpected behavior, performance issues, build failures, etc.).
 - **Go code**: Always invoke the `go-coding-style` skill before writing, reviewing, or modifying Go code.
