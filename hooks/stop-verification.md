@@ -51,6 +51,12 @@ Critique your own work:
 - "Why might this not be what was requested?" If any reason → fix it.
 - Critique → fix → repeat until nothing left to critique.
 
+Challenge your own blockers:
+- If you're stopping because something is "not available" or "can't be done" — did you actually TRY?
+- You have a full Linux environment with sudo. Emulators, servers, tools, compilers — install and start them.
+- "Can't test this" is almost never true. List 3 ways you could test it. Pick one. Do it.
+- An assumption is not a blocker. An attempt that failed (with error output) is a blocker.
+
 ### Step 5 — Testing
 
 - Relevant tests updated and passing?

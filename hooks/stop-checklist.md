@@ -20,6 +20,13 @@ Before stopping, verify ALL of the following. If any check fails → continue wo
 - Critique your work → fix → repeat until nothing left to critique.
 - "Why might this not be what was requested?" If any reason found → fix it, don't stop.
 
+## Assumed blockers
+- If claiming something is impossible, missing, or unavailable — did you actually verify?
+- "No emulator/server/tool/service available" → Did you try to install, start, or create it? You have a full Linux environment with sudo. Try before claiming blocked.
+- "Can't test this" → List 3 ways you COULD test it. Pick the most feasible one and do it.
+- "Would need X to verify" → Go get/build/start X. Only stop if you tried and it genuinely failed (with error output as evidence).
+- Assumption without attempt = not blocked. Actually try it.
+
 ## Testing (if code was touched this session)
 - Relevant tests updated and passing?
 - Reproducing test added before the fix (when feasible)?

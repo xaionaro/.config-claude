@@ -1,6 +1,7 @@
 # Memory
 
 - **Stop hook**: When blocked by the stop hook, check `~/.cache/claude-proof/$SESSION_ID/` — read `summary-to-print.md` (print it to user then stop), `instructions.md` (verification protocol), or `~/.claude/hooks/stop-checklist.md` (acceptance criteria). Whichever file exists tells you what to do.
+- **Question**: Never finish your turn just to ask a question; instead always use the question tool to ask a question. Same applies, if you need to get a confirmation from the user.
 
 ## Decision-Making Rules
 
@@ -26,6 +27,7 @@
 ## Workflow Preferences
 
 - **Debugging**: Always use the `superpowers:systematic-debugging` skill when debugging any problem (test failures, bugs, unexpected behavior, performance issues, build failures, etc.).
+- **Go code**: Always invoke the `go-coding-style` skill before writing, reviewing, or modifying Go code.
 
 ## Git
 
