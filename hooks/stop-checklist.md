@@ -16,8 +16,15 @@ Before stopping, verify ALL of the following. If any check fails → continue wo
 - "Possible root cause" requires objective evidence. Cite it.
 - 5 Whys: ask "why?" at least 3 times from the symptom. If you can still ask "why?" meaningfully, you haven't reached root cause.
 
-## Self-review
-- Critique your work → fix → repeat until nothing left to critique.
+## Adversarial self-critique
+- Your work contains errors. Did you find them?
+- Claim inventory complete? Every factual claim, assumption, and decision listed?
+- Pre-mortem done? Imagined failure, identified the most likely flaw, investigated it?
+- At least 3 concrete problems found? (Not vague — specific code/claim/decision cited.)
+- Each problem fixed or refuted with evidence (not "I think it's fine")?
+- After each fix, did you re-critique? (critique → fix → re-critique until clean pass)
+- Verification questions generated for non-trivial claims and answered via tools (not memory)?
+- Confidence ratings assigned? UNCERTAIN/UNKNOWN claims flagged explicitly?
 - "Why might this not be what was requested?" If any reason found → fix it, don't stop.
 
 ## Assumed blockers

@@ -22,8 +22,23 @@ block() {
   exit 0
 }
 
-# 1. Proof exists → save summary for Claude to print, then cleanup
+# 1. Proof exists → validate content, save summary for Claude to print, then cleanup
 if [ -f "$PROOF" ]; then
+  # Skip validation for fast-exit proofs (trivial changes, mid-conversation, etc.)
+  if ! grep -qi "fast.exit\|fast exit" "$PROOF"; then
+    # Validate that proof contains required adversarial self-critique sections.
+    # An empty or rubber-stamped proof ("LGTM") must not pass.
+    MISSING=""
+    grep -qi "claim.inventory\|claim inventory" "$PROOF" || MISSING="$MISSING Claim-inventory"
+    grep -qi "pre.mortem\|pre mortem\|premortem" "$PROOF" || MISSING="$MISSING Pre-mortem"
+    grep -qi "adversarial.critique\|adversarial critique\|objection" "$PROOF" || MISSING="$MISSING Adversarial-critique"
+    grep -qi "verified\|likely\|uncertain\|confidence" "$PROOF" || MISSING="$MISSING Confidence-calibration"
+
+    if [ -n "$MISSING" ]; then
+      block "Proof file is missing required sections:$MISSING. Re-read instructions.md and write a complete proof."
+    fi
+  fi
+
   SUMMARY="$PROOF_DIR/summary-to-print.md"
   cp "$PROOF" "$SUMMARY"
   rm -f "$PROOF" "$PROOF_DIR/baseline_head"
