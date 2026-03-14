@@ -10,7 +10,7 @@ Before stopping, verify ALL of the following. If any check fails → continue wo
 ## Completion
 - DONE = objective evidence only. No inference, no assumptions. You cannot claim DONE if you have not tested that it works.
 - NOT DONE if no objective evidence. State what's missing and why.
-- BLOCKED on user input → report (what, exact questions, exact next commands) using the question tool. Do not stop to ask — use the question tool and keep working.
+- BLOCKED on user input → report (what, exact questions, exact next commands) using the AskUserQuestion tool. Do not stop to ask — use the AskUserQuestion tool and keep working.
 
 ## Root cause
 - Root cause identified? (Not just symptoms — why does the problem exist?)

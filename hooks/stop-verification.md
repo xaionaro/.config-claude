@@ -7,7 +7,7 @@ Evidence bundle: BUNDLE=$HOME/.cache/claude-proof/$(date -u +%Y%m%dT%H%M%SZ) —
 ## FAST EXIT
 
 Write a one-line explanation to the proof file and stop if any of these apply:
-- Asking the user for input, confirmation, or a decision (use the question tool — do not stop to ask)
+- Asking the user for input, confirmation, or a decision (use the AskUserQuestion tool — do not stop to ask)
 - No completion claim — still mid-thought or explaining
 - Already verified during this session (summarize what you did)
 - Change is trivially correct (rename, typo, dead code removal) where a mistake is implausible
