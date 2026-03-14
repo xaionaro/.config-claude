@@ -1,10 +1,15 @@
 #!/bin/bash
-# PreToolUse hook: blocks adding local path replace directives to go.mod.
-# Remote fork replacements are fine — only local paths (=> ../ or => ./) are blocked.
+# PreToolUse hook: validates Edit/Write operations before execution.
 
 set -euo pipefail
 
 INPUT=$(cat)
+
+# Quick prefilter: skip jq if irrelevant
+case "$INPUT" in
+  *go.mod*) ;;
+  *) exit 0 ;;
+esac
 
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path')
 
