@@ -1,5 +1,8 @@
 Before stopping, verify ALL of the following. If any check fails → continue working.
 
+## Questions
+- NEVER end your turn to ask a question. Use the AskUserQuestion tool instead — always.
+
 ## Git
 - Commit all changes before stopping. Do not leave uncommitted work.
 - NEVER git push unless the user explicitly asked. No exceptions.
@@ -34,7 +37,14 @@ Before stopping, verify ALL of the following. If any check fails → continue wo
 - "Would need X to verify" → Go get/build/start X. Only stop if you tried and it genuinely failed (with error output as evidence).
 - Assumption without attempt = not blocked. Actually try it.
 
+## System instructions compliance
+- Re-read ALL system instructions (CLAUDE.md, project instructions, skill constraints).
+- Verify every instruction that applies to this session's work was followed.
+- If any instruction was violated → fix it before stopping.
+
 ## Testing (if code was touched this session)
 - Relevant tests updated and passing?
 - Reproducing test added before the fix (when feasible)?
 - Broken unrelated tests fixed? (No such thing as "unrelated issue".)
+- Dual-sided? Each test confirms good behavior IS happening AND bad behavior is NOT happening.
+- Test validated? For each new test, broke the code intentionally and confirmed the test fails.

@@ -18,6 +18,17 @@
         ]
       }
     ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/block-gomod-local-replace.sh"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "matcher": "",

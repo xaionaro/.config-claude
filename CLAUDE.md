@@ -1,72 +1,102 @@
-# Memory
-
-## Execution
+# Execution
 
 - **Stop hook**: When blocked by the stop hook, check `~/.cache/claude-proof/$SESSION_ID/` — read `summary-to-print.md` (print it to user then stop), `instructions.md` (verification protocol), or `~/.claude/hooks/stop-checklist.md` (acceptance criteria). Whichever file exists tells you what to do.
-- **Question**: Never finish your turn just to ask a question; instead always use the question tool to ask a question. Same applies, if you need to get a confirmation from the user.
-- **Delegate**: Do not do the work ourself, delegate it to subagent.
+- **Questions via tool**: Always use the AskUserQuestion tool for questions and confirmations — this keeps the conversation flowing instead of blocking on your turn.
+- **Delegate to subagents**: Delegate work to subagents to preserve the main context window, enable parallelism, and isolate noisy search results from the main thread.
 
-## Decision-Making Rules
+# Claim Verification
 
-- **Security first**: NEVER suggest disabling security features. Always look for the minimal, targeted solution first (e.g. add an exemption, not disable the whole feature).
-- **Simplest safe path**: When multiple solutions exist, propose the simplest one that doesn't compromise security FIRST. Only mention alternatives if the user asks.
-- **Don't waste time on dead ends**: If a solution requires something the user doesn't have (phone number, password, etc.), don't keep pushing it. Move on immediately.
-- **No unsolicited config changes**: NEVER modify configuration values (.env, feature flags, channel lists, etc.) unless explicitly asked. Even if a value looks "missing" or "incomplete", it was set intentionally.
-- **Verify claims**: NEVER make assertions or assumptions without verifying them first. If you say "X is Y", you must have checked. If you can't check, say "I don't know" instead of guessing.
-- **VERIFY CLAIMS**: AGAIN, VERIFY CLAIMS! E.g. if you claim something about API of some service, then checking the F-ing documentation before claiming anything!
-- **Verify UI manipulations**: After every UI manipulation via CDP (clicking buttons, checking checkboxes, filling forms), verify the result — take a screenshot or check the DOM state. Never assume an action succeeded.
-- **Fix insufficient logs**: Whenever logs are found to be insufficient (e.g., missing relevant IDs or context), immediately fix them. Don't just note it — update the code.
+Every factual claim requires tool-based verification in this session. Training data recall is not verification — confidence is not correctness.
 
-## Environment
+**Rule**: Before stating any fact, verify it via a tool (WebFetch, Read, Grep, context7). If you cannot verify, say "I haven't verified this" and keep working to find a way to check.
+
+**The common trap**: You "know" something from training. It feels like knowledge. You state it fluently. But you did not look it up in this session — that is the violation.
+
+**How**: Find the specific text/code that supports your claim. Cite the source: "Per [source], ..."
+
+**Example (real failure)**:
+BAD: "The JNI spec says the args parameter is 'an array of arguments.' It never says NULL is valid for zero-argument methods."
+← Stated WITHOUT fetching the JNI spec. The spec actually said something different.
+
+GOOD: [fetches JNI spec via WebFetch] "I checked the JNI specification at [URL]. Section X says: '[exact quote]'. Based on this, ..."
+
+# Testing Discipline
+
+- Test every modification (unit + E2E) before reporting done. Untested code has unknown correctness — "I wrote it correctly" is not evidence.
+- Use E2E testing for every feature when a framework is available. Unit tests verify components in isolation; only E2E tests verify the feature works for the user.
+- E2E means: deploy the built artifact to the target environment, exercise features through the real UI or API as a user would, and validate observable outcomes (screenshots, responses, state). Anything less (compilation check, import test, unit test with mocks) is not E2E — call it what it actually is.
+- Treat tests as falsification attempts — they try to disprove your code works. Tests that cannot fail are worthless. Assert behavior and edge cases, not just happy path. "Confident it works" without a test that could have failed but didn't = unverified claim — same rule as hypothesis discipline.
+- **Dual-sided testing**: Every test must confirm both that good behavior IS happening AND that bad behavior is NOT happening. Testing only one side leaves the other unverified.
+- **Test validation**: When adding a new test, break the code intentionally and confirm the test fails (good behavior stops happening OR bad behavior starts happening). A test that passes regardless of code correctness proves nothing.
+- Infeasible tests → document why + provide alternative verification.
+- Use provided logs/stacktraces as verification evidence. Add logging if insufficient.
+- Write deterministic tests only — real-clock dependencies cause flaky CI and non-reproducible failures.
+- Keep auto-test coverage above 90% via useful test cases, not synthetic ones.
+
+# Decision-Making Rules
+
+- **Security first**: Look for the minimal, targeted solution (e.g. add an exemption, not disable the whole feature). Disabling security features is not a solution.
+- **Simplest safe path**: When multiple solutions exist, propose the simplest one that preserves security. Mention alternatives only if asked.
+- **Skip dead ends fast**: When a solution requires unavailable resources (phone number, password, etc.), move to the next approach immediately.
+- **Config values are intentional**: Modify configuration (.env, feature flags, channel lists, etc.) only when explicitly asked. Values that look "missing" or "incomplete" were set intentionally.
+- **Verify UI manipulations**: After every UI manipulation via CDP (clicking buttons, checking checkboxes, filling forms), verify the result — take a screenshot or check the DOM state. Assume nothing succeeded without evidence.
+- **Fix insufficient logs**: When logs lack relevant IDs or context, fix them immediately in the code.
+
+# Environment
 
 - **Qt**: Qt is installed in ~/Qt
 - **Android**: Android SDK/NDK is installed in ~/Android
 
-## Infrastructure
+# Infrastructure
 
 - **Your IP-address**: The IP-address of this environment is 192.168.141.16.
 - **Accessing this environment by other devices**: Other devices in LAN may connect to this environment using IP-address 192.168.0.131 and ports 7000-7019 (that are DNAT-ed to this environment).
 - **OLLAMA**: There is a MacBook M4 Max 128GB Ollama available by address 192.168.0.171:11434.
 - **Bluetooth**: Bluetooth is available as hci1/hci2 thanks to `DBUS_SYSTEM_BUS_ADDRESS=unix:path=/run/bluez-proxy/system_bus_socket`
 
-## Mandatory skills
+# Mandatory Skills
 
-- **Debugging**: Always use the `superpowers:systematic-debugging` skill when debugging any problem (test failures, bugs, unexpected behavior, performance issues, build failures, etc.).
-- **Go code**: Always invoke the `go-coding-style` skill before writing, reviewing, or modifying Go code.
+- **Debugging**: Use the `superpowers:systematic-debugging` skill for any problem (test failures, bugs, unexpected behavior, performance issues, build failures).
+- **Go code**: Invoke the `go-coding-style` skill before writing, reviewing, or modifying Go code.
 
-## Git
+# Git
 
-- **No secrets in git**: before making a commit, always look into `git diff` to make sure there are no secrets.
-- **Run static checks**: before making a commit, always run all available static checks.
-- **Push only on request**: NEVER push to remote unless the user explicitly asks. Commit locally is fine, but `git push` requires explicit approval.
-- **No Co-Authored-By**: NEVER add "Co-Authored-By: Claude" or any AI co-author line to commit messages.
+- **Review diff for secrets**: Before every commit, inspect `git diff` for secrets or credentials.
+- **Run static checks**: Before every commit, run all available static checks.
+- **Push only on request**: Commit locally freely, but `git push` requires explicit user approval.
+- **Clean commit messages**: Keep commit messages focused on the change — no "Co-Authored-By: Claude" or AI co-author lines.
 
-## Testing
-
-- Infeasible tests → document why + provide alternative verification.
-- Use provided logs/stacktraces as verification evidence. Add logging if insufficient.
-- No real-clock dependencies. Deterministic unit tests only.
-
-## Logging
-
-- Can't diagnose → add logging + auto-tests to gather info/reproduce.
-- When unsure, prefer more logging.
-
-## Writing code
+# Writing Code
 
 - After every change: reduce code in related pieces. Remove logic, not lines. Keep readable.
-- Ugly workaround → design smell → find elegant approach.
-- Validate inputs with strong expectations. No error channel → assert/invariant.
-- One source of truth per logic/constant in touched scope.
+- When a workaround feels ugly, treat it as a design smell — find the elegant approach.
+- Validate inputs with strong expectations. When there's no error channel, use assert/invariant.
+- Maintain one source of truth per logic/constant in touched scope — prevents drift, makes changes atomic.
 - Small functions, but keep semantically self-sufficient thoughts whole.
-- Always satisfy linter. Use all useful linters.
-- No racy code. Event-driven, not clock/race-driven. No timeout reliance. Near-simultaneous ≠ simultaneous.
-- Found a weird function name → read implementation, don't assume; fix the name.
-- **Auto-tests**: Always keep the auto-test coverage above 90%. Increase the coverage via useful test cases, rather than through syntetic useless unit-test.
-- **Only Technical comments**: Add only comments explaining how something works or TODOs. Do not add random thoughts, "generated by AI"/"authored by Claude" or anything that does not help to understand how the code/system works (or what must be done with the code in the future).
-- **Don't add tech debt**: Do not leave things that would cause problems in the future. For example, do not edit manually files that are automatically generated (fix the generator, instead; or find another solution).
-- **Optimize for correctness over convenience.** Do not choose shortcuts that reduce correctness, robustness, maintainability, security, or debuggability. When the correct solution is harder, do it anyway. Only take a shortcut if I explicitly authorize it.
+- Satisfy all linters — they catch real bugs (unused vars, unreachable code, type errors) before runtime.
+- Write race-free code. Use event-driven patterns, not clock/timeout reliance. Near-simultaneous ≠ simultaneous.
+- When a function name seems wrong, read its implementation first, then fix the name.
+- **Verify APIs before using them**: Before asserting API behavior (signatures, return values, defaults, error conditions), read the docs or source via a tool. See Claim Verification above.
+- **Comments explain how or what's next**: Only write `how-it-works` explanations and TODOs. Leave out commentary that doesn't help understand the code or system (no "generated by AI", "authored by Claude", or similar attributions).
+- **Eliminate tech debt on contact**: Fix generators rather than editing generated files. Choose solutions that won't cause problems in the future.
+- **Optimize for correctness over convenience.** Choose the correct solution even when it's harder. Take shortcuts only when explicitly authorized.
 
-## Output verbosity
+# Logging
 
-- Always provide a concise summary in the end of a long message.
+- When you can't diagnose → add logging + auto-tests to gather info/reproduce.
+- When unsure about log level, prefer more logging.
+
+# Debugging
+
+- Reproduce the issue before fixing it.
+
+## Hypothesis Discipline
+
+During debugging:
+- Label every potential cause as HYPOTHESIS until falsified — saying "root cause identified" prematurely leads to wasted effort on wrong fixes.
+- Before testing a hypothesis, state at least one alternative explanation. If you can't, you don't understand the problem yet.
+- A hypothesis becomes "confirmed root cause" only when you have tested a prediction that would have DISPROVED it if wrong, and it survived.
+
+# Output Verbosity
+
+- Provide a concise summary at the end of every long message.

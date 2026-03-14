@@ -1,4 +1,5 @@
 STOP BLOCKED — Write verification proof before stopping.
+NEVER end your turn to ask a question. Use the AskUserQuestion tool instead — always.
 
 Proof file: {{PROOF}} (mkdir -p {{PROOF_DIR}} first).
 Evidence bundle: BUNDLE=$HOME/.cache/claude-proof/$(date -u +%Y%m%dT%H%M%SZ) — mkdir -p $BUNDLE, save all commands and outputs there.
@@ -107,11 +108,21 @@ Do not present them as facts.
 - "Can't test this" is almost never true. List 3 ways you could test it. Pick one. Do it.
 - An assumption is not a blocker. An attempt that failed (with error output) is a blocker.
 
-### Step 5 — Testing
+### Step 5 — System instructions compliance
+
+Re-read ALL system instructions (CLAUDE.md, project instructions, skill constraints).
+For each instruction that applies to this session's work, verify it was followed.
+If any instruction was violated → fix it before proceeding.
+
+Save the list of checked instructions and their compliance status to $BUNDLE.
+
+### Step 6 — Testing
 
 - Relevant tests updated and passing?
 - Reproducing test added before the fix (when feasible)?
 - Broken unrelated tests fixed? (No such thing as "unrelated issue".)
+- Dual-sided? Each test confirms good behavior IS happening AND bad behavior is NOT happening.
+- Test validated? For each new test, broke the code intentionally and confirmed the test fails. Save evidence to $BUNDLE.
 
 ## DECISION
 

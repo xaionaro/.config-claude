@@ -64,6 +64,10 @@ func (n *NodeWithCustomData[C, T]) RemovePushTo(
   func (opts Options) config() Config { cfg := defaultConfig(); opts.apply(&cfg); return cfg }
   ```
 
+## Other patterns
+
+- Never use `else if`. Always use `switch` if semantically there could be more then 2 options. Even if in practice you currently have 1-2 options, but semantically there could be more, it still should be a `switch`.
+
 ## Logging
 
 - `github.com/facebookincubator/go-belt` via context: `logger.Debugf(ctx, "...")`.
@@ -71,6 +75,14 @@ func (n *NodeWithCustomData[C, T]) RemovePushTo(
 - Entry/exit tracing: `logger.Tracef(ctx, "MethodName")` / `logger.Tracef(ctx, "/MethodName")`.
 - Do not reference stdin/stdout/stderr outside of the `main` package. For example, do not use `fmt.Print*` functions
   outside of the `main` package.
+- **Level semantics** (use the right level for the situation):
+  - `Trace` — method entry/exit, low-level flow tracing.
+  - `Debug` — normal operational messages, state changes, request handling.
+  - `Info` — rare, notable events only (startup, shutdown, config reload). Most messages should be `Debug`, not `Info`.
+  - `Warn` — recoverable problems, degraded operation, unexpected-but-handled conditions.
+  - `Error` — operation failed, needs attention but process continues.
+  - `Fatal` — unrecoverable, process must exit.
+- **Level consistency:** When adding log statements, scan how the same package uses levels for similar operations and match. If existing usage conflicts with the level definitions above, raise the inconsistency to the user after finishing the task.
 
 ## Testing
 
@@ -85,3 +97,12 @@ func (n *NodeWithCustomData[C, T]) RemovePushTo(
 
 - If you are modifying a package, scan other files in the package and follow the same patterns. If some pattern is
   suboptimal, then raise the question (if needs to be fixed) to the user after finishing the task.
+
+## Modules
+
+- NEVER add local path `replace` directives (e.g., `=> ../something`) to `go.mod`. Use `go.work` for local module resolution instead. Remote fork replacements in `go.mod` are fine.
+
+## Readability
+
+- Keep code flat. Avoid deeply nested `if`/`for`/`switch` blocks. Use early returns, `continue`, and guard clauses to reduce nesting. If a block is nested 3+ levels deep, refactor it.
+- When replacing one approach with another (e.g., to fix a bug), add a comment explaining why the new approach was chosen.
