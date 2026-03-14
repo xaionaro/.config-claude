@@ -1,6 +1,6 @@
 ---
 name: go-coding-style
-description: Use when writing, reviewing, or modifying Go code — ensures adherence to the user's established Go conventions for naming, error handling, concurrency, types, logging, and code organization
+description: Use when writing, reviewing, or modifying Go code (*.go, go.mod, go.sum files) or reviewing diffs/PRs containing Go changes — ensures adherence to the user's established Go conventions for naming, error handling, concurrency, types, logging, and code organization
 ---
 
 # Go Coding Style
