@@ -13,6 +13,7 @@ Before stopping, verify ALL of the following. If any check fails → continue wo
 - BLOCKED on user input → report (what, exact questions, exact next commands) using the AskUserQuestion tool. Do not stop to ask — use the AskUserQuestion tool and keep working.
 
 ## Root cause
+- Assume the bug is in our code. Blaming a library or tool requires reproducing the issue in isolation with evidence.
 - Root cause identified? (Not just symptoms — why does the problem exist?)
 - If blaming external code: did you read its source, reproduce in isolation, find the exact cause?
 - Investigation complete? Don't ask permission to investigate — just do it.
