@@ -7,11 +7,24 @@ INPUT=$(cat)
 
 # Quick prefilter: skip jq if irrelevant
 case "$INPUT" in
-  *go.mod*) ;;
+  *go.mod*|*docs/plans*|*docs/superpowers/plans*) ;;
   *) exit 0 ;;
 esac
 
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path')
+
+# Block plans written under docs/plans — redirect to /tmp/claude-plans
+if [[ "$FILE_PATH" == */docs/plans/* || "$FILE_PATH" == */docs/superpowers/plans/* ]]; then
+  BASENAME=$(basename "$FILE_PATH")
+  jq -n --arg path "/tmp/claude-plans/$BASENAME" '{
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "deny",
+      permissionDecisionReason: ("Plans must not be saved inside the repo. Save to " + $path + " instead.")
+    }
+  }'
+  exit 0
+fi
 
 # Only care about go.mod files
 [[ "$FILE_PATH" == */go.mod ]] || exit 0
