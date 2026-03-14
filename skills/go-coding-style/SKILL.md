@@ -5,6 +5,15 @@ description: Use when writing, reviewing, or modifying Go code — ensures adher
 
 # Go Coding Style
 
+## Idiomatic Go
+
+- Write idiomatic Go (Effective Go, Go Proverbs).
+
+## Strong Typing
+
+- Named types for domain concepts (`type UserID uint64`, not bare `uint64`). Typed constants with iota. Use generics instead of `any`/`interface{}`.
+- Group related behavior through types, method sets, and interfaces — let the type system encode domain relationships instead of scattering them across unrelated functions.
+
 ## File tree
 
 - Each type is in itsown file.
