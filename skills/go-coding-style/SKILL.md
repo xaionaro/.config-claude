@@ -14,6 +14,7 @@ description: Use when writing, reviewing, or modifying Go code (*.go, go.mod, go
 - Named types for domain concepts (`type UserID uint64`, not bare `uint64`). Typed constants with iota. Use generics instead of `any`/`interface{}`.
 - Group related behavior through types, method sets, and interfaces — let the type system encode domain relationships instead of scattering them across unrelated functions.
 - One source of truth per logic/constant — define once, reference everywhere. Duplicated values drift.
+- Struct fields are exported by default. Only unexport a field when external mutation would violate an invariant maintained by the type's methods.
 
 ## File tree
 
