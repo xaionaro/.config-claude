@@ -37,6 +37,17 @@ Answer these questions in the proof file:
 
 If the fix is symptom-only without justification → do not proceed. Go fix the root cause first.
 
+### Step 2.6 — Generalize the fix
+
+Your fix addresses one instance. Is it part of a broader class?
+
+- What pattern or assumption caused this bug? Where else does that pattern appear?
+- Search the codebase for similar instances (grep, glob). List what you found.
+- If other instances exist: fix them now, or document why they're not affected (with evidence, not "I think it's fine").
+- If the pattern is structural (e.g., missing validation, wrong default, unsafe assumption): is there a way to make the class of bugs impossible (type system, lint rule, abstraction)?
+
+Skip this step only if the fix is purely configuration or environment-specific with no code pattern to generalize.
+
 ### Step 3 — Objective proof
 
 If there are production changes but no witness (test or repro script), create one that exercises the changed code.

@@ -25,6 +25,7 @@ Before stopping, verify ALL of the following. If any check fails → continue wo
 - Investigation complete? Don't ask permission to investigate — just do it.
 - "Possible root cause" requires objective evidence. Cite it.
 - 5 Whys: ask "why?" at least 3 times from the symptom. If you can still ask "why?" meaningfully, you haven't reached root cause.
+- Generalized? Your fix addresses one instance — did you search for the same pattern elsewhere and fix or document those too?
 
 ## Adversarial self-critique
 
