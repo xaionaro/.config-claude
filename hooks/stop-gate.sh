@@ -69,8 +69,27 @@ CODE_CHANGES=$(
     head -1
 ) || true
 
-# 4. No code changes → block once with acceptance-criteria reminder
+# 4. No code changes → require checklist review (not full verification)
 if [ -z "$CODE_CHANGES" ]; then
+  INSTRUCTIONS="$PROOF_DIR/instructions.md"
+  mkdir -p "$PROOF_DIR"
+  cat > "$INSTRUCTIONS" <<INSTEOF
+STOP BLOCKED — Check against the acceptance criteria before stopping.
+NEVER end your turn to ask a question. Use the AskUserQuestion tool instead — always.
+
+Proof file: $PROOF
+
+No code changes detected — full verification is NOT required.
+However, you must still check your work against the acceptance criteria.
+
+1. Read the checklist at ~/.claude/hooks/stop-checklist.md
+2. For each item that applies to this session's work, verify it was followed.
+3. If any item was violated → fix it before stopping.
+4. Write to the proof file:
+   - "fast-exit: checklist review (no code changes)" on the first line
+   - Which checklist items applied and their pass/fail status
+   - Any issues found and how they were resolved
+INSTEOF
   block "Checking stop criteria."
 fi
 
