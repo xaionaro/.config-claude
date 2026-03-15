@@ -74,6 +74,8 @@ func (n *NodeWithCustomData[C, T]) RemovePushTo(
   type Option interface { apply(*Config) }
   type Options []Option
   func (opts Options) config() Config { cfg := defaultConfig(); opts.apply(&cfg); return cfg }
+  type optionCheckInterval time.Duration
+  func (o optionCheckInterval) apply(c *Config) { c.CheckInterval = (time.Duration)(o) }
   ```
 
 ## Other patterns
