@@ -8,6 +8,7 @@ description: Use when writing, reviewing, or modifying Go code (*.go, go.mod, go
 ## Idiomatic Go
 
 - Write idiomatic Go (Effective Go, Go Proverbs).
+- Choose the correct, clean solution even when it's harder than the simple, practical, or convenient one.
 
 ## Strong Typing
 

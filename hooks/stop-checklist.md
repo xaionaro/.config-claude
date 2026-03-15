@@ -14,6 +14,7 @@ Before stopping, verify ALL of the following. If any check fails → continue wo
 - DONE = objective evidence only. No inference, no assumptions. You cannot claim DONE if you have not tested that it works.
 - NOT DONE if no objective evidence. State what's missing and why.
 - NOT DONE if you noticed a bug in code you touched or read — fix it before stopping.
+- NOT DONE if you chose a simple or convenient solution over the correct, clean one. Redo it.
 - BLOCKED on user input → report (what, exact questions, exact next commands) using the AskUserQuestion tool. Do not stop to ask — use the AskUserQuestion tool and keep working.
 
 ## Root cause
