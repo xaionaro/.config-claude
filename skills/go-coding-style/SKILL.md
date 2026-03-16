@@ -107,6 +107,30 @@ func (n *NodeWithCustomData[C, T]) RemovePushTo(
 - Blank line between logical blocks within functions. Never double blank lines.
 - Constants as `const` block at file top, not magic values inline.
 
+## Semantic integrity
+
+A name is a contract — implementation fulfills exactly what the name promises.
+
+- **Does only what it says.** `resolveTable` resolves a table — not decide *whether* to, retry, or log analytics. Extra behavior belongs in the caller or the name.
+- **Does everything it says.** `ValidateAndSave` must validate and save. If either can happen without the other, split or rename.
+- **No opposite behavior.** `disable` must not return an "enabled" state. `remove` must not archive.
+- **Return type matches name.** `GetUser` → User. `IsValid` → bool. `ListItems` → collection.
+- **No smuggled decisions.** `doX()` assumes X should happen. "If not needed, return early" inside it is a violation — the caller decides.
+- **No smuggled side effects.** Getters don't mutate. Predicates (`Is`, `Has`, `Can`) don't change state. If they must, the name must reveal it.
+
+Review check: read the name, predict the body, read the body. Any surprise is a violation.
+
+## Semantic consistency
+
+Same concept → same name everywhere. Same name → same meaning everywhere. Related concepts → parallel structure.
+
+- **One name per concept.** "stream" everywhere — not "channel"/"feed"/"pipe" in different packages for the same thing.
+- **One concept per name.** `Handle` can't mean "process a request" here and "resource reference" there.
+- **Parallel pairs.** `StartCapture`/`StopCapture` — not `BeginEncoding`/`EndEncoding`. Pick one verb set per domain.
+- **Full rename propagation.** "job" → "task" means types, functions, variables, logs, errors, comments all change. Partial rename is worse than none.
+- **Consistent abstraction level.** Sibling calls: `initializeCluster`, `configureNetwork`, `go` — the last one breaks the level.
+- **Domain names, not implementation.** `StreamProcessor` over `MapWithMutex`. Name must survive an implementation change.
+
 ## Be consistent
 
 - If you are modifying a package, scan other files in the package and follow the same patterns. If some pattern is
