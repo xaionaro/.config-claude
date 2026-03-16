@@ -132,6 +132,16 @@ Same concept → same name everywhere. Same name → same meaning everywhere. Re
 - **Consistent abstraction level.** Sibling calls: `initializeCluster`, `configureNetwork`, `go` — the last one breaks the level.
 - **Domain names, not implementation.** `StreamProcessor` over `MapWithMutex`. Name must survive an implementation change.
 
+## Locality and lifetime
+
+Everything as local as possible, as short-lived as possible.
+
+- **Narrowest scope.** Variables live in the innermost block that needs them. Use `:=` in `if`/`for`/`switch` init statements.
+- **Shortest span.** Minimize distance between declaration and last use. A variable declared at line 1 and next used at line 20 means the code between should be restructured or the variable moved closer.
+- **Release early.** Close/release resources as soon as done — not deferred at function top when the resource isn't needed for the full function body.
+- **No package-level when local suffices.** Package-level `var` is global state. Use only when multiple functions genuinely share it.
+- **No stale references.** Don't store pointers that outlive the data's logical lifetime (closed connections, expired cache entries, finished request contexts).
+
 ## Be consistent
 
 - If you are modifying a package, scan other files in the package and follow the same patterns. If some pattern is
