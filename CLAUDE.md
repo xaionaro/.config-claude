@@ -14,7 +14,7 @@ Every factual claim requires tool-based verification in this session. Training d
 - **[INFERRED]** — logically derived from verified facts, but not directly confirmed. State the reasoning chain.
 - **[UNVERIFIED]** — not backed by a source fetched this session. Must be explicitly marked. Keep working to verify or replace with a sourced claim.
 
-Anything not tagged is implicitly [DOC]. If you catch yourself stating a fact without having fetched a source — that's the violation. Stop and verify.
+Tag key statements explicitly. Untagged factual claims are violations — mark before continuing.
 
 **The common trap**: You "know" something from training. It feels like knowledge. You state it fluently. But you did not look it up in this session — that is [UNVERIFIED], not [DOC].
 
