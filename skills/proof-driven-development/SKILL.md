@@ -7,7 +7,7 @@ description: Use when implementing any software with logic — proves correctnes
 
 Prove correctness in Lean 4 before implementing in the target language. Keep proofs alongside production code.
 
-## Workflow
+## Required steps (all mandatory, in order)
 
 1. **Specify** — Write formal spec in Lean 4: types, function signatures, properties (preconditions, postconditions, invariants).
 2. **Prove** — Prove key properties. Use `lake build` to verify. Iterate with Lean's error messages until all proofs pass.
