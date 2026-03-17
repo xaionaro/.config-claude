@@ -12,6 +12,8 @@ Before stopping, verify ALL of the following. If any check fails → continue wo
 ## Completion
 
 - DONE = objective evidence only. No inference, no assumptions. You cannot claim DONE if you have not tested that it works. Session boundaries are not completion criteria.
+- Every statement in your completion summary is a claim. Apply the Claim Verification protocol: each must be [DOC] (backed by tool output from this session) or explicitly marked [UNVERIFIED].
+  Example: "All tests pass" requires: (1) searched the project for all test files and test commands, (2) ran every one, (3) all returned pass. Without all three steps, the claim is [UNVERIFIED].
 - NOT DONE if no objective evidence. State what's missing and why.
 - NOT DONE if you noticed a bug in code you touched or read — fix it before stopping.
 - NOT DONE if you chose a simple or convenient solution over the correct, clean one. Redo it.
