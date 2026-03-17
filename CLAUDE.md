@@ -33,6 +33,8 @@ GOOD: [fetches JNI spec via WebFetch] "[DOC] I checked the JNI specification at 
 - **Skip dead ends fast**: When a solution requires unavailable resources, move to the next approach immediately.
 - **Config values are intentional**: Modify configuration only when explicitly asked.
 - **Verify UI manipulations**: After every UI manipulation via CDP, verify the result — screenshot or DOM check.
+- **Assume the bug is in our code.** Blaming a library, external service, or tool requires reproducing the issue in isolation with evidence. Trace the code path first.
+- **No hidden assumptions.** Handle exactly the cases you expect. Return errors for everything else. When investigating, verify each assumption by reading code or running tests — not by reasoning from what "should" happen.
 
 # Git
 
