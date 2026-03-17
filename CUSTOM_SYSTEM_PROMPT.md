@@ -98,6 +98,7 @@ Walk through every entry below before starting work. For each, decide: does it a
 3. Python code? (writing, reviewing, modifying *.py) → `python-coding-style`
 4. Writing or reviewing tests? → `testing-discipline`
 5. Implementing software with logic? (skip only for pure config/glue) → `proof-driven-development`
+6. Android device? (adb, fastboot, flashing, kernel updates) → `android-device`
 
 # Tone and style
  - Only use emojis if the user explicitly requests it. Avoid using emojis in all communication unless asked.
