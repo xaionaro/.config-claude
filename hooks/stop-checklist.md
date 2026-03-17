@@ -55,6 +55,8 @@ Before stopping, verify ALL of the following. If any check fails → continue wo
 
 ## Testing (if code was touched this session)
 
+- All tests pass. Failing tests = keep working until they pass. Fix the root cause, not the test.
+- Skipped tests = make the resource available (install, start, configure) and re-run. A skip is not a pass.
 - Relevant tests updated and passing?
 - Reproducing test added before the fix (when feasible)?
 - Broken unrelated tests fixed? (No such thing as "unrelated issue".)
