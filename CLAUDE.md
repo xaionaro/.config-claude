@@ -80,6 +80,8 @@ During debugging:
 
 # Mandatory Skills
 
+Invoke all matching skills before starting work.
+
 - **Debugging**: Use the `superpowers:systematic-debugging` skill for any problem (test failures, bugs, unexpected behavior, performance issues, build failures).
 - **Go code**: Invoke the `go-coding-style` skill before writing, reviewing, or modifying Go code.
 - **Python code**: Invoke the `python-coding-style` skill before writing, reviewing, or modifying Python code.
