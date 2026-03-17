@@ -11,7 +11,7 @@ Before stopping, verify ALL of the following. If any check fails → continue wo
 
 ## Completion
 
-- DONE = objective evidence only. No inference, no assumptions. You cannot claim DONE if you have not tested that it works.
+- DONE = objective evidence only. No inference, no assumptions. You cannot claim DONE if you have not tested that it works. Session boundaries are not completion criteria.
 - NOT DONE if no objective evidence. State what's missing and why.
 - NOT DONE if you noticed a bug in code you touched or read — fix it before stopping.
 - NOT DONE if you chose a simple or convenient solution over the correct, clean one. Redo it.
