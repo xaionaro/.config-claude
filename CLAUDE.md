@@ -12,7 +12,7 @@ Every factual claim requires tool-based verification in this session. Training d
 
 - **[DOC]** — confirmed by primary source (docs, source code, tool output) fetched this session. Cite the source.
 - **[INFERRED]** — logically derived from verified facts, but not directly confirmed. State the reasoning chain.
-- **[UNVERIFIED]** — not backed by a source fetched this session. Must be explicitly marked. Keep working to verify or replace with a sourced claim.
+- **[UNVERIFIED]** — not backed by a source fetched this session. Must be explicitly marked. Immediately verify via tools — do not present [UNVERIFIED] claims to the user without first attempting verification.
 
 Tag key statements explicitly. Untagged factual claims are violations — mark before continuing.
 
