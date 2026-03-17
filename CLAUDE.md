@@ -26,14 +26,6 @@ BAD: "The JNI spec says the args parameter is 'an array of arguments.' It never 
 
 GOOD: [fetches JNI spec via WebFetch] "[DOC] I checked the JNI specification at [URL]. Section X says: '[exact quote]'. Based on this, ..."
 
-# Writing Code
-
-Invoke the relevant coding style skill (go-coding-style, python-coding-style). Code rules live there.
-
-# Testing
-
-Test every modification before reporting done. Invoke the `testing-discipline` skill for detailed protocol. Untested code has unknown correctness.
-
 # Decision-Making Rules
 
 - **Security first**: Minimal, targeted solution. Disabling security features is not a solution.
@@ -41,24 +33,6 @@ Test every modification before reporting done. Invoke the `testing-discipline` s
 - **Skip dead ends fast**: When a solution requires unavailable resources, move to the next approach immediately.
 - **Config values are intentional**: Modify configuration only when explicitly asked.
 - **Verify UI manipulations**: After every UI manipulation via CDP, verify the result — screenshot or DOM check.
-- **Fix insufficient logs**: When logs lack relevant IDs or context, fix them immediately.
-
-# Debugging
-
-- Reproduce the issue before fixing it.
-
-## Hypothesis Discipline
-
-During debugging:
-
-- Label every potential cause as HYPOTHESIS until falsified — saying "root cause identified" prematurely leads to wasted effort on wrong fixes.
-- Before testing a hypothesis, state at least one alternative explanation. If you can't, you don't understand the problem yet.
-- A hypothesis becomes "confirmed root cause" only when you have tested a prediction that would have DISPROVED it if wrong, and it survived.
-
-# Logging
-
-- When you can't diagnose → add logging + auto-tests to gather info/reproduce.
-- When unsure about log level, prefer more logging.
 
 # Git
 
@@ -72,6 +46,7 @@ During debugging:
 Invoke all matching skills before starting work.
 
 - **Debugging**: Use the `superpowers:systematic-debugging` skill for any problem (test failures, bugs, unexpected behavior, performance issues, build failures).
+- **Debugging discipline**: Invoke the `debugging-discipline` skill alongside systematic-debugging for hypothesis discipline and logging.
 - **Go code**: Invoke the `go-coding-style` skill before writing, reviewing, or modifying Go code.
 - **Python code**: Invoke the `python-coding-style` skill before writing, reviewing, or modifying Python code.
 - **Testing**: Invoke the `testing-discipline` skill when writing or reviewing tests.
