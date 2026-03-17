@@ -1,6 +1,6 @@
 ---
 name: proof-driven-development
-description: Use when implementing algorithms, data structures, or critical logic — proves correctness in Lean 4 first, then translates to the target language with differential testing
+description: Use when implementing any software with logic — proves correctness in Lean 4 first, then translates to the target language with differential testing. Skip only for pure configuration or glue code with no logic.
 ---
 
 # Proof-Driven Development
@@ -64,13 +64,10 @@ The Lean implementation is executable. Use it as an oracle:
 
 ## When to use this skill
 
-- Implementing algorithms with correctness requirements.
-- Data structures with invariants.
-- Protocol implementations (state machines, parsers, serializers).
-- Refactoring critical code — prove equivalence.
-- Any code where "I tested it" is insufficient and formal guarantees are needed.
+Any implementation with logic. This includes: algorithms, data structures, protocol implementations, state machines, parsers, serializers, business rules, validation logic, transformations, refactoring (prove equivalence).
 
-## When NOT to use
+## When to skip
 
-- Glue code, configuration, UI, simple CRUD.
-- When the specification itself is unclear (clarify first, then formalize).
+- Pure configuration files (YAML, JSON, TOML) with no logic.
+- Glue code that only wires components together with no decisions.
+- When the specification itself is unclear — clarify first, then formalize.

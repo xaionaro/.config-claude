@@ -84,7 +84,7 @@ During debugging:
 - **Go code**: Invoke the `go-coding-style` skill before writing, reviewing, or modifying Go code.
 - **Python code**: Invoke the `python-coding-style` skill before writing, reviewing, or modifying Python code.
 - **Testing**: Invoke the `testing-discipline` skill when writing or reviewing tests.
-- **Proof-driven**: Invoke the `proof-driven-development` skill when implementing algorithms, data structures, or critical logic.
+- **Proof-driven**: Invoke the `proof-driven-development` skill when implementing any software with logic. Skip only for pure configuration or glue code.
 
 # Environment
 
