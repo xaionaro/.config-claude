@@ -8,17 +8,22 @@
 
 Every factual claim requires tool-based verification in this session. Training data recall is not verification — confidence is not correctness.
 
-**Rule**: Before stating any fact, verify it via a tool (WebFetch, Read, Grep, context7). If you cannot verify, say "I haven't verified this" and keep working to find a way to check.
+**Protocol**: For all claims, search docs/web, provide primary-source citations, and tag key statements:
+- **[DOC]** — confirmed by primary source (docs, source code, tool output) fetched this session. Cite the source.
+- **[INFERRED]** — logically derived from verified facts, but not directly confirmed. State the reasoning chain.
+- **[UNVERIFIED]** — not backed by a source fetched this session. Must be explicitly marked. Keep working to verify or replace with a sourced claim.
 
-**The common trap**: You "know" something from training. It feels like knowledge. You state it fluently. But you did not look it up in this session — that is the violation.
+Anything not tagged is implicitly [DOC]. If you catch yourself stating a fact without having fetched a source — that's the violation. Stop and verify.
 
-**How**: Find the specific text/code that supports your claim. Cite the source: "Per [source], ..."
+**The common trap**: You "know" something from training. It feels like knowledge. You state it fluently. But you did not look it up in this session — that is [UNVERIFIED], not [DOC].
+
+**How**: Find the specific text/code that supports your claim. Cite the source: "Per [source], ..." [DOC]
 
 **Example (real failure)**:
 BAD: "The JNI spec says the args parameter is 'an array of arguments.' It never says NULL is valid for zero-argument methods."
 ← Stated WITHOUT fetching the JNI spec. The spec actually said something different.
 
-GOOD: [fetches JNI spec via WebFetch] "I checked the JNI specification at [URL]. Section X says: '[exact quote]'. Based on this, ..."
+GOOD: [fetches JNI spec via WebFetch] "I checked the JNI specification at [URL]. Section X says: '[exact quote]'. Based on this, ..." [DOC]
 
 # Testing Discipline
 
