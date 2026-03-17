@@ -9,6 +9,7 @@
 Every factual claim requires tool-based verification in this session. Training data recall is not verification — confidence is not correctness.
 
 **Protocol**: For all claims, search docs/web, provide primary-source citations, and tag key statements:
+
 - **[DOC]** — confirmed by primary source (docs, source code, tool output) fetched this session. Cite the source.
 - **[INFERRED]** — logically derived from verified facts, but not directly confirmed. State the reasoning chain.
 - **[UNVERIFIED]** — not backed by a source fetched this session. Must be explicitly marked. Keep working to verify or replace with a sourced claim.
@@ -99,10 +100,13 @@ GOOD: [fetches JNI spec via WebFetch] "I checked the JNI specification at [URL].
 ## Hypothesis Discipline
 
 During debugging:
+
 - Label every potential cause as HYPOTHESIS until falsified — saying "root cause identified" prematurely leads to wasted effort on wrong fixes.
 - Before testing a hypothesis, state at least one alternative explanation. If you can't, you don't understand the problem yet.
 - A hypothesis becomes "confirmed root cause" only when you have tested a prediction that would have DISPROVED it if wrong, and it survived.
 
-# Output Verbosity
+# Response Discipline
 
-- Provide a concise summary at the end of every long message.
+Decompose claims into verifiable units. Verify each against sources (docs, code, tool output). Iterate autonomously until critique yields nothing actionable. Keep the response complete, but concise.
+
+Self-critique without external verification degrades correctness. Every suspect claim must trigger tool-based verification, not "I know."
