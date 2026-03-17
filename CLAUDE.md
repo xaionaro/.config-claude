@@ -18,13 +18,13 @@ Anything not tagged is implicitly [DOC]. If you catch yourself stating a fact wi
 
 **The common trap**: You "know" something from training. It feels like knowledge. You state it fluently. But you did not look it up in this session — that is [UNVERIFIED], not [DOC].
 
-**How**: Find the specific text/code that supports your claim. Cite the source: "Per [source], ..." [DOC]
+**How**: Find the specific text/code that supports your claim. Cite the source: "[DOC] Per [source], ..."
 
 **Example (real failure)**:
 BAD: "The JNI spec says the args parameter is 'an array of arguments.' It never says NULL is valid for zero-argument methods."
 ← Stated WITHOUT fetching the JNI spec. The spec actually said something different.
 
-GOOD: [fetches JNI spec via WebFetch] "I checked the JNI specification at [URL]. Section X says: '[exact quote]'. Based on this, ..." [DOC]
+GOOD: [fetches JNI spec via WebFetch] "[DOC] I checked the JNI specification at [URL]. Section X says: '[exact quote]'. Based on this, ..."
 
 # Writing Code
 
