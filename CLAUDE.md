@@ -43,14 +43,13 @@ GOOD: [fetches JNI spec via WebFetch] "[DOC] I checked the JNI specification at 
 
 # Mandatory Skills
 
-Invoke all matching skills before starting work.
+Walk through every entry below before starting work. For each, decide: does it apply? If yes, invoke it via the Skill tool.
 
-- **Debugging**: Use the `superpowers:systematic-debugging` skill for any problem (test failures, bugs, unexpected behavior, performance issues, build failures).
-- **Debugging discipline**: Invoke the `debugging-discipline` skill alongside systematic-debugging for hypothesis discipline and logging.
-- **Go code**: Invoke the `go-coding-style` skill before writing, reviewing, or modifying Go code.
-- **Python code**: Invoke the `python-coding-style` skill before writing, reviewing, or modifying Python code.
-- **Testing**: Invoke the `testing-discipline` skill when writing or reviewing tests.
-- **Proof-driven**: Invoke the `proof-driven-development` skill when implementing any software with logic. Skip only for pure configuration or glue code.
+1. Debugging? (test failures, bugs, unexpected behavior, performance, build failures) → `superpowers:systematic-debugging` + `debugging-discipline`
+2. Go code? (writing, reviewing, modifying *.go) → `go-coding-style`
+3. Python code? (writing, reviewing, modifying *.py) → `python-coding-style`
+4. Writing or reviewing tests? → `testing-discipline`
+5. Implementing software with logic? (skip only for pure config/glue) → `proof-driven-development`
 
 # Environment
 
