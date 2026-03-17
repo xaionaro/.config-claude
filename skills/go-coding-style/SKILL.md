@@ -146,6 +146,7 @@ Everything as local as possible, as short-lived as possible.
 
 - If you are modifying a package, scan other files in the package and follow the same patterns. If some pattern is
   suboptimal, then raise the question (if needs to be fixed) to the user after finishing the task.
+- **Fix violations on sight.** When reading or modifying code, if you encounter an obvious violation of these rules in the surrounding code, fix it. Don't leave known violations behind.
 
 ## Modules
 
