@@ -1,6 +1,6 @@
 ---
 name: android-device
-description: Use when working with Android phones or tablets — fastboot, adb, flashing, kernel updates, device debugging. Prevents accidental data loss.
+description: Use when working with Android phones or tablets — fastboot, adb, flashing, kernel updates, device debugging.
 ---
 
 # Android Device Operations
