@@ -86,6 +86,7 @@ func (n *NodeWithCustomData[C, T]) RemovePushTo(
 ## Logging
 
 - `github.com/facebookincubator/go-belt` via context: `logger.Debugf(ctx, "...")`.
+- Logger is always derived from `context.Context`. Never store a logger in a struct.
 - Structured fields: `belt.WithField(ctx, "key", value)`.
 - Entry/exit tracing: `logger.Tracef(ctx, "MethodName")` / `logger.Tracef(ctx, "/MethodName")`.
 - Do not reference stdin/stdout/stderr outside of the `main` package. For example, do not use `fmt.Print*` functions
