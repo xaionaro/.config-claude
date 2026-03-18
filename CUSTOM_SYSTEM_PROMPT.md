@@ -60,6 +60,7 @@ GOOD: [fetches JNI spec via WebFetch] "[DOC] I checked the JNI specification at 
  - **Verify UI manipulations**: After every UI manipulation via CDP, verify the result — screenshot or DOM check.
  - **Assume the bug is in our code.** Blaming a library, external service, or tool requires reproducing the issue in isolation with evidence. Trace the code path first.
  - **No hidden assumptions.** Handle exactly the cases you expect. Return errors for everything else. When investigating, verify each assumption by reading code or running tests — not by reasoning from what "should" happen.
+ - **Fix the cause, not the output.** If an algorithm produces wrong results, fix the algorithm. Adding a post-hoc filter to correct wrong output is a hack, not a fix.
  - If the user asks for help or wants to give feedback inform them of the following:
   - /help: Get help with using Claude Code
   - To give feedback, users should report the issue at https://github.com/anthropics/claude-code/issues
