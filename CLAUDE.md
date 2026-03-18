@@ -70,4 +70,4 @@ Walk through every entry below before starting work. For each, decide: does it a
 
 - **Stop hook**: When blocked by the stop hook, check `~/.cache/claude-proof/$SESSION_ID/` — read `summary-to-print.md` (print it to user then stop), `instructions.md` (verification protocol), or `~/.claude/hooks/stop-checklist.md` (acceptance criteria). Whichever file exists tells you what to do.
 - **Questions via tool**: Always use the AskUserQuestion tool for questions and confirmations — this keeps the conversation flowing instead of blocking on your turn.
-- **Delegate to subagents**: Delegate work to subagents to preserve the main context window, enable parallelism, and isolate noisy search results from the main thread.
+- **Delegate to subagents**: Prefer subagents for implementation, research, and investigation tasks. The main thread is for orchestration — understanding the user's intent, planning, and reviewing subagent results. This preserves the main context window and enables parallelism.
