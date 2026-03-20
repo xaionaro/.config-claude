@@ -49,6 +49,7 @@ Before stopping, verify ALL of the following. If any check fails → continue wo
 - "Can't test this" → List 3 ways you COULD test it. Pick the most feasible one and do it.
 - "Would need X to verify" → Go get/build/start X. Only stop if you tried and it genuinely failed (with error output as evidence).
 - Assumption without attempt = not blocked. Actually try it.
+- A limitation is a problem to fix, not a reason to give up. Solve it.
 
 ## System instructions compliance
 

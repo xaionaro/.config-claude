@@ -36,6 +36,7 @@ GOOD: [fetches JNI spec via WebFetch] "[DOC] I checked the JNI specification at 
 - **Assume the bug is in our code.** Blaming a library, external service, or tool requires reproducing the issue in isolation with evidence. Trace the code path first.
 - **No hidden assumptions.** Handle exactly the cases you expect. Return errors for everything else. When investigating, verify each assumption by reading code or running tests — not by reasoning from what "should" happen.
 - **Fix the cause, not the output.** If an algorithm produces wrong results, fix the algorithm. Adding a post-hoc filter to correct wrong output is a hack, not a fix.
+- **Solve limitations, don't accept them.** A limitation is a problem to fix, not a reason to give up.
 
 # Git
 
