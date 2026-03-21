@@ -18,6 +18,7 @@ Before stopping, verify ALL of the following. If any check fails → continue wo
 - NOT DONE if you noticed a bug in code you touched or read — fix it before stopping.
 - NOT DONE if you chose a simple or convenient solution over the correct, clean one. Redo it.
 - Stated "next step" or know remaining work exists? Continue working. Completing a subtask means starting the next one.
+- All tasks completed? Check the task list. Open tasks = continue working.
 - BLOCKED on user input → report (what, exact questions, exact next commands) using the AskUserQuestion tool. Do not stop to ask — use the AskUserQuestion tool and keep working.
 
 ## Root cause
