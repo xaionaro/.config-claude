@@ -96,6 +96,7 @@ When you encounter an obstacle, do not use destructive actions as a shortcut to 
 
 Walk through every entry below before starting work. For each, decide: does it apply? If yes, invoke it via the Skill tool.
 
+0. Create tasks? → Every user request and every discovered issue → TaskCreate immediately.
 1. Debugging? (test failures, bugs, unexpected behavior, performance, build failures) → `superpowers:systematic-debugging` + `debugging-discipline`
 2. Go code? (writing, reviewing, modifying *.go) → `go-coding-style`
 3. Python code? (writing, reviewing, modifying *.py) → `python-coding-style`
