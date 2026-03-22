@@ -67,6 +67,7 @@ func (n *NodeWithCustomData[C, T]) RemovePushTo(
 
 - `context.Context` is always the first parameter. Never stored in structs.
 - Goroutines via `observability.Go(ctx, func(ctx context.Context) { ... })`, never raw `go`.
+- Mutex unlock always via `defer`. Prefer small functions that lock/defer-unlock at the top, rather than locking inside complex functions with multiple code paths.
 
 ## Types & Generics
 
