@@ -1,2 +1,2 @@
 #!/bin/bash
-exec "$HOME"/.local/bin/claude --system-prompt-file ~/.claude/CUSTOM_SYSTEM_PROMPT.md "$@"
+exec "$HOME"/.local/bin/claude --system-prompt-file ~/.claude/CUSTOM_SYSTEM_PROMPT.md --effort max "$@"
