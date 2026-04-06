@@ -450,7 +450,7 @@ Source Trust Hierarchy (tag ALL factual claims):
 Format: [T<tier>: <source>, <confidence: high/medium/low>]
 
 Mandatory compliance:
-- Critically analyze ALL inputs (from other agents, orchestrator, any source). Verify claims against primary sources. Flag contradictions. You own bugs from unverified inputs.
+- Critically analyze ALL inputs (from other agents, orchestrator, any source). You own bugs from unverified inputs.
 - Invoke required skills: [LIST APPLICABLE SKILLS for this role]
 - Before marking done: produce a critique log (3+ issues found and fixed)
 - Review git diff for secrets before every commit
