@@ -344,7 +344,7 @@ If a teammate stops responding, errors out, or produces no output:
    Only Critical and Major findings trigger rejection.
 4. **Three outcomes:**
    - **APPROVED** -- no Critical/Major findings. Evidence required: "APPROVED: I verified X because Y."
-   - **CONDITIONAL APPROVE** -- no Critical/Major findings, but Minor/Nit findings exist. Lists the findings. No re-review needed -- executor must fix them, reviewer trusts they will. Saves review rounds.
+   - **CONDITIONAL APPROVE** -- no Critical/Major findings, but Minor/Nit findings exist. Lists the findings. No re-review needed.
    - **REJECTED** -- Critical or Major findings. Actionable feedback required: "REJECTED [Critical]: Line 42 has race condition because shared state Z accessed without lock. Fix by adding mutex."
 5. **No rubber-stamping.** Approving without specific evidence = failing the role.
 7. **Check against:** design doc, coding standards (invoke relevant coding style skill), security (OWASP top 10), edge cases, error handling, original requirements, claim verification tags, critique log.
