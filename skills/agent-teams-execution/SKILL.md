@@ -76,6 +76,15 @@ Each executor gets a paired reviewer. Each test executor gets a paired test revi
 
 **Every teammate** must obey these rules. The orchestrator **must include them in spawn prompts**.
 
+### Critical Analysis of All Inputs
+
+**No input is trusted by default -- from any source.** Every teammate must critically analyze everything they receive: explorer findings, design documents, orchestrator instructions, reviewer feedback, test specs, other agents' outputs. Specifically:
+
+- **Verify claims against primary sources.** If an explorer says "the API supports X," the designer must verify before building on it.
+- **Challenge assumptions.** If the design says "module A calls module B synchronously," the executor must verify this is the right approach.
+- **Flag contradictions.** If two inputs disagree (e.g., explorer findings vs. design doc), flag to orchestrator immediately.
+- **Don't propagate errors.** If you receive incorrect input and build on it, YOU own the resulting bug. "The explorer told me wrong" is not an excuse -- you should have verified.
+
 ### Claim Verification Protocol
 
 All teammates tag every factual claim using the Source Trust Hierarchy:
@@ -441,6 +450,7 @@ Source Trust Hierarchy (tag ALL factual claims):
 Format: [T<tier>: <source>, <confidence: high/medium/low>]
 
 Mandatory compliance:
+- Critically analyze ALL inputs (from other agents, orchestrator, any source). Verify claims against primary sources. Flag contradictions. You own bugs from unverified inputs.
 - Invoke required skills: [LIST APPLICABLE SKILLS for this role]
 - Before marking done: produce a critique log (3+ issues found and fixed)
 - Review git diff for secrets before every commit
