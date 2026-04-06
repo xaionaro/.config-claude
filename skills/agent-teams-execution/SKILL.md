@@ -9,7 +9,7 @@ Phased agent team with adversarial review loops and tiered information trust.
 
 **Core principle:** Explorers gather hard facts, designer architects from facts, adversarial reviewers tear apart every deliverable, executors loop with reviewers until approved, verifier validates the big picture. Orchestrator coordinates but never implements.
 
-**Parallelism principle:** Independent work always runs in parallel. Multiple explorers investigate simultaneously. All executor pairs spawn at once, not sequentially. Test executor pairs spawn together. Never serialize what can be parallelized.
+**Parallelism principle:** Never serialize independent work. Parallelize everything that can be parallelized.
 
 <CRITICAL>
 **You MUST create an AGENT TEAM -- do NOT use subagents.**
