@@ -26,15 +26,15 @@ digraph when_to_use {
 
 **Phased Pipeline (default):** Phases run sequentially. Each completes before the next. Team size adapts to the task.
 
-**Full Parallel (user-requested only):** All roles spawned simultaneously. Create shared tasks with explicit dependencies:
-- Explorer tasks: no dependencies (start immediately)
-- Designer tasks: blocked by all explorer tasks
-- Executor tasks: blocked by design approval task
-- Test designer task: blocked by design approval task
-- Test executor tasks: blocked by all executor tasks + test designer task
-- Verifier task: blocked by all test executor tasks
+**Full Parallel (user-requested only):** Create all tasks simultaneously with explicit dependency markers. Spawn roles only when their dependencies are met -- do NOT spawn all roles at once (idle roles waste tokens and cannot work without inputs):
+- Explorer tasks: no dependencies (spawn immediately)
+- Designer tasks: blocked by all explorer tasks (spawn when explorers finish)
+- Executor tasks: blocked by design approval task (spawn when design approved)
+- Test designer task: blocked by design approval task (spawn when design approved)
+- Test executor tasks: blocked by all executor tasks + test designer task (spawn when both finish)
+- Verifier task: blocked by all test executor tasks (spawn when all tests approved)
 
-Same feedback loops and loop limits apply. When a blocked task unblocks, the orchestrator messages the relevant teammate to begin.
+Same feedback loops and loop limits apply.
 
 ## Roles
 
@@ -172,6 +172,7 @@ digraph phases {
     "Executor blocked by design issue?" [shape=diamond];
     "Route to designer - re-enter Phase 2" [shape=box];
     "Write test specs (wait for interface contracts)" [shape=box];
+    "Finalize test specs" [shape=doublecircle];
     "Mark all modules approved" [shape=doublecircle];
     "STOP: 3 exec rejections - escalate" [shape=octagon, style=filled, fillcolor=red, fontcolor=white];
 
@@ -221,11 +222,13 @@ digraph phases {
     "Execution reviewer approves?" -> "STOP: 3 exec rejections - escalate" [label="no (round 4+)"];
     "Revise code based on feedback" -> "Executor blocked by design issue?";
     "Executor blocked by design issue?" -> "Route to designer - re-enter Phase 2" [label="yes"];
-    "Route to designer - re-enter Phase 2" -> "Implement module (owns assigned files only)";
+    "Route to designer - re-enter Phase 2" -> "Design architecture + file ownership map";
     "Executor blocked by design issue?" -> "Execution reviewer approves?" [label="no - retry"];
     "Execution reviewer approves?" -> "Mark all modules approved" [label="yes - with evidence"];
+    "Write test specs (wait for interface contracts)" -> "Finalize test specs";
 
     "Mark all modules approved" -> "PHASE 4: TESTING + INTEGRATION";
+    "Finalize test specs" -> "PHASE 4: TESTING + INTEGRATION";
     "PHASE 4: TESTING + INTEGRATION" -> "Spawn test executor/reviewer pairs";
     "Spawn test executor/reviewer pairs" -> "Implement unit + integration tests from specs";
     "Implement unit + integration tests from specs" -> "Test reviewer approves?";
@@ -252,7 +255,13 @@ After each phase completes, the orchestrator records a checkpoint:
 - **Who approved it** (which reviewer, with what evidence)
 - **Git state** (commit SHA at phase completion)
 
-If a later phase triggers re-entry, the orchestrator can roll back to the checkpoint. Only the modules affected by the re-entry are reworked -- unaffected modules retain their approved status.
+### Re-Entry Impact Assessment
+
+When a later phase triggers re-entry to an earlier phase, the orchestrator **must** produce a change impact list before resuming:
+1. **Diff old vs new design** -- which interface contracts changed?
+2. **Identify invalidated executor pairs** -- any executor whose module touches a changed interface loses "approved" status and must re-enter its review loop (counter resets for that pair).
+3. **Notify test designer** -- if interface contracts changed, test specs must be updated.
+4. **Unaffected modules** retain approved status only if their interfaces and dependencies are unchanged.
 
 ## Design Output Requirements
 
@@ -262,6 +271,13 @@ The approved design document from Phase 2 **must include**:
 2. **File ownership map** -- which files each executor pair owns. No overlaps. Executor spawn prompts must include: "You own ONLY these files: [list]. Do not edit any other files."
 3. **Interface contracts** -- public APIs/signatures each module exposes. The test designer uses these to write specs before executors finish.
 4. **Module dependency graph** -- which modules depend on which. Orchestrator uses this to sequence executor spawning if needed.
+
+## Integration Testing Protocol
+
+Phase 4 includes both unit and integration tests. Integration tests are distinct:
+- **Who writes them:** Test designer includes cross-module integration test specs based on the module dependency graph and interface contracts from the design doc.
+- **What they cover:** Every inter-module interface contract must have at least one integration test exercising the real call path (no mocks at module boundaries).
+- **Failure routing:** Integration test failures route to Phase 3 (executor pair for the module whose interface is broken). If the failure is a design flaw (wrong interface contract), route to Phase 2.
 
 ## Feedback Loops
 
@@ -281,9 +297,9 @@ Paired roles (designer/design-reviewer, executor/execution-reviewer, test-execut
 
 ### Loop Limits
 
-A "round" = one submit -> review -> feedback cycle.
+A "round" = one rejection. Round 1 = first rejection. The initial submission is not a round.
 
-- **Max 3 rounds** per reviewer/reviewee pair. On the 4th rejection, escalate to the orchestrator who must either replace the reviewer, replace the reviewee, or re-scope the work.
+- **Max 3 rounds** (3 rejections) per reviewer/reviewee pair. On the 4th rejection, escalate to the orchestrator who must either replace the reviewer, replace the reviewee, or re-scope the work. Loop counters reset when a pair is re-entered due to verifier feedback or Phase 2 re-entry.
 - **Max 2 verifier re-entries** to earlier phases (total, not per-phase). On the 3rd rejection, escalate to the user with: what failed, which phases were re-entered, and what was tried.
 - **Max 2 designer-to-explorer feedback rounds.** If the designer still lacks information after 2 rounds, escalate to user.
 
@@ -338,7 +354,7 @@ The orchestrator (you, the lead session) **NEVER implements**. Your job:
 6. **Record phase checkpoints** (what was produced, who approved, git SHA)
 7. **Enforce loop limits** -- escalate on 4th rejection or 3rd verifier re-entry
 8. **Handle crashes** -- re-spawn immediately (max 2 retries)
-9. **Shut down teammates** after each phase: send shutdown request, wait for acknowledgment, then proceed
+9. **Shut down teammates** after each phase: stop assigning tasks; when a teammate's current task is marked complete, do not spawn it further. Task completion is the shutdown signal -- no separate acknowledgment needed.
 10. **Clean up team** when all phases done
 
 ### Spawn Prompt Template
@@ -405,7 +421,7 @@ Rules:
 
 **Letting the lead implement "just one small thing."** The orchestrator never implements. Spawn a teammate.
 
-**Not including the trust tier table in spawn prompts.** Teammates can't tag claims correctly without it. Copy it into every spawn prompt.
+**Not including the trust tier summary in spawn prompts.** Teammates can't tag claims correctly without it. The abbreviated tier summary in the spawn template is sufficient -- use it in every spawn prompt.
 
 **Not shutting down teammates between phases.** Idle teammates waste tokens. Send shutdown request and wait for acknowledgment.
 
