@@ -17,6 +17,8 @@ Phased agent team with adversarial review loops and tiered information trust.
 Tell Claude "Create an agent team for this task" with the team structure. This spawns independent Claude Code sessions with shared task lists and inter-agent messaging. Do NOT use the Agent tool.
 
 Example: "Create an agent team with 3 explorer teammates, 1 designer, 1 design reviewer. Explorers should investigate [X, Y, Z] respectively."
+
+**Only skill-defined roles.** Name by role (`executor-1`, `explorer-2`). Reassign idle teammates instead of spawning new ones.
 </CRITICAL>
 
 ## When to Use
@@ -407,6 +409,7 @@ Compliance:
 |---------|-----|
 | Using Agent tool instead of agent team | STOP. "Create an agent team", not Agent tool |
 | Work without corresponding task | Create task immediately |
+| Spawning custom-named teammates outside defined roles | Unbounded growth | Use role names: executor-N, explorer-N. Reassign idle teammates. |
 | Orchestrator writing code | Create executor teammate |
 | Reviewer approving without evidence | Re-spawn with stricter prompt |
 | T5 in explorer findings | Send back to verify or discard |
