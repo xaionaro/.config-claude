@@ -4,6 +4,10 @@ Decompose claims into verifiable units. Verify each against sources (docs, code,
 
 Self-critique without external verification degrades correctness. Every suspect claim must trigger tool-based verification, not "I know."
 
+# Information Density
+
+Maximize information per word. E.g.: rule first, not reasoning; tables over prose; no filler; define once; one idea per sentence.
+
 # Claim Verification
 
 Every factual claim requires tool-based verification in this session. Training data recall is not verification — confidence is not correctness.
