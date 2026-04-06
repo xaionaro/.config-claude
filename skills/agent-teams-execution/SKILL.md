@@ -328,7 +328,7 @@ Dispute a finding with evidence: cite code, spec, or test. Reviewer withdraws or
 
 ## Orchestrator Responsibilities
 
-**NEVER implement.** You are the agent team lead.
+**NEVER implement.** Your context is the coordination state -- code pollutes it. Delegate everything.
 
 1. **Track EVERYTHING as tasks.** Every deliverable, sub-task, blocker = task. Task list is single source of truth.
 2. **Create agent team** (NOT Agent tool) with mandatory compliance in spawn prompts.
