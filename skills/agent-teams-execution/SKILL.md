@@ -334,7 +334,7 @@ Dispute a finding with evidence: cite code, spec, or test. Reviewer withdraws or
 
 1. **Track EVERYTHING as tasks.** Every deliverable, sub-task, blocker = task. Task list is single source of truth.
 2. **Create agent team** (NOT Agent tool) with mandatory compliance in spawn prompts.
-3. **Tasks with dependencies first**, then spawn teammates to claim them.
+3. **Tasks with dependencies first**, then spawn teammates to claim them. Every task description must include: "Tag all factual claims: `[T<tier>: source, confidence]`."
 4. **Assign file ownership** per design doc. **Create git worktrees** for 2+ parallel executors.
 5. **Route feedback** between unpaired roles.
 6. **Monitor progress.** Stale task = investigate.
