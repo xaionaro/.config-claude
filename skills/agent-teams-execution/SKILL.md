@@ -5,14 +5,14 @@ description: Use when facing any non-trivial software building or debugging task
 
 # Agent Teams Execution
 
-Structure non-trivial tasks as a phased agent team with adversarial review loops and tiered information trust.
+Phased agent team with adversarial review loops and tiered information trust.
 
-**Core principle:** Explorers gather hard facts, designer architects from facts, adversarial reviewers tear apart every deliverable, executors loop with reviewers until approved, verifier validates the big picture. The orchestrator coordinates but never implements.
+**Core principle:** Explorers gather hard facts, designer architects from facts, adversarial reviewers tear apart every deliverable, executors loop with reviewers until approved, verifier validates the big picture. Orchestrator coordinates but never implements.
 
 <CRITICAL>
 **You MUST create an AGENT TEAM -- do NOT use subagents.**
 
-To start: tell Claude "Create an agent team for this task" and describe the team structure. This spawns real agent team teammates (independent Claude Code sessions with shared task lists and inter-agent messaging). Do NOT use the Agent tool to dispatch subagents -- that is a different, inferior mechanism.
+Tell Claude "Create an agent team for this task" with the team structure. This spawns independent Claude Code sessions with shared task lists and inter-agent messaging. Do NOT use the Agent tool.
 
 Example: "Create an agent team with 3 explorer teammates, 1 designer, 1 design reviewer. Explorers should investigate [X, Y, Z] respectively."
 </CRITICAL>
@@ -32,15 +32,14 @@ digraph when_to_use {
 
 ## Modes
 
-**Phased Pipeline (default):** Phases run sequentially. Each completes before the next. Team size adapts to the task.
+**Phased Pipeline (default):** Sequential phases. Each completes before the next. Team size adapts to task.
 
-**Full Parallel (user-requested only):** Create all tasks simultaneously with explicit dependency markers. Spawn roles only when their dependencies are met -- do NOT spawn all roles at once (idle roles waste tokens and cannot work without inputs):
-- Explorer tasks: no dependencies (spawn immediately)
-- Designer tasks: blocked by all explorer tasks (spawn when explorers finish)
-- Executor tasks: blocked by design approval task (spawn when design approved)
-- Test designer task: blocked by design approval task (spawn when design approved)
-- Test executor tasks: blocked by all executor tasks + test designer task (spawn when both finish)
-- Verifier task: blocked by all test executor tasks (spawn when all tests approved)
+**Full Parallel (user-requested only):** Create all tasks with dependency markers. Spawn roles when dependencies met:
+- Explorers: immediate
+- Designer: after explorers
+- Executors + test designer: after design approved
+- Test executors: after executors + test designer
+- Verifier: after all tests approved
 
 Same feedback loops and loop limits apply.
 
@@ -48,118 +47,77 @@ Same feedback loops and loop limits apply.
 
 | Role | Count | Phase | Responsibility |
 |------|-------|-------|---------------|
-| **Orchestrator** | 1 | (lead) | Coordinates. Routes feedback. **Never implements.** |
+| **Orchestrator** | 1 | lead | Coordinates. Routes feedback. **Never implements.** |
 | **Explorer** | 1+ | 1 | Gather facts. Tag sources. Challenge each other. |
-| **Designer** | 1 | 2 | Architect solution from explorer findings. Produce file ownership map. |
-| **Design Reviewer** | 1+ | 2 | Adversarial design review. Loops with designer. For large tasks, use 2+ independent reviewers. |
+| **Designer** | 1 | 2 | Architect from findings. Produce file ownership map. |
+| **Design Reviewer** | 1+ | 2 | Adversarial design review. 2+ for large tasks. |
 | **Executor** | 1+ | 3 | Implement modules. One per independent unit. |
 | **Execution Reviewer** | 1+ | 3 | Paired 1:1 with executors. Adversarial code review. |
-| **Test Designer** | 1 | 3 | Write test strategy and specs. Waits for executor interface contracts before finalizing. |
+| **Test Designer** | 1 | 3 | Write test specs. Waits for interface contracts. |
 | **Test Executor** | 1+ | 4 | Implement tests from specs. |
-| **Test Reviewer** | 1+ | 4 | Paired with test executors. Adversarial test review. |
-| **Verifier** | 1 | 5 | Final big-picture critical analysis. Runs integration tests. Last gate. |
+| **Test Reviewer** | 1+ | 4 | Paired with test executors. |
+| **Verifier** | 1 | 5 | Final critical analysis. Integration tests. Last gate. |
 
 ### Team Sizing
 
-**No hard caps.** Scale to the task. One executor pair per independent module -- if there are 20 independent modules, spawn 20 executor pairs.
+**No hard caps.** One executor pair per independent module -- 20 modules = 20 pairs. Explorers: 1 for focused tasks, 2-3 for multiple knowledge domains, more if broad.
 
-Guidance for explorer count:
-- 1 explorer for focused tasks with well-known domain
-- 2-3 for tasks requiring multiple knowledge domains
-- More if the research space is broad
-
-**Scaling awareness:** Research shows coordination gains plateau beyond ~4 active agents per phase. Above that, ensure each agent has strictly independent work to avoid coordination overhead eating the benefit.
-
-Each executor gets a paired reviewer. Each test executor gets a paired test reviewer.
+Coordination gains plateau beyond ~4 agents per phase. Above that, ensure strictly independent work.
 
 ## Mandatory Compliance
 
-**Every teammate** must obey these rules. The orchestrator **must include them in spawn prompts**.
+**Every teammate** must obey these. Orchestrator **must include in spawn prompts**.
 
 ### Effort Level
 
-All teammates must run at **max effort**. The orchestrator must instruct teammates: "Set your effort to max: run `/model` and select max effort if not already set." The environment variable `CLAUDE_CODE_EFFORT_LEVEL=max` should be set in settings.json `env` block to propagate to all sessions.
+All teammates: **max effort**. `CLAUDE_CODE_EFFORT_LEVEL=max` in settings.json `env` block propagates to all sessions.
 
 ### Critical Analysis of All Inputs
 
-**No input is trusted by default -- from any source.** Every teammate must critically analyze everything they receive: explorer findings, design documents, orchestrator instructions, reviewer feedback, test specs, other agents' outputs. Specifically:
+**No input trusted by default.** Every teammate critically analyzes everything received: explorer findings, designs, orchestrator instructions, reviewer feedback, other agents' outputs. Verify before building on it. Flag contradictions to orchestrator. You own bugs from unverified inputs.
 
-- **Verify claims against primary sources.** If an explorer says "the API supports X," the designer must verify before building on it.
-- **Challenge assumptions.** If the design says "module A calls module B synchronously," the executor must verify this is the right approach.
-- **Flag contradictions.** If two inputs disagree (e.g., explorer findings vs. design doc), flag to orchestrator immediately.
-- **Don't propagate errors.** If you receive incorrect input and build on it, YOU own the resulting bug. "The explorer told me wrong" is not an excuse -- you should have verified.
+### Claim Verification
 
-### Claim Verification Protocol
-
-All teammates tag every factual claim using the Source Trust Hierarchy:
-
-**Format:** `[T<tier>: <source>, <confidence>]`
-- `[T1: RFC 7519 S4.1, high]` -- primary source, directly confirmed
-- `[T3: src/auth.go:45, medium]` -- codebase analysis, interpretation may vary
-- `[T5: training recall, unverified]` -- must be promoted to T1-T4 or discarded
-
-**Confidence levels:** `high` (directly stated in source), `medium` (logically derived from source), `low` (indirect evidence only)
-
-T5 claims with any confidence level are unacceptable in final output. Promote or discard.
-
-### Mandatory Skills
-
-The orchestrator must instruct teammates to invoke applicable skills:
-
-| Condition | Skill to invoke |
-|-----------|----------------|
-| Debugging (test failures, bugs, unexpected behavior) | `superpowers:systematic-debugging` + `debugging-discipline` |
-| Writing/modifying Go code (*.go) | `go-coding-style` |
-| Writing/modifying Python code (*.py) | `python-coding-style` |
-| Writing or reviewing tests | `testing-discipline` |
-| Implementing software with logic | `proof-driven-development` |
-| Android device work | `android-device` |
-
-Executors must invoke the relevant coding style skill AND `proof-driven-development` for logic. Test executors must invoke `testing-discipline`. These are non-negotiable.
-
-### Stop Checklist Compliance
-
-Before any teammate marks a task complete, they must verify against the stop checklist:
-- All changes committed (no uncommitted work)
-- Objective evidence of completion (not inference)
-- All factual claims tagged with `[T<tier>: <source>, <confidence>]`
-- Root cause addressed (not just symptoms)
-- Adversarial self-critique: produce a **critique log** listing 3+ concrete problems found and how each was fixed. This log is a deliverable the reviewer must check.
-- Tests pass if code was touched
-- No git push without explicit user request
-
-### Git Rules
-
-- Review `git diff` for secrets before every commit
-- Run all available static checks before every commit
-- Never push without explicit user approval
-- No "Co-Authored-By: Claude" or AI co-author lines
-
-### Security
-
-- Security first: minimal, targeted solutions
-- Never disable security features as a workaround
-- Check OWASP top 10 for all code changes
-- Validate at system boundaries (user input, external APIs)
-
-## Source Trust Hierarchy (Explorers)
-
-Explorers tag **every** claim with source and trust tier.
+Tag every factual claim: `[T<tier>: <source>, <confidence>]`
 
 | Tier | Source | Treatment |
 |------|--------|-----------|
 | **T1** | Specs, RFCs, official docs, source code | Trusted directly |
 | **T2** | Academic papers, established references | High trust; verify if contested |
 | **T3** | Codebase analysis (code, tests, git history) | Trust for local facts |
-| **T4** | Community (SO, blogs, forums) | Verify independently before relying |
-| **T5** | LLM training recall (no source) | **Must be promoted to T1-T4 or discarded** |
+| **T4** | Community (SO, blogs, forums) | Verify independently |
+| **T5** | LLM training recall (no source) | **Promote to T1-T4 or discard** |
 
-**Rules:**
-- Tag format: `[T1: RFC 7519 S4.1]`, `[T3: src/auth/jwt.go:45]`
-- T5 claims are **unacceptable** in final output
-- Contradictions resolved by higher-tier evidence
-- What can be fact-checked, **must** be fact-checked
-- Multiple explorers challenge each other's findings adversarially
+**Confidence:** `high` (directly stated), `medium` (logically derived), `low` (indirect). T5 unacceptable in final output. Contradictions resolved by higher tier. What can be fact-checked, must be.
+
+### Mandatory Skills
+
+| Condition | Skill |
+|-----------|-------|
+| Debugging | `superpowers:systematic-debugging` + `debugging-discipline` |
+| Go code (*.go) | `go-coding-style` |
+| Python code (*.py) | `python-coding-style` |
+| Tests | `testing-discipline` |
+| Logic implementation | `proof-driven-development` |
+| Android device | `android-device` |
+
+Executors invoke coding style + `proof-driven-development`. Test executors invoke `testing-discipline`.
+
+### Stop Checklist
+
+Before marking any task complete:
+- All changes committed
+- Objective evidence of completion
+- All claims tagged `[T<tier>: source, confidence]`
+- Root cause addressed (not symptoms)
+- **Critique log** produced: 3+ concrete problems found and fixed (reviewer checks this)
+- Tests pass if code touched
+- No git push without user request
+
+### Git & Security
+
+- `git diff` for secrets before every commit. Static checks before every commit. Never push without user approval. No AI co-author lines.
+- Security first. Never disable security features. OWASP top 10 for all code. Validate at system boundaries.
 
 ## Phase Flow
 
@@ -269,173 +227,139 @@ digraph phases {
 }
 ```
 
-## Phase Checkpoints
+## Phase Checkpoints & Re-Entry
 
-After each phase completes, the orchestrator records a checkpoint:
-- **What was produced** (findings doc, design doc, committed code, test results)
-- **Who approved it** (which reviewer, with what evidence)
-- **Git state** (commit SHA at phase completion)
+After each phase, orchestrator records: **what was produced**, **who approved** (with evidence), **git SHA**.
 
-### Re-Entry Impact Assessment
-
-When a later phase triggers re-entry to an earlier phase, the orchestrator **must** produce a change impact list before resuming:
-1. **Diff old vs new design** -- which interface contracts changed?
-2. **Identify invalidated executor pairs** -- any executor whose module touches a changed interface loses "approved" status and must re-enter its review loop (counter resets for that pair).
-3. **Notify test designer** -- if interface contracts changed, test specs must be updated.
-4. **Unaffected modules** retain approved status only if their interfaces and dependencies are unchanged.
+**Re-entry impact assessment** (mandatory before resuming):
+1. Diff old vs new design -- which interface contracts changed?
+2. Invalidate executor pairs touching changed interfaces (reset their loop counters).
+3. Notify test designer to update affected specs.
+4. Unaffected modules retain approved status only if interfaces/dependencies unchanged.
 
 ## Design Output Requirements
 
-The approved design document from Phase 2 **must include**:
-
+Phase 2 design **must include**:
 1. **Architecture** -- components, data flow, interfaces
-2. **File ownership map** -- which files each executor pair owns. No overlaps. Executor spawn prompts must include: "You own ONLY these files: [list]. Do not edit any other files."
-3. **Interface contracts** -- public APIs/signatures each module exposes. The test designer uses these to write specs before executors finish.
-4. **Module dependency graph** -- which modules depend on which. Orchestrator uses this to sequence executor spawning if needed.
+2. **File ownership map** -- no overlaps. Spawn prompts include: "You own ONLY these files: [list]."
+3. **Interface contracts** -- public APIs/signatures per module. Test designer uses these before executors finish.
+4. **Module dependency graph** -- orchestrator uses for executor sequencing.
 
 ## Integration Testing Protocol
 
-Phase 4 includes both unit and integration tests. Integration tests are distinct:
-- **Who writes them:** Test designer includes cross-module integration test specs based on the module dependency graph and interface contracts from the design doc.
-- **What they cover:** Every inter-module interface contract must have at least one integration test exercising the real call path (no mocks at module boundaries).
-- **Failure routing:** Integration test failures route to Phase 3 (executor pair for the module whose interface is broken). If the failure is a design flaw (wrong interface contract), route to Phase 2.
+Phase 4 covers unit + integration tests:
+- **Test designer** writes cross-module integration specs from dependency graph + interface contracts.
+- Every inter-module interface must have at least one integration test on the real call path (no mocks at boundaries).
+- **Failure routing:** interface bug -> Phase 3 executor pair. Design flaw -> Phase 2.
 
 ## Feedback Loops
 
-Paired roles (designer/design-reviewer, executor/execution-reviewer, test-executor/test-reviewer) communicate **directly**. All other cross-role feedback routes through the orchestrator.
+Paired roles communicate **directly**. All other feedback routes through orchestrator.
 
 | From | To | Trigger | Route |
 |------|----|---------|-------|
-| Design Reviewer | Designer | Design flaw found | Direct message (paired) |
-| Designer | Explorers | Needs more info | Via orchestrator: re-spawn explorers |
-| Execution Reviewer | Executor | Code issue found | Direct message (paired) |
-| Executor | Designer | Design impossible to implement | Via orchestrator |
-| Test Reviewer | Test Executor | Test issue found | Direct message (paired) |
-| Verifier | Phase 1 | Unverified claim in findings | Via orchestrator: re-spawn explorer |
-| Verifier | Phase 2 | Design flaw discovered | Via orchestrator: re-spawn designer + reviewer |
-| Verifier | Phase 3 | Implementation bug found | Via orchestrator: re-spawn executor pair for that module |
-| Verifier | Phase 4 | Missing test coverage | Via orchestrator: re-spawn test executor pair |
+| Design Reviewer | Designer | Design flaw | Direct (paired) |
+| Designer | Explorers | Needs info | Orchestrator: re-spawn |
+| Execution Reviewer | Executor | Code issue | Direct (paired) |
+| Executor | Designer | Design impossible | Orchestrator |
+| Test Reviewer | Test Executor | Test issue | Direct (paired) |
+| Verifier | Ph1/2/3/4 | Issue found | Orchestrator: route by type |
 
 ### Loop Limits
 
-A "round" = one rejection. Round 1 = first rejection. The initial submission is not a round.
+Round = one rejection (initial submission is not a round).
 
-- **Max 3 rounds** (3 rejections) per reviewer/reviewee pair. On the 4th rejection, escalate to the orchestrator who must either replace the reviewer, replace the reviewee, or re-scope the work. Loop counters reset when a pair is re-entered due to verifier feedback or Phase 2 re-entry.
-- **Max 2 verifier re-entries** to earlier phases (total, not per-phase). On the 3rd rejection, escalate to the user with: what failed, which phases were re-entered, and what was tried.
-- **Max 2 designer-to-explorer feedback rounds.** If the designer still lacks information after 2 rounds, escalate to user.
+- **3 rounds max** per pair. 4th rejection -> escalate (replace teammate or re-scope). Counters reset on verifier/Phase 2 re-entry.
+- **2 verifier re-entries max** (total). 3rd -> escalate to user with: what failed, what was tried.
+- **2 designer-to-explorer rounds max.** Then escalate to user.
 
 ### Crash Recovery
 
-If a teammate stops responding, errors out, or produces no output:
-1. Re-spawn immediately with same prompt + "Previous attempt failed. Start fresh."
-2. After 2 failed re-spawns of the same role, escalate to user.
+Re-spawn immediately + "Previous attempt failed. Start fresh." After 2 failed re-spawns, escalate to user.
 
 ## Reviewer Protocol
 
-**ALL reviewers** (design, execution, test) follow this protocol:
+**ALL reviewers** (design, execution, test):
 
-1. **Assume wrong.** The work contains errors. Find them.
-2. **Look for what's missing**, not what's right.
-3. **Classify every finding by severity:**
-   - **Critical** -- blocks approval (security flaw, correctness bug, spec violation)
-   - **Major** -- must address before approval (design deviation, missing edge case)
-   - **Minor** -- should address but doesn't block (suboptimal approach, readability)
-   - **Nit** -- style only, never blocks approval
-   Only Critical and Major findings trigger rejection.
-4. **Three outcomes:**
-   - **APPROVED** -- no Critical/Major findings. Evidence required: "APPROVED: I verified X because Y."
-   - **CONDITIONAL APPROVE** -- no Critical/Major findings, but Minor/Nit findings exist. Lists the findings. No re-review needed.
-   - **REJECTED** -- Critical or Major findings. Actionable feedback required: "REJECTED [Critical]: Line 42 has race condition because shared state Z accessed without lock. Fix by adding mutex."
-5. **No rubber-stamping.** Approving without specific evidence = failing the role.
-7. **Check against:** design doc, coding standards (invoke relevant coding style skill), security (OWASP top 10), edge cases, error handling, original requirements, claim verification tags, critique log.
-8. **Loop until clean.** Reviewer rejects -> teammate fixes -> reviewer re-reviews. Repeat until explicit APPROVED (max 3 rounds, then escalate).
-9. **Verify mandatory skill compliance.** If the reviewee should have invoked a mandatory skill (e.g., `go-coding-style` for Go code), reject if they didn't.
-10. **Verify critique log exists.** The reviewee must have produced a critique log with 3+ specific issues found and fixed. No log = reject.
+1. **Assume wrong.** Find errors. Look for what's missing.
+2. **Classify findings:** Critical (blocks: security, correctness, spec violation), Major (blocks: design deviation, missing edge case), Minor (doesn't block: suboptimal, readability), Nit (never blocks: style).
+3. **Three outcomes:**
+   - **APPROVED** -- no Critical/Major. Evidence required: "APPROVED: verified X because Y."
+   - **CONDITIONAL APPROVE** -- no Critical/Major, but Minor/Nit listed. No re-review needed.
+   - **REJECTED** -- Critical/Major found. "REJECTED [Critical]: Line 42 race condition on shared state Z. Fix: add mutex."
+4. **Check against:** design doc, coding style skill, OWASP top 10, edge cases, error handling, requirements, claim tags, critique log.
+5. **Max 3 rounds** then escalate. Verify mandatory skill compliance. Verify critique log exists (no log = reject).
 
-### Executor Dispute Mechanism
+### Executor Disputes
 
-Executors may dispute a reviewer finding with evidence. To dispute:
-1. State which finding is disputed and why (cite code, spec, or test)
-2. Reviewer must either withdraw the finding or escalate with stronger evidence
-3. If neither party yields after one exchange, escalate to orchestrator who decides
+Dispute a finding with evidence: cite code, spec, or test. Reviewer withdraws or escalates with stronger evidence. One exchange, then orchestrator decides.
 
-### Multi-Reviewer Protocol (2+ reviewers)
+### Multi-Reviewer Protocol (2+)
 
-When using multiple reviewers (e.g., 2+ design reviewers for large tasks):
-1. **Independent review first.** Each reviewer reviews independently before seeing others' findings. This prevents conformity cascading.
-2. **Minority dissent.** If any reviewer disagrees with the majority, the dissent must be addressed with counter-evidence before it can be overridden. Minority objections backed by T1-T2 evidence cannot be dismissed by majority vote.
-3. **Weight by evidence quality.** Objections backed by T1 evidence outweigh T3 reasoning.
+1. **Independent first.** Review before seeing others' findings (prevents conformity cascade).
+2. **Minority dissent protected.** Must be addressed with counter-evidence. T1-T2-backed dissent cannot be overridden by vote.
+3. **Weight by evidence quality.** T1 outweighs T3.
 
 ## Verifier Checklist
 
-The verifier checks **everything** against the stop checklist and these items:
-
-- [ ] Implementation matches approved design
-- [ ] All requirements from original task are met
-- [ ] All claims tagged with `[T<tier>: <source>, <confidence>]`
-- [ ] No T5 claims remain in deliverables
-- [ ] Security review (OWASP top 10)
+- [ ] Implementation matches design
+- [ ] All original requirements met
+- [ ] All claims tagged, no T5 remaining
+- [ ] OWASP top 10 security review
 - [ ] Edge cases handled
-- [ ] All modules integrate correctly (run integration tests, not just unit tests)
-- [ ] All tests pass (run them, don't trust claims)
-- [ ] No uncommitted changes
-- [ ] No secrets in diffs
+- [ ] Integration tests pass (run them)
+- [ ] All unit tests pass (run them)
+- [ ] No uncommitted changes, no secrets in diffs
 - [ ] Static checks pass
-- [ ] Mandatory skills were invoked by all relevant teammates
+- [ ] Mandatory skills invoked by all teammates
 - [ ] Critique logs exist for all teammates
-- [ ] File ownership was respected (no unauthorized cross-module edits)
+- [ ] File ownership respected
 
 ## Orchestrator Responsibilities
 
-The orchestrator (you, the lead session) **NEVER implements**. You are the team lead of an **agent team** (NOT subagents). Your job:
+**NEVER implement.** You are the agent team lead.
 
-1. **Track EVERYTHING as tasks.** Every issue, deliverable, sub-task, blocker, and mission must be represented as a task in the shared task list. If it needs to be done, it must be a task. No work exists outside the task list. This is the single source of truth for the team's work.
-2. **Create teammates** via "Create an agent team" (NOT the Agent tool) with clear prompts including mandatory compliance rules and the trust tier table
-3. **Create tasks with dependencies** before spawning teammates. Tasks drive the work -- teammates claim and complete tasks.
-4. **Assign file ownership** from the design doc to each executor's spawn prompt
-5. **Route feedback** between unpaired roles
-6. **Monitor progress** via task list and teammate messages. If a task is stale (no progress), investigate.
-7. **Record phase checkpoints** (what was produced, who approved, git SHA) with a **structured summary** for downstream agents
-8. **Budget context per role** -- downstream agents get summaries, not raw upstream output (see Context Budgeting below)
-9. **Enforce loop limits** -- escalate on 4th rejection or 3rd verifier re-entry
-10. **Handle crashes** -- re-spawn immediately (max 2 retries)
-11. **Manage teammate lifetimes** per the Teammate Lifecycle rules (see below).
-12. **Clean up team** when all phases done. Verify ALL tasks are completed before claiming done.
+1. **Track EVERYTHING as tasks.** Every deliverable, sub-task, blocker = task. Task list is single source of truth.
+2. **Create agent team** (NOT Agent tool) with mandatory compliance in spawn prompts.
+3. **Tasks with dependencies first**, then spawn teammates to claim them.
+4. **Assign file ownership** per design doc.
+5. **Route feedback** between unpaired roles.
+6. **Monitor progress.** Stale task = investigate.
+7. **Phase checkpoints** with structured summaries for downstream agents.
+8. **Budget context** -- summaries, not raw output (see below).
+9. **Enforce loop limits.** Escalate on 4th rejection / 3rd verifier re-entry.
+10. **Crash recovery** -- re-spawn immediately (max 2).
+11. **Manage lifetimes** per Teammate Lifecycle (below).
+12. **Clean up** when done. ALL tasks completed.
 
 ### Context Budgeting
 
-Downstream agents get **structured summaries**, not raw upstream output. This prevents context rot (research shows LLM accuracy drops ~30% when context exceeds 60% utilization with heterogeneous content).
+Downstream agents get **structured summaries**, not raw upstream output.
 
-| Role | Receives | Does NOT receive |
-|------|----------|-----------------|
-| Designer | Explorer findings summary (key conclusions + source tags) | Raw explorer tool outputs, full file contents |
-| Executor | Own module's design section + interface contracts | Other modules' designs, explorer raw findings |
-| Reviewer | The diff + relevant design section + interface contracts | Full codebase, explorer findings, other modules |
-| Test Executor | Test specs + interface contracts + module public APIs | Implementation details, design rationale |
-| Verifier | Phase summaries from all checkpoints + test results | Full conversation histories of teammates |
-
-The orchestrator produces a structured summary at each phase checkpoint. Downstream agents receive the summary, not the full upstream context.
+| Role | Receives | Excludes |
+|------|----------|----------|
+| Designer | Explorer findings summary + source tags | Raw tool outputs, full files |
+| Executor | Own module's design + interface contracts | Other modules, explorer findings |
+| Reviewer | Diff + relevant design + contracts | Full codebase, other modules |
+| Test Executor | Test specs + contracts + public APIs | Implementation details |
+| Verifier | Phase summaries + test results | Teammate conversation histories |
 
 ### Teammate Lifecycle
 
-Roles with downstream feedback paths **stay alive** until their consumers finish. This preserves conversation context for re-entry without re-spawning. The verifier is the exception -- always spawned fresh to avoid context poisoning.
+Roles stay alive until downstream consumers finish. Verifier always spawned **fresh** (no context poisoning).
 
-**Shutdown rules:** A teammate is shut down when no downstream role can feed back to it. Stop assigning tasks; task completion is the shutdown signal.
+| Role | Alive until | Why |
+|------|-----------|-----|
+| Explorers | Design approved | Designer may need more info |
+| Designer + Reviewer | Phase 3 end | Executors may report design impossible |
+| Executors + Reviewers | Phase 4 end | Test failures trace to code |
+| Test Designer | Phase 4 end | Test executors need spec clarification |
+| Test Executors + Reviewers | Phase 5 end | Verifier may request coverage |
+| **Verifier** | DONE | **Always fresh** |
 
-| Role | Spawned at | Shut down at | Why |
-|------|-----------|-------------|-----|
-| Explorers | Phase 1 start | Phase 2 design approved | Designer can request more info during Phase 2 |
-| Designer + Design Reviewer | Phase 2 start | All executors approved (Phase 3 end) | Executors can report design is impossible |
-| Executors + Execution Reviewers | Phase 3 start | All tests approved (Phase 4 end) | Test failures may trace back to code |
-| Test Designer | Phase 3 start | All test executors approved (Phase 4 end) | Test executors may need spec clarification |
-| Test Executors + Test Reviewers | Phase 4 start | Verification complete (Phase 5 end) | Verifier may request more coverage |
-| **Verifier** | Phase 5 start | DONE | **Always spawned FRESH** -- no prior context. Prevents false positives from context poisoning. |
-
-**Re-entry with living teammates:** When an executor triggers Phase 2 re-entry, the original designer (still alive) handles it directly -- no re-spawn needed, full context preserved. This is the primary benefit of keeping roles alive.
+Re-entry with living teammates: original designer handles Phase 2 re-entry directly -- full context preserved.
 
 ### Spawn Prompt Template
-
-When spawning any teammate, include:
 
 ```
 You are the [ROLE] for this agent team.
@@ -445,71 +369,62 @@ Your task: [SPECIFIC TASK]
 Context:
 - Explorer findings: [summary or "see task list"]
 - Design doc: [location or "not yet created"]
-- File ownership: [YOUR FILES ONLY - list them. Do not edit other files.]
+- File ownership: [YOUR FILES ONLY. Do not edit other files.]
 
-Source Trust Hierarchy (tag ALL factual claims):
-- T1: Specs, RFCs, official docs, source code -> trusted
-- T2: Academic papers, references -> high trust
-- T3: Codebase analysis -> trust for local facts
-- T4: Community (SO, blogs) -> verify independently
-- T5: Training recall -> MUST promote to T1-T4 or discard
+Trust Hierarchy (tag ALL claims):
+T1: Specs/RFCs/docs/source -> trusted | T2: Academic -> high trust
+T3: Codebase analysis -> local facts | T4: Community -> verify first
+T5: Training recall -> MUST promote or discard
 Format: [T<tier>: <source>, <confidence: high/medium/low>]
 
-Mandatory compliance:
-- Critically analyze ALL inputs (from other agents, orchestrator, any source). You own bugs from unverified inputs.
-- Invoke required skills: [LIST APPLICABLE SKILLS for this role]
-- Before marking done: produce a critique log (3+ issues found and fixed)
-- Review git diff for secrets before every commit
-- Run static checks before every commit
-- Never git push without explicit user approval
+Compliance:
+- Critically analyze ALL inputs. You own bugs from unverified inputs.
+- Invoke skills: [LIST APPLICABLE SKILLS]
+- Produce critique log (3+ issues found/fixed) before marking done
+- git diff for secrets, static checks before commits, never push
 
-[For paired roles, after both are spawned:]
-Your paired reviewer/reviewee is [CONFIRMED NAME]. Message them directly.
+[After both spawned:] Paired with [CONFIRMED NAME]. Message directly.
 
-Rules:
-- [ROLE-SPECIFIC RULES from sections above]
-- When done, mark your task complete and notify the lead
-- If blocked, message the lead immediately with specifics
+- [ROLE-SPECIFIC RULES]
+- Mark task complete + notify lead when done
+- If blocked, message lead with specifics
 ```
 
 ## Red Flags
 
-| Symptom | Problem | Fix |
-|---------|---------|-----|
-| Using Agent tool / subagents instead of agent team | Wrong mechanism | STOP. Create an agent team via "Create an agent team", not via the Agent tool |
-| Work happening without a corresponding task | Task tracking violation | Create the task immediately. No work exists outside the task list |
-| Orchestrator writing code | Role violation | Create an executor teammate |
-| Reviewer approving without evidence | Rubber-stamping | Re-spawn with stricter prompt |
-| Explorer citing T5 in findings | Unverified claims | Send back to verify or discard |
-| Two teammates editing same file | File ownership violated | Check design doc's file map; reassign |
-| Designer produced no file ownership map | Incomplete design | Reject design; require file map |
-| Executor ignoring reviewer feedback | Breaking the loop | Orchestrator enforces: fix then re-review |
-| Verifier approving without full checklist | Incomplete verification | Re-spawn with explicit checklist |
-| Teammate not invoking mandatory skill | Compliance violation | Reviewer must reject; re-instruct |
-| Untagged factual claims in output | Claim verification skipped | Send back to tag with [T<tier>: source, confidence] |
-| 4th review rejection in same pair | Infinite loop | Escalate: replace teammate or re-scope |
-| Teammate unresponsive | Crash or token exhaustion | Re-spawn immediately with recovery prompt |
-| No critique log in deliverable | Self-critique skipped | Reviewer must reject until log is produced |
-| Test specs don't match executor interfaces | Race condition in Phase 3 | Test designer must wait for interface contracts |
+| Symptom | Fix |
+|---------|-----|
+| Using Agent tool instead of agent team | STOP. "Create an agent team", not Agent tool |
+| Work without corresponding task | Create task immediately |
+| Orchestrator writing code | Create executor teammate |
+| Reviewer approving without evidence | Re-spawn with stricter prompt |
+| T5 in explorer findings | Send back to verify or discard |
+| Two teammates editing same file | Check file ownership map; reassign |
+| No file ownership map in design | Reject design |
+| Reviewer feedback ignored | Orchestrator enforces: fix then re-review |
+| Mandatory skill not invoked | Reviewer rejects |
+| Untagged claims | Send back to tag |
+| 4th rejection in same pair | Escalate: replace or re-scope |
+| Teammate unresponsive | Re-spawn immediately |
+| No critique log | Reviewer rejects |
+| Test specs don't match interfaces | Test designer waits for contracts |
 
 ## Common Mistakes
 
-**Capping executor count artificially.** Spawn one executor pair per independent module. If there are 20 modules, spawn 20 pairs. No arbitrary limits.
+**Capping executor count.** One pair per independent module. No limits.
 
-**Not tracking everything as tasks.** Every piece of work -- every bug found, every module to implement, every test to write, every review to do -- must be a task in the shared task list. The task list is the single source of truth. If it's not a task, it doesn't exist.
+**Work outside the task list.** If it's not a task, it doesn't exist.
 
-**Skipping phases for "simple" tasks.** If it triggered this skill, it's not simple. Run all phases.
+**Skipping phases.** If this skill triggered, run all phases.
 
-**Letting the lead implement "just one small thing."** The orchestrator never implements. Spawn a teammate.
+**Lead implementing.** Never. Spawn a teammate.
 
-**Not including the trust tier summary in spawn prompts.** Teammates can't tag claims correctly without it. The abbreviated tier summary in the spawn template is sufficient -- use it in every spawn prompt.
+**Missing tier summary in spawn prompts.** Use the template.
 
-**Shutting down teammates too early.** Keep roles alive until their downstream consumers finish (see Teammate Lifecycle). Shutting down the designer before executors finish loses context for re-entry. Only the verifier is always spawned fresh.
+**Early teammate shutdown.** Keep alive until downstream consumers finish. Only verifier is always fresh.
 
-**Assuming reviewer approval means correctness.** Reviewers catch problems but aren't infallible. The verifier exists for this reason.
+**Trusting reviewer approval.** Reviewers aren't infallible. Verifier exists for this reason.
 
-**Forgetting to instruct coding style skills.** If executors write Go, they must invoke `go-coding-style`. Python -> `python-coding-style`. Reviewers must check this.
+**Missing file ownership map.** At scale, conflicts are certain without it.
 
-**Skipping the file ownership map.** Without it, at scale (10+ executors), file conflicts are near-certain. The designer must produce it. The orchestrator must enforce it.
-
-**Letting test designer finalize specs before executor interfaces are stable.** Test designer can draft specs from the design doc, but must wait for executors to confirm/publish their interface contracts before finalizing.
+**Finalizing test specs before interfaces stable.** Draft from design, finalize after executor contracts confirmed.
