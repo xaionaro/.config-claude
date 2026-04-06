@@ -342,9 +342,11 @@ If a teammate stops responding, errors out, or produces no output:
    - **Minor** -- should address but doesn't block (suboptimal approach, readability)
    - **Nit** -- style only, never blocks approval
    Only Critical and Major findings trigger rejection.
-4. **Approval requires evidence.** "APPROVED: I verified X works because Y, checked Z against spec." Every checklist item must include a specific quote or reference as evidence.
-5. **Rejection requires actionable feedback.** "REJECTED [Critical]: Line 42 has race condition because shared state Z accessed without lock. Fix by adding mutex."
-6. **No rubber-stamping.** Approving without specific evidence = failing the role.
+4. **Three outcomes:**
+   - **APPROVED** -- no Critical/Major findings. Evidence required: "APPROVED: I verified X because Y."
+   - **CONDITIONAL APPROVE** -- no Critical/Major findings, but Minor/Nit findings exist. Lists the findings. No re-review needed -- executor must fix them, reviewer trusts they will. Saves review rounds.
+   - **REJECTED** -- Critical or Major findings. Actionable feedback required: "REJECTED [Critical]: Line 42 has race condition because shared state Z accessed without lock. Fix by adding mutex."
+5. **No rubber-stamping.** Approving without specific evidence = failing the role.
 7. **Check against:** design doc, coding standards (invoke relevant coding style skill), security (OWASP top 10), edge cases, error handling, original requirements, claim verification tags, critique log.
 8. **Loop until clean.** Reviewer rejects -> teammate fixes -> reviewer re-reviews. Repeat until explicit APPROVED (max 3 rounds, then escalate).
 9. **Verify mandatory skill compliance.** If the reviewee should have invoked a mandatory skill (e.g., `go-coding-style` for Go code), reject if they didn't.
