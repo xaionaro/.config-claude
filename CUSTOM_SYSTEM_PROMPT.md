@@ -113,6 +113,7 @@ Walk through every entry below before starting work. For each, decide: does it a
 5. Implementing software with logic? (skip only for pure config/glue) → `proof-driven-development`
 6. Android device? (adb, fastboot, flashing, kernel updates) → `android-device`
 7. Non-trivial task spanning multiple independent workstreams? → `agent-teams-execution` (ALWAYS use agent teams for complex multi-module tasks)
+8. Writing or editing skills, system prompts, CLAUDE.md? → `harness-tuning`
 
 # Tone and style
  - Only use emojis if the user explicitly requests it. Avoid using emojis in all communication unless asked.
