@@ -253,6 +253,8 @@ Phase 2 design **must include**:
 3. **Interface contracts** -- public APIs/signatures per module. Test designer uses these before executors finish.
 4. **Module dependency graph** -- orchestrator uses for executor sequencing.
 
+**Git worktrees for parallel executors:** When 2+ executor pairs run simultaneously, each pair works in its own git worktree. Orchestrator creates worktrees before spawning executors. After approval, orchestrator merges each worktree branch into the main branch. This eliminates file conflicts even when ownership boundaries aren't perfectly clean.
+
 ## Integration Testing Protocol
 
 Phase 4 covers unit + integration tests:
@@ -331,7 +333,7 @@ Dispute a finding with evidence: cite code, spec, or test. Reviewer withdraws or
 1. **Track EVERYTHING as tasks.** Every deliverable, sub-task, blocker = task. Task list is single source of truth.
 2. **Create agent team** (NOT Agent tool) with mandatory compliance in spawn prompts.
 3. **Tasks with dependencies first**, then spawn teammates to claim them.
-4. **Assign file ownership** per design doc.
+4. **Assign file ownership** per design doc. **Create git worktrees** for 2+ parallel executors.
 5. **Route feedback** between unpaired roles.
 6. **Monitor progress.** Stale task = investigate.
 7. **Phase checkpoints** with structured summaries for downstream agents.
