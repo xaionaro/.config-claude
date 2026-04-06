@@ -9,6 +9,14 @@ Structure non-trivial tasks as a phased agent team with adversarial review loops
 
 **Core principle:** Explorers gather hard facts, designer architects from facts, adversarial reviewers tear apart every deliverable, executors loop with reviewers until approved, verifier validates the big picture. The orchestrator coordinates but never implements.
 
+<CRITICAL>
+**You MUST create an AGENT TEAM -- do NOT use subagents.**
+
+To start: tell Claude "Create an agent team for this task" and describe the team structure. This spawns real agent team teammates (independent Claude Code sessions with shared task lists and inter-agent messaging). Do NOT use the Agent tool to dispatch subagents -- that is a different, inferior mechanism.
+
+Example: "Create an agent team with 3 explorer teammates, 1 designer, 1 design reviewer. Explorers should investigate [X, Y, Z] respectively."
+</CRITICAL>
+
 ## When to Use
 
 ```dot
@@ -344,9 +352,9 @@ The verifier checks **everything** against the stop checklist and these items:
 
 ## Orchestrator Responsibilities
 
-The orchestrator (you, the lead session) **NEVER implements**. Your job:
+The orchestrator (you, the lead session) **NEVER implements**. You are the team lead of an **agent team** (NOT subagents). Your job:
 
-1. **Spawn teammates** with clear prompts including mandatory compliance rules and the trust tier table
+1. **Create teammates** via "Create an agent team" (NOT the Agent tool) with clear prompts including mandatory compliance rules and the trust tier table
 2. **Create shared tasks** with dependencies between phases
 3. **Assign file ownership** from the design doc to each executor's spawn prompt
 4. **Route feedback** between unpaired roles
@@ -399,7 +407,8 @@ Rules:
 
 | Symptom | Problem | Fix |
 |---------|---------|-----|
-| Orchestrator writing code | Role violation | Spawn an executor |
+| Using Agent tool / subagents instead of agent team | Wrong mechanism | STOP. Create an agent team via "Create an agent team", not via the Agent tool |
+| Orchestrator writing code | Role violation | Create an executor teammate |
 | Reviewer approving without evidence | Rubber-stamping | Re-spawn with stricter prompt |
 | Explorer citing T5 in findings | Unverified claims | Send back to verify or discard |
 | Two teammates editing same file | File ownership violated | Check design doc's file map; reassign |
