@@ -323,13 +323,33 @@ If a teammate stops responding, errors out, or produces no output:
 
 1. **Assume wrong.** The work contains errors. Find them.
 2. **Look for what's missing**, not what's right.
-3. **Approval requires evidence.** "APPROVED: I verified X works because Y, checked Z against spec." No implicit approval. Every checklist item must include a specific quote or reference from the artifact as evidence.
-4. **Rejection requires actionable feedback.** "REJECTED: Line 42 has race condition because shared state Z accessed without lock. Fix by adding mutex."
-5. **No rubber-stamping.** Approving without specific evidence = failing the role.
-6. **Check against:** design doc, coding standards (invoke relevant coding style skill), security (OWASP top 10), edge cases, error handling, original requirements, claim verification tags, critique log.
-7. **Loop until clean.** Reviewer rejects -> teammate fixes -> reviewer re-reviews. Repeat until explicit APPROVED (max 3 rounds, then escalate).
-8. **Verify mandatory skill compliance.** If the reviewee should have invoked a mandatory skill (e.g., `go-coding-style` for Go code), reject if they didn't.
-9. **Verify critique log exists.** The reviewee must have produced a critique log with 3+ specific issues found and fixed. No log = reject.
+3. **Classify every finding by severity:**
+   - **Critical** -- blocks approval (security flaw, correctness bug, spec violation)
+   - **Major** -- must address before approval (design deviation, missing edge case)
+   - **Minor** -- should address but doesn't block (suboptimal approach, readability)
+   - **Nit** -- style only, never blocks approval
+   Only Critical and Major findings trigger rejection.
+4. **Approval requires evidence.** "APPROVED: I verified X works because Y, checked Z against spec." Every checklist item must include a specific quote or reference as evidence.
+5. **Rejection requires actionable feedback.** "REJECTED [Critical]: Line 42 has race condition because shared state Z accessed without lock. Fix by adding mutex."
+6. **No rubber-stamping.** Approving without specific evidence = failing the role.
+7. **Check against:** design doc, coding standards (invoke relevant coding style skill), security (OWASP top 10), edge cases, error handling, original requirements, claim verification tags, critique log.
+8. **Loop until clean.** Reviewer rejects -> teammate fixes -> reviewer re-reviews. Repeat until explicit APPROVED (max 3 rounds, then escalate).
+9. **Verify mandatory skill compliance.** If the reviewee should have invoked a mandatory skill (e.g., `go-coding-style` for Go code), reject if they didn't.
+10. **Verify critique log exists.** The reviewee must have produced a critique log with 3+ specific issues found and fixed. No log = reject.
+
+### Executor Dispute Mechanism
+
+Executors may dispute a reviewer finding with evidence. To dispute:
+1. State which finding is disputed and why (cite code, spec, or test)
+2. Reviewer must either withdraw the finding or escalate with stronger evidence
+3. If neither party yields after one exchange, escalate to orchestrator who decides
+
+### Multi-Reviewer Protocol (2+ reviewers)
+
+When using multiple reviewers (e.g., 2+ design reviewers for large tasks):
+1. **Independent review first.** Each reviewer reviews independently before seeing others' findings. This prevents conformity cascading.
+2. **Minority dissent.** If any reviewer disagrees with the majority, the dissent must be addressed with counter-evidence before it can be overridden. Minority objections backed by T1-T2 evidence cannot be dismissed by majority vote.
+3. **Weight by evidence quality.** Objections backed by T1 evidence outweigh T3 reasoning.
 
 ## Verifier Checklist
 
@@ -359,11 +379,26 @@ The orchestrator (you, the lead session) **NEVER implements**. You are the team 
 3. **Assign file ownership** from the design doc to each executor's spawn prompt
 4. **Route feedback** between unpaired roles
 5. **Monitor progress** via task list and teammate messages
-6. **Record phase checkpoints** (what was produced, who approved, git SHA)
+6. **Record phase checkpoints** (what was produced, who approved, git SHA) with a **structured summary** for downstream agents
+7. **Budget context per role** -- downstream agents get summaries, not raw upstream output (see Context Budgeting below)
 7. **Enforce loop limits** -- escalate on 4th rejection or 3rd verifier re-entry
 8. **Handle crashes** -- re-spawn immediately (max 2 retries)
 9. **Shut down teammates** after each phase: stop assigning tasks; when a teammate's current task is marked complete, do not spawn it further. Task completion is the shutdown signal -- no separate acknowledgment needed.
 10. **Clean up team** when all phases done
+
+### Context Budgeting
+
+Downstream agents get **structured summaries**, not raw upstream output. This prevents context rot (research shows LLM accuracy drops ~30% when context exceeds 60% utilization with heterogeneous content).
+
+| Role | Receives | Does NOT receive |
+|------|----------|-----------------|
+| Designer | Explorer findings summary (key conclusions + source tags) | Raw explorer tool outputs, full file contents |
+| Executor | Own module's design section + interface contracts | Other modules' designs, explorer raw findings |
+| Reviewer | The diff + relevant design section + interface contracts | Full codebase, explorer findings, other modules |
+| Test Executor | Test specs + interface contracts + module public APIs | Implementation details, design rationale |
+| Verifier | Phase summaries from all checkpoints + test results | Full conversation histories of teammates |
+
+The orchestrator produces a structured summary at each phase checkpoint. Downstream agents receive the summary, not the full upstream context.
 
 ### Spawn Prompt Template
 
