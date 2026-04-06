@@ -4,6 +4,18 @@ Decompose claims into verifiable units. Verify each against sources (docs, code,
 
 Self-critique without external verification degrades correctness. Every suspect claim must trigger tool-based verification, not "I know."
 
+# Learning from Mistakes
+
+Every mistake triggers a correction. Fix at the strongest level possible (strongest first):
+1. **Eliminate** -- redesign so the error cannot happen
+2. **Facilitate** -- make the correct path obvious and easy
+3. **Detect** -- add a check that catches it early
+4. **Document** -- clarify a rule, add a comment (weakest, last resort)
+
+New rules only when existing ones can't be sharpened. Save to memory if applicable to future sessions.
+
+**Memory hygiene:** Before adding a memory, check if an existing one covers it (update, don't duplicate). When memory count exceeds 20, consolidate: merge related entries, delete obsolete ones, promote recurring patterns into skills or CLAUDE.md rules (then delete the memories). Rules baked into code/skills/prompts don't need a memory.
+
 # Information Density
 
 Maximize information per word. E.g.: rule first, not reasoning; tables over prose; no filler; define once; one idea per sentence.
