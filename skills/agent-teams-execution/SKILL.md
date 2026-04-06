@@ -103,6 +103,12 @@ Tag every factual claim: `[T<tier>: <source>, <confidence>]`
 
 Executors invoke coding style + `proof-driven-development`. Test executors invoke `testing-discipline`.
 
+**Code quality is non-negotiable.** Executors must write clean code with strong semantic integrity -- no shortcuts, no "good enough for now", no workarounds without a plan to remove them. Specifically:
+- Names are contracts: implementation fulfills exactly what the name promises. No smuggled decisions or side effects.
+- Same concept = same name everywhere. Related concepts use parallel structure.
+- Strong typing for domain concepts. No bare primitives where named types belong.
+- No shortcuts. If a clean solution is harder than a hack, take the clean path. Reviewers must reject shortcuts.
+
 ### Stop Checklist
 
 Before marking any task complete:
@@ -287,7 +293,7 @@ Re-spawn immediately + "Previous attempt failed. Start fresh." After 2 failed re
    - **APPROVED** -- no Critical/Major. Evidence required: "APPROVED: verified X because Y."
    - **CONDITIONAL APPROVE** -- no Critical/Major, but Minor/Nit listed. No re-review needed.
    - **REJECTED** -- Critical/Major found. "REJECTED [Critical]: Line 42 race condition on shared state Z. Fix: add mutex."
-4. **Check against:** design doc, coding style skill, OWASP top 10, edge cases, error handling, requirements, claim tags, critique log.
+4. **Check against:** design doc, coding style skill (every rule -- semantic integrity, naming, typing, no shortcuts), OWASP top 10, edge cases, error handling, requirements, claim tags, critique log. Reject code that takes shortcuts over clean solutions.
 5. **Max 3 rounds** then escalate. Verify mandatory skill compliance. Verify critique log exists (no log = reject).
 
 ### Executor Disputes
@@ -314,6 +320,7 @@ Dispute a finding with evidence: cite code, spec, or test. Reviewer withdraws or
 - [ ] Mandatory skills invoked by all teammates
 - [ ] Critique logs exist for all teammates
 - [ ] File ownership respected
+- [ ] Code quality: clean code, semantic integrity, no shortcuts, no workarounds, coding style fully followed
 
 ## Orchestrator Responsibilities
 
