@@ -374,17 +374,18 @@ The verifier checks **everything** against the stop checklist and these items:
 
 The orchestrator (you, the lead session) **NEVER implements**. You are the team lead of an **agent team** (NOT subagents). Your job:
 
-1. **Create teammates** via "Create an agent team" (NOT the Agent tool) with clear prompts including mandatory compliance rules and the trust tier table
-2. **Create shared tasks** with dependencies between phases
-3. **Assign file ownership** from the design doc to each executor's spawn prompt
-4. **Route feedback** between unpaired roles
-5. **Monitor progress** via task list and teammate messages
-6. **Record phase checkpoints** (what was produced, who approved, git SHA) with a **structured summary** for downstream agents
-7. **Budget context per role** -- downstream agents get summaries, not raw upstream output (see Context Budgeting below)
-7. **Enforce loop limits** -- escalate on 4th rejection or 3rd verifier re-entry
-8. **Handle crashes** -- re-spawn immediately (max 2 retries)
-9. **Shut down teammates** after each phase: stop assigning tasks; when a teammate's current task is marked complete, do not spawn it further. Task completion is the shutdown signal -- no separate acknowledgment needed.
-10. **Clean up team** when all phases done
+1. **Track EVERYTHING as tasks.** Every issue, deliverable, sub-task, blocker, and mission must be represented as a task in the shared task list. If it needs to be done, it must be a task. No work exists outside the task list. This is the single source of truth for the team's work.
+2. **Create teammates** via "Create an agent team" (NOT the Agent tool) with clear prompts including mandatory compliance rules and the trust tier table
+3. **Create tasks with dependencies** before spawning teammates. Tasks drive the work -- teammates claim and complete tasks.
+4. **Assign file ownership** from the design doc to each executor's spawn prompt
+5. **Route feedback** between unpaired roles
+6. **Monitor progress** via task list and teammate messages. If a task is stale (no progress), investigate.
+7. **Record phase checkpoints** (what was produced, who approved, git SHA) with a **structured summary** for downstream agents
+8. **Budget context per role** -- downstream agents get summaries, not raw upstream output (see Context Budgeting below)
+9. **Enforce loop limits** -- escalate on 4th rejection or 3rd verifier re-entry
+10. **Handle crashes** -- re-spawn immediately (max 2 retries)
+11. **Shut down teammates** after each phase: stop assigning tasks; when a teammate's current task is marked complete, do not spawn it further. Task completion is the shutdown signal -- no separate acknowledgment needed.
+12. **Clean up team** when all phases done. Verify ALL tasks are completed before claiming done.
 
 ### Context Budgeting
 
@@ -443,6 +444,7 @@ Rules:
 | Symptom | Problem | Fix |
 |---------|---------|-----|
 | Using Agent tool / subagents instead of agent team | Wrong mechanism | STOP. Create an agent team via "Create an agent team", not via the Agent tool |
+| Work happening without a corresponding task | Task tracking violation | Create the task immediately. No work exists outside the task list |
 | Orchestrator writing code | Role violation | Create an executor teammate |
 | Reviewer approving without evidence | Rubber-stamping | Re-spawn with stricter prompt |
 | Explorer citing T5 in findings | Unverified claims | Send back to verify or discard |
@@ -460,6 +462,8 @@ Rules:
 ## Common Mistakes
 
 **Capping executor count artificially.** Spawn one executor pair per independent module. If there are 20 modules, spawn 20 pairs. No arbitrary limits.
+
+**Not tracking everything as tasks.** Every piece of work -- every bug found, every module to implement, every test to write, every review to do -- must be a task in the shared task list. The task list is the single source of truth. If it's not a task, it doesn't exist.
 
 **Skipping phases for "simple" tasks.** If it triggered this skill, it's not simple. Run all phases.
 
