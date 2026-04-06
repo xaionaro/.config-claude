@@ -253,7 +253,7 @@ Phase 2 design **must include**:
 3. **Interface contracts** -- public APIs/signatures per module. Test designer uses these before executors finish.
 4. **Module dependency graph** -- orchestrator uses for executor sequencing.
 
-**Git worktrees for parallel executors:** When 2+ executor pairs run simultaneously, each pair works in its own git worktree. Orchestrator creates worktrees before spawning executors. After approval, orchestrator merges each worktree branch into the main branch. This eliminates file conflicts even when ownership boundaries aren't perfectly clean.
+**Git worktrees:** 2+ parallel executors -> each gets own worktree. Create before spawning, merge after approval.
 
 ## Integration Testing Protocol
 
