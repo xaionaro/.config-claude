@@ -76,6 +76,10 @@ Each executor gets a paired reviewer. Each test executor gets a paired test revi
 
 **Every teammate** must obey these rules. The orchestrator **must include them in spawn prompts**.
 
+### Effort Level
+
+All teammates must run at **max effort**. The orchestrator must instruct teammates: "Set your effort to max: run `/model` and select max effort if not already set." The environment variable `CLAUDE_CODE_EFFORT_LEVEL=max` should be set in settings.json `env` block to propagate to all sessions.
+
 ### Critical Analysis of All Inputs
 
 **No input is trusted by default -- from any source.** Every teammate must critically analyze everything they receive: explorer findings, design documents, orchestrator instructions, reviewer feedback, test specs, other agents' outputs. Specifically:

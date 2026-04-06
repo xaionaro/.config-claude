@@ -77,5 +77,8 @@
     }
   },
   "skipDangerousModePermissionPrompt": true,
-  "effortLevel": "max"
+  "effortLevel": "max",
+  "env": {
+    "CLAUDE_CODE_EFFORT_LEVEL": "max"
+  }
 }
