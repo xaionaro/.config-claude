@@ -384,7 +384,7 @@ The orchestrator (you, the lead session) **NEVER implements**. You are the team 
 8. **Budget context per role** -- downstream agents get summaries, not raw upstream output (see Context Budgeting below)
 9. **Enforce loop limits** -- escalate on 4th rejection or 3rd verifier re-entry
 10. **Handle crashes** -- re-spawn immediately (max 2 retries)
-11. **Shut down teammates** after each phase: stop assigning tasks; when a teammate's current task is marked complete, do not spawn it further. Task completion is the shutdown signal -- no separate acknowledgment needed.
+11. **Manage teammate lifetimes** per the Teammate Lifecycle rules (see below).
 12. **Clean up team** when all phases done. Verify ALL tasks are completed before claiming done.
 
 ### Context Budgeting
@@ -400,6 +400,23 @@ Downstream agents get **structured summaries**, not raw upstream output. This pr
 | Verifier | Phase summaries from all checkpoints + test results | Full conversation histories of teammates |
 
 The orchestrator produces a structured summary at each phase checkpoint. Downstream agents receive the summary, not the full upstream context.
+
+### Teammate Lifecycle
+
+Roles with downstream feedback paths **stay alive** until their consumers finish. This preserves conversation context for re-entry without re-spawning. The verifier is the exception -- always spawned fresh to avoid context poisoning.
+
+**Shutdown rules:** A teammate is shut down when no downstream role can feed back to it. Stop assigning tasks; task completion is the shutdown signal.
+
+| Role | Spawned at | Shut down at | Why |
+|------|-----------|-------------|-----|
+| Explorers | Phase 1 start | Phase 2 design approved | Designer can request more info during Phase 2 |
+| Designer + Design Reviewer | Phase 2 start | All executors approved (Phase 3 end) | Executors can report design is impossible |
+| Executors + Execution Reviewers | Phase 3 start | All tests approved (Phase 4 end) | Test failures may trace back to code |
+| Test Designer | Phase 3 start | All test executors approved (Phase 4 end) | Test executors may need spec clarification |
+| Test Executors + Test Reviewers | Phase 4 start | Verification complete (Phase 5 end) | Verifier may request more coverage |
+| **Verifier** | Phase 5 start | DONE | **Always spawned FRESH** -- no prior context. Prevents false positives from context poisoning. |
+
+**Re-entry with living teammates:** When an executor triggers Phase 2 re-entry, the original designer (still alive) handles it directly -- no re-spawn needed, full context preserved. This is the primary benefit of keeping roles alive.
 
 ### Spawn Prompt Template
 
@@ -471,7 +488,7 @@ Rules:
 
 **Not including the trust tier summary in spawn prompts.** Teammates can't tag claims correctly without it. The abbreviated tier summary in the spawn template is sufficient -- use it in every spawn prompt.
 
-**Not shutting down teammates between phases.** Idle teammates waste tokens. Send shutdown request and wait for acknowledgment.
+**Shutting down teammates too early.** Keep roles alive until their downstream consumers finish (see Teammate Lifecycle). Shutting down the designer before executors finish loses context for re-entry. Only the verifier is always spawned fresh.
 
 **Assuming reviewer approval means correctness.** Reviewers catch problems but aren't infallible. The verifier exists for this reason.
 
