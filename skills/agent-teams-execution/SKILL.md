@@ -107,6 +107,8 @@ Tag every factual claim: `[T<tier>: <source>, <confidence>]`
 
 Executors invoke coding style + `proof-driven-development`. Test executors invoke `testing-discipline`.
 
+**Orchestrator spawn rule:** Copy exact skill names into every spawn prompt. No placeholders, no paraphrasing. Determine language from design doc, include matching skill.
+
 **Code quality is non-negotiable.** Executors must write clean code with strong semantic integrity -- no shortcuts, no "good enough for now", no workarounds without a plan to remove them. Specifically:
 - Names are contracts: implementation fulfills exactly what the name promises. No smuggled decisions or side effects.
 - Same concept = same name everywhere. Related concepts use parallel structure.
@@ -306,7 +308,9 @@ After 2 failed re-spawns of any role, escalate to user.
    - **CONDITIONAL APPROVE** -- no Critical/Major, but Minor/Nit listed. No re-review needed.
    - **REJECTED** -- Critical/Major found. "REJECTED [Critical]: Line 42 race condition on shared state Z. Fix: add mutex."
 4. **Check against:** design doc, coding style skill (every rule -- semantic integrity, naming, typing, no shortcuts), OWASP top 10, edge cases, error handling, requirements, claim tags, critique log. Reject code that takes shortcuts over clean solutions.
-5. **Max 3 rounds** then escalate. Verify mandatory skill compliance. Verify critique log exists (no log = reject).
+5. **Verify coding style:** Confirm teammate invoked the applicable coding style skill (go-coding-style, python-coding-style). Check code against every rule in that skill. No invocation evidence = rejected.
+6. **Verify claim tags:** Any untagged factual claim in deliverables = rejected. All T5 claims must be promoted or discarded.
+7. **Max 3 rounds** then escalate. Verify mandatory skill compliance. Verify critique log exists (no log = reject).
 
 ### Executor Disputes
 
@@ -355,6 +359,15 @@ Dispute a finding with evidence: cite code, spec, or test. Reviewer withdraws or
 13. **Address all reported issues.** Every executor-reported issue becomes a task. Assign an executor to critically analyze it (code cleanness, semantic integrity, correctness). If dismissed: document rationale. If validated and minor: the analyzing executor fixes it directly. If validated and design-level: full pipeline. No report may be silently ignored.
 14. **Clean up** when done. ALL tasks completed.
 
+### Spawn Checklist (verify before every spawn)
+
+- [ ] Correct coding style skill listed by exact name (not placeholder)
+- [ ] Claim tagging instructions included verbatim
+- [ ] File ownership explicit (executor/test roles)
+- [ ] Paired reviewer confirmed alive (executor spawns only)
+
+Orchestrator rejects own spawn prompt if any item unchecked.
+
 ### Context Budgeting
 
 Downstream agents get **structured summaries**, not raw upstream output.
@@ -402,7 +415,11 @@ Format: [T<tier>: <source>, <confidence: high/medium/low>]
 
 Compliance:
 - Critically analyze ALL inputs. You own bugs from unverified inputs.
-- Invoke skills: [LIST APPLICABLE SKILLS]
+- BEFORE writing code, invoke applicable skills via the Skill tool:
+  go-coding-style (Go), python-coding-style (Python), testing-discipline (tests),
+  proof-driven-development (logic), superpowers:systematic-debugging + debugging-discipline (debugging).
+  Follow every rule from invoked skills. Reviewer rejects non-compliance.
+- Tag ALL factual claims: [T<tier>: <source>, <confidence>]. Untagged claims = reviewer rejection.
 - Produce critique log (3+ issues found/fixed) before marking done
 - git diff for secrets, static checks before commits, never push
 
@@ -431,7 +448,8 @@ Compliance:
 | No file ownership map in design | Reject design |
 | Reviewer feedback ignored | Orchestrator enforces: fix then re-review |
 | Mandatory skill not invoked | Reviewer rejects |
-| Untagged claims | Send back to tag |
+| Untagged factual claims in deliverable | Reviewer rejects |
+| Spawn prompt uses `[LIST APPLICABLE SKILLS]` placeholder | Replace with exact skill names from Mandatory Skills table |
 | 4th rejection in same pair | Escalate: replace or re-scope |
 | Teammate seems slow or won't respond | Not unresponsive. Check for active process and file/git activity — a running build means they're working |
 | Non-executor confirmed unresponsive | Re-spawn immediately |
@@ -452,6 +470,8 @@ Compliance:
 **Lead implementing.** Never. Spawn a teammate.
 
 **Missing tier summary in spawn prompts.** Use the template.
+
+**Placeholder skill names in spawn prompts.** `[LIST APPLICABLE SKILLS]` is a template variable, not valid output. Replace with exact names: `go-coding-style`, `python-coding-style`, etc.
 
 **Early teammate shutdown.** Keep alive until downstream consumers finish. Only verifier is always fresh.
 
