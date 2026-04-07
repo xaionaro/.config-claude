@@ -55,7 +55,7 @@ Same feedback loops and loop limits apply.
 | **Explorer** | 1+ | 1 | Gather facts. Tag sources. Challenge each other. |
 | **Designer** | 1 | 2 | Architect from findings. Produce file ownership map. |
 | **Design Reviewer** | 1+ | 2 | Adversarial design review. 2+ for large tasks. |
-| **Executor** | 1+ | 3 | Implement modules. One per independent unit. |
+| **Executor** | 1+ | 3 | Implement modules. One per independent unit. Actively look for code smell and design issues in code they study/touch, report all to lead. |
 | **Execution Reviewer** | 1+ | 3 | Paired 1:1 with executors. Adversarial code review. |
 | **Test Designer** | 1 | 3 | Write test specs. Waits for interface contracts. |
 | **Test Executor** | 1+ | 4 | Implement tests from specs. |
@@ -159,7 +159,7 @@ digraph phases {
     "Execution reviewer approves?" [shape=diamond];
     "Revise code based on feedback" [shape=box];
     "Executor blocked by design issue?" [shape=diamond];
-    "Route to designer - re-enter Phase 2" [shape=box];
+    "Report to lead - re-enter Phase 1" [shape=box];
     "Write test specs (wait for interface contracts)" [shape=box];
     "Finalize test specs" [shape=doublecircle];
     "Mark all modules approved" [shape=doublecircle];
@@ -177,7 +177,7 @@ digraph phases {
     "Spawn verifier" [shape=box];
     "Verify against full checklist" [shape=box];
     "Verifier approves?" [shape=diamond];
-    "Route: bug->Ph3, design flaw->Ph2, missing test->Ph4, bad finding->Ph1" [shape=box];
+    "Route: bug->Ph3, design flaw->Ph1, missing test->Ph4, bad finding->Ph1" [shape=box];
     "DONE" [shape=doublecircle];
     "STOP: 2 verifier re-entries exhausted - escalate to user" [shape=octagon, style=filled, fillcolor=red, fontcolor=white];
 
@@ -210,8 +210,8 @@ digraph phases {
     "Execution reviewer approves?" -> "Revise code based on feedback" [label="no (round 1-3)"];
     "Execution reviewer approves?" -> "STOP: 3 exec rejections - escalate" [label="no (round 4+)"];
     "Revise code based on feedback" -> "Executor blocked by design issue?";
-    "Executor blocked by design issue?" -> "Route to designer - re-enter Phase 2" [label="yes"];
-    "Route to designer - re-enter Phase 2" -> "Design architecture + file ownership map";
+    "Executor blocked by design issue?" -> "Report to lead - re-enter Phase 1" [label="yes"];
+    "Report to lead - re-enter Phase 1" -> "Spawn explorers";
     "Executor blocked by design issue?" -> "Execution reviewer approves?" [label="no - retry"];
     "Execution reviewer approves?" -> "Mark all modules approved" [label="yes - with evidence"];
     "Write test specs (wait for interface contracts)" -> "Finalize test specs";
@@ -230,9 +230,9 @@ digraph phases {
     "PHASE 5: VERIFICATION" -> "Spawn verifier";
     "Spawn verifier" -> "Verify against full checklist";
     "Verify against full checklist" -> "Verifier approves?";
-    "Verifier approves?" -> "Route: bug->Ph3, design flaw->Ph2, missing test->Ph4, bad finding->Ph1" [label="no (re-entry 1-2)"];
+    "Verifier approves?" -> "Route: bug->Ph3, design flaw->Ph1, missing test->Ph4, bad finding->Ph1" [label="no (re-entry 1-2)"];
     "Verifier approves?" -> "STOP: 2 verifier re-entries exhausted - escalate to user" [label="no (re-entry 3+)"];
-    "Route: bug->Ph3, design flaw->Ph2, missing test->Ph4, bad finding->Ph1" -> "Verify against full checklist";
+    "Route: bug->Ph3, design flaw->Ph1, missing test->Ph4, bad finding->Ph1" -> "Verify against full checklist";
     "Verifier approves?" -> "DONE" [label="yes - all evidence cited"];
 }
 ```
@@ -262,7 +262,7 @@ Phase 2 design **must include**:
 Phase 4 covers unit + integration tests:
 - **Test designer** writes cross-module integration specs from dependency graph + interface contracts.
 - Every inter-module interface must have at least one integration test on the real call path (no mocks at boundaries).
-- **Failure routing:** interface bug -> Phase 3 executor pair. Design flaw -> Phase 2.
+- **Failure routing:** interface bug -> Phase 3 executor pair. Design flaw -> Phase 1.
 
 ## Feedback Loops
 
@@ -273,7 +273,7 @@ Paired roles communicate **directly**. All other feedback routes through orchest
 | Design Reviewer | Designer | Design flaw | Direct (paired) |
 | Designer | Explorers | Needs info | Orchestrator: re-spawn |
 | Execution Reviewer | Executor | Code issue | Direct (paired) |
-| Executor | Designer | Design impossible | Orchestrator |
+| Executor | Lead | Design issue or code smell found | Orchestrator assigns executor to analyze; minor: executor fixes directly, design-level: full pipeline |
 | Test Reviewer | Test Executor | Test issue | Direct (paired) |
 | Verifier | Ph1/2/3/4 | Issue found | Orchestrator: route by type |
 
@@ -287,7 +287,13 @@ Round = one rejection (initial submission is not a round).
 
 ### Crash Recovery
 
-Re-spawn immediately + "Previous attempt failed. Start fresh." After 2 failed re-spawns, escalate to user.
+**Proving unresponsiveness (all roles):** A teammate blocked on a long-running command (compilation, test suite, large build) is working, not hanging. Before declaring unresponsive, check observable system state: (1) does the teammate have an active running process? If yes — not hung, check back later. (2) Are files or git state changing in their worktree? If yes — not hung. (3) Only if no active process AND no file/git activity for a sustained period is the teammate confirmed unresponsive. "Seems slow" or "not responding to messages" while a process runs is normal.
+
+**Executors (confirmed unresponsive):** Have the paired reviewer review all committed and uncommitted changes. Unreviewed executor output is never discarded. After review: keep approved changes, then re-spawn for remaining work.
+
+**Non-executors (confirmed unresponsive):** Re-spawn immediately + "Previous attempt failed. Start fresh."
+
+After 2 failed re-spawns of any role, escalate to user.
 
 ## Reviewer Protocol
 
@@ -332,18 +338,22 @@ Dispute a finding with evidence: cite code, spec, or test. Reviewer withdraws or
 
 **NEVER implement.** Your context is the coordination state -- code pollutes it. Delegate everything.
 
+**PAIR INVARIANT (hard rule):** Every executor MUST have its paired reviewer spawned and confirmed BEFORE the executor receives any task. Never assign new work to the same executor whose previous submission is unreviewed — assign it to a different executor/reviewer pair instead. Sequence per pair: spawn reviewer -> confirm alive -> spawn executor -> executor implements -> reviewer reviews -> loop until approved -> only then may this executor receive next task. While a pair is in review, other pairs work in parallel. Violating this invariant is a skill violation equivalent to orchestrator writing code.
+
 1. **Track EVERYTHING as tasks.** Every deliverable, sub-task, blocker = task. Task list is single source of truth.
 2. **Create agent team** (NOT Agent tool) with mandatory compliance in spawn prompts.
 3. **Tasks with dependencies first**, then spawn teammates to claim them. Every task description must include: "Tag all factual claims: `[T<tier>: source, confidence]`."
 4. **Assign file ownership** per design doc. **Create git worktrees** for 2+ parallel executors.
 5. **Route feedback** between unpaired roles.
-6. **Monitor progress.** Stale task = investigate.
+6. **Monitor progress.** Stale task = investigate per Crash Recovery: check for active process and file/git activity in their worktree. If confirmed unresponsive, follow the respawn sequence.
 7. **Phase checkpoints** with structured summaries for downstream agents.
 8. **Budget context** -- summaries, not raw output (see below).
 9. **Enforce loop limits.** Escalate on 4th rejection / 3rd verifier re-entry.
-10. **Crash recovery** -- re-spawn immediately (max 2).
+10. **Crash recovery** -- for executors: review changes before re-spawning. For others: re-spawn immediately. Max 2 re-spawns.
 11. **Manage lifetimes** per Teammate Lifecycle (below).
-12. **Clean up** when done. ALL tasks completed.
+12. **Enforce pair invariant.** Before every executor task assignment, verify reviewer exists and previous work is reviewed.
+13. **Address all reported issues.** Every executor-reported issue becomes a task. Assign an executor to critically analyze it (code cleanness, semantic integrity, correctness). If dismissed: document rationale. If validated and minor: the analyzing executor fixes it directly. If validated and design-level: full pipeline. No report may be silently ignored.
+14. **Clean up** when done. ALL tasks completed.
 
 ### Context Budgeting
 
@@ -364,7 +374,7 @@ Roles stay alive until downstream consumers finish. Verifier always spawned **fr
 | Role | Alive until | Why |
 |------|-----------|-----|
 | Explorers | Design approved | Designer may need more info |
-| Designer + Reviewer | Phase 3 end | Executors may report design impossible |
+| Designer + Reviewer | Phase 3 end | Design issues re-enter full pipeline |
 | Executors + Reviewers | Phase 4 end | Test failures trace to code |
 | Test Designer | Phase 4 end | Test executors need spec clarification |
 | Test Executors + Reviewers | Phase 5 end | Verifier may request coverage |
@@ -399,6 +409,7 @@ Compliance:
 [After both spawned:] Paired with [CONFIRMED NAME]. Message directly.
 
 - [ROLE-SPECIFIC RULES]
+- [FOR EXECUTORS:] While implementing, actively look for code smell and design issues in all code you study or touch. Report ALL findings to lead — do not silently work around them.
 - Mark task complete + notify lead when done
 - If blocked, message lead with specifics
 ```
@@ -410,6 +421,9 @@ Compliance:
 | Using Agent tool instead of agent team | STOP. "Create an agent team", not Agent tool |
 | Work without corresponding task | Create task immediately |
 | Spawning custom-named teammates outside defined roles | Unbounded growth | Use role names: executor-N, explorer-N. Reassign idle teammates. |
+| Executor assigned new task with unreviewed previous work | STOP. Assign to a different executor/reviewer pair instead. This executor waits for its reviewer |
+| Executor spawned without paired reviewer already alive | STOP. Spawn reviewer first, confirm alive, then spawn executor |
+| Executor-reported issue silently ignored | Create task, assign executor to analyze. Validated -> full pipeline. Dismissed -> documented rationale |
 | Orchestrator writing code | Create executor teammate |
 | Reviewer approving without evidence | Re-spawn with stricter prompt |
 | T5 in explorer findings | Send back to verify or discard |
@@ -419,11 +433,15 @@ Compliance:
 | Mandatory skill not invoked | Reviewer rejects |
 | Untagged claims | Send back to tag |
 | 4th rejection in same pair | Escalate: replace or re-scope |
-| Teammate unresponsive | Re-spawn immediately |
+| Teammate seems slow or won't respond | Not unresponsive. Check for active process and file/git activity — a running build means they're working |
+| Non-executor confirmed unresponsive | Re-spawn immediately |
+| Executor confirmed unresponsive | Review its changes first (paired reviewer), then re-spawn for remaining work |
 | No critique log | Reviewer rejects |
 | Test specs don't match interfaces | Test designer waits for contracts |
 
 ## Common Mistakes
+
+**Assigning executor work without active reviewer.** Spawn reviewer first, confirm alive, then spawn executor. Never queue a second task to the same executor with unreviewed output — assign to a different pair. While one pair is in review, other pairs work in parallel.
 
 **Capping executor count.** One pair per independent module. No limits.
 
