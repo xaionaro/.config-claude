@@ -36,7 +36,7 @@ digraph when_to_use {
 
 ## Modes
 
-**Phased Pipeline (default):** Sequential phases. Each completes before the next. Team size adapts to task.
+**Phased Pipeline (default):** Phases are sequential for initial progression. Within each phase, all independent work runs in parallel. Different phases may run simultaneously when independent (e.g. executors continue on unaffected modules while a reported design issue re-enters exploration/design). Team size adapts to task.
 
 **Full Parallel (user-requested only):** Create all tasks with dependency markers. Spawn roles when dependencies met:
 - Explorers: immediate
@@ -441,7 +441,7 @@ Compliance:
 | Work without corresponding task | Create task immediately |
 | Spawning custom-named teammates outside defined roles | Unbounded growth | Use role names: executor-N, explorer-N. Reassign idle teammates. |
 | Executor assigned new task with unreviewed previous work | STOP. Assign to a different executor/reviewer pair instead. This executor waits for its reviewer |
-| Executor spawned without paired reviewer already alive | STOP. Spawn reviewer first, confirm alive, then spawn executor |
+| Executor spawned without paired reviewer already alive | STOP. Batch-spawn all reviewers, confirm all alive, then batch-spawn executors |
 | Executor-reported issue silently ignored | Create task, assign executor to analyze. Validated -> full pipeline. Dismissed -> documented rationale |
 | Orchestrator writing code | Create executor teammate |
 | Reviewer editing code/design/tests | STOP. Reviewers report only. Executor implements fixes |
@@ -462,7 +462,7 @@ Compliance:
 
 ## Common Mistakes
 
-**Assigning executor work without active reviewer.** Spawn reviewer first, confirm alive, then spawn executor. Never queue a second task to the same executor with unreviewed output — assign to a different pair. While one pair is in review, other pairs work in parallel.
+**Assigning executor work without active reviewer.** Batch-spawn all reviewers, confirm all alive, then batch-spawn all executors. Never queue a second task to an executor with unreviewed output -- assign to a different pair. Pairs never wait on other pairs.
 
 **Capping executor count.** One pair per independent module. No limits.
 
