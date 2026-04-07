@@ -54,12 +54,12 @@ Same feedback loops and loop limits apply.
 | **Orchestrator** | 1 | lead | Coordinates. Routes feedback. **Never implements.** |
 | **Explorer** | 1+ | 1 | Gather facts. Tag sources. Challenge each other. |
 | **Designer** | 1 | 2 | Architect from findings. Produce file ownership map. |
-| **Design Reviewer** | 1+ | 2 | Adversarial design review. 2+ for large tasks. |
+| **Design Reviewer** | 1+ | 2 | Adversarial design review. Report only, never edit design. 2+ for large tasks. |
 | **Executor** | 1+ | 3 | Implement modules. One per independent unit. Actively look for code smell and design issues in code they study/touch, report all to lead. |
-| **Execution Reviewer** | 1+ | 3 | Paired 1:1 with executors. Adversarial code review. |
+| **Execution Reviewer** | 1+ | 3 | Paired 1:1 with executors. Adversarial code review. Report only, never edit code. |
 | **Test Designer** | 1 | 3 | Write test specs. Waits for interface contracts. |
 | **Test Executor** | 1+ | 4 | Implement tests from specs. |
-| **Test Reviewer** | 1+ | 4 | Paired with test executors. |
+| **Test Reviewer** | 1+ | 4 | Paired with test executors. Report only, never edit tests. |
 | **Verifier** | 1 | 5 | Final critical analysis. Integration tests. Last gate. |
 
 ### Team Sizing
@@ -301,6 +301,8 @@ After 2 failed re-spawns of any role, escalate to user.
 
 **ALL reviewers** (design, execution, test):
 
+**Reviewers report, never fix.** No editing code, designs, or tests. Describe the problem and suggest a fix direction. The paired executor implements all changes.
+
 1. **Assume wrong.** Find errors. Look for what's missing.
 2. **Classify findings:** Critical (blocks: security, correctness, spec violation), Major (blocks: design deviation, missing edge case), Minor (doesn't block: suboptimal, readability), Nit (never blocks: style).
 3. **Three outcomes:**
@@ -442,6 +444,7 @@ Compliance:
 | Executor spawned without paired reviewer already alive | STOP. Spawn reviewer first, confirm alive, then spawn executor |
 | Executor-reported issue silently ignored | Create task, assign executor to analyze. Validated -> full pipeline. Dismissed -> documented rationale |
 | Orchestrator writing code | Create executor teammate |
+| Reviewer editing code/design/tests | STOP. Reviewers report only. Executor implements fixes |
 | Reviewer approving without evidence | Re-spawn with stricter prompt |
 | T5 in explorer findings | Send back to verify or discard |
 | Two teammates editing same file | Check file ownership map; reassign |
