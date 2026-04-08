@@ -21,18 +21,17 @@ Example: "Create an agent team with 3 explorer teammates, 1 designer, 1 design r
 **Only skill-defined roles.** Name by role (`executor-1`, `explorer-2`). Reassign idle teammates instead of spawning new ones.
 </CRITICAL>
 
-## Modes
+## Pipeline Model
 
-**Phased Pipeline (default):** Phases are sequential for initial progression. Within each phase, all independent work runs in parallel. Different phases may run simultaneously when independent (e.g. executors continue on unaffected modules while a reported design issue re-enters exploration/design). Team size adapts to task.
+**Per-task pipelines, not global phases.** Research and design are global (produce overall architecture). After that, each independent task flows through its own execution → testing pipeline independently. A task ready for testing proceeds immediately — it does not wait for other tasks.
 
-**Full Parallel (user-requested only):** Create all tasks with dependency markers. Spawn roles when dependencies met:
-- Explorers: immediate
-- Designer: after explorers
-- Executors + test designer: after design approved
-- Test executors: after executors + test designer
-- Verifier: after all tests approved
-
-Same feedback loops and loop limits apply.
+| Stage | Scope | When it starts |
+|-------|-------|---------------|
+| Research | Global | Immediately |
+| Design | Global | After research |
+| Execution + review | Per task | After design approved. Executor writes unit tests with the code. |
+| Testing + review | Per task | After that task's code approved. Covers integration/E2E tests. |
+| Verification | Global | After ALL tasks tested |
 
 ## Roles
 
@@ -43,16 +42,16 @@ Same feedback loops and loop limits apply.
 | **Explorer** | 1+ | 1 | Gather facts. Tag sources. Challenge each other. |
 | **Designer** | 1 | 2 | Architect from findings. Produce file ownership map. |
 | **Design Reviewer** | 1+ | 2 | Adversarial design review. Report only, never edit design. 2+ for large tasks. |
-| **Executor** | 1+ | 3 | Implement modules. One per independent unit. Actively look for code smell and design issues in code they study/touch, report all to coordinator. Broken infra or resorting to a workaround = notify coordinator before proceeding. |
+| **Executor** | 1+ | 3 | Implement assigned task + unit tests. One per independent unit of work. Actively look for code smell and design issues in code they study/touch, report all to coordinator. Broken infra or resorting to a workaround = notify coordinator before proceeding. |
 | **Execution Reviewer** | 1+ | 3 | Paired 1:1 with executors. Adversarial code review. Report only, never edit code. |
 | **Test Designer** | 1 | 3 | Write test specs. Waits for interface contracts. |
 | **Test Executor** | 1+ | 4 | Implement tests from specs. |
 | **Test Reviewer** | 1+ | 4 | Paired with test executors. Report only, never edit tests. |
-| **Verifier** | 1 | 5 | Final critical analysis. Integration tests. Last gate. |
+| **Verifier** | 1 | 5 | Final critical analysis. Runs all tests. Last gate. |
 
 ### Team Sizing
 
-One executor pair per independent module. ~4 agents per phase before coordination overhead; above that ensure strictly independent work.
+One executor pair per independent unit of work. ~4 agents per phase before coordination overhead; above that ensure strictly independent work.
 
 ## Mandatory Compliance
 
@@ -115,7 +114,7 @@ Before marking any task complete:
 - `git diff` for secrets before every commit. Static checks before every commit. Never push without user approval. No AI co-author lines.
 - Security first. Never disable security features. OWASP top 10 for all code. Validate at system boundaries.
 
-## Phase Flow
+## Flow (per-module after design)
 
 ```dot
 digraph phases {
@@ -202,7 +201,7 @@ digraph phases {
     "Execution reviewer approves?" -> "Mark all modules approved" [label="yes - with evidence"];
     "Write test specs (wait for interface contracts)" -> "Finalize test specs";
 
-    "Mark all modules approved" -> "PHASE 4: TESTING + INTEGRATION";
+    "Mark all modules approved" -> "PHASE 4: TESTING + INTEGRATION" [label="per module, not global gate"];
     "Finalize test specs" -> "PHASE 4: TESTING + INTEGRATION";
     "PHASE 4: TESTING + INTEGRATION" -> "Spawn test executor/reviewer pairs";
     "Spawn test executor/reviewer pairs" -> "Implement unit + integration tests from specs";
@@ -212,7 +211,7 @@ digraph phases {
     "Revise tests based on feedback" -> "Test reviewer approves?";
     "Test reviewer approves?" -> "Confirm all tests pass" [label="yes - with evidence"];
 
-    "Confirm all tests pass" -> "PHASE 5: VERIFICATION";
+    "Confirm all tests pass" -> "PHASE 5: VERIFICATION" [label="after ALL modules tested"];
     "PHASE 5: VERIFICATION" -> "Spawn verifier";
     "Spawn verifier" -> "Verify against full checklist";
     "Verify against full checklist" -> "Verifier approves?";
@@ -223,11 +222,11 @@ digraph phases {
 }
 ```
 
-## Phase Checkpoints & Re-Entry
+## Checkpoints & Re-Entry
 
-After each phase, coordinator records: **what was produced**, **who approved** (with evidence), **git SHA**.
+After each task milestone (code approved, tests approved), coordinator records: **what was produced**, **who approved** (with evidence), **git SHA**.
 
-**Re-entry impact assessment:** Diff old vs new design. Invalidate only pairs touching changed interfaces (reset loop counters). Notify test designer. Unaffected pairs continue.
+**Re-entry impact assessment:** Diff old vs new design. Invalidate only pairs touching changed interfaces (reset loop counters). Notify test designer. Unaffected tasks continue their pipelines.
 
 ## Design Output Requirements
 
@@ -239,12 +238,14 @@ Phase 2 design **must include**:
 
 **Git worktrees:** 2+ parallel executors -> each gets own worktree. Create before spawning, merge after approval.
 
-## Integration Testing Protocol
+## Testing Protocol
 
-Phase 4 covers unit + integration tests:
-- **Test designer** writes cross-module integration specs from dependency graph + interface contracts.
-- Every inter-module interface must have at least one integration test on the real call path (no mocks at boundaries).
-- **Failure routing:** interface bug -> Phase 3 executor pair. Design flaw -> Phase 1.
+**Unit tests:** Written by executors alongside their code. Part of execution, not a separate phase.
+
+**Integration/E2E tests (Phase 4):**
+- **Test designer** writes cross-task integration and E2E specs from dependency graph + interface contracts.
+- Every cross-task interface must have at least one test on the real call path (no mocks at boundaries).
+- **Failure routing:** cross-task boundary bug → executor pair. Design flaw → research/design.
 
 ## Feedback Loops
 
@@ -327,7 +328,7 @@ Review independently first. Minority dissent requires counter-evidence to overri
 4. **Assign file ownership** per design doc. **Create git worktrees** for 2+ parallel executors.
 5. **Route feedback** between unpaired roles.
 6. **Monitor progress.** Stale task = investigate per Crash Recovery: check for active process and file/git activity in their worktree. If confirmed unresponsive, follow the respawn sequence.
-7. **Phase checkpoints** with structured summaries for downstream agents.
+7. **Drive per-task pipelines.** When a task's code is approved + its test specs are ready → immediately spawn test executor/reviewer pair for that task. Do not wait for other tasks. After ALL tasks tested → spawn verifier. Record checkpoint per task: what was produced, who approved, git SHA.
 8. **Budget context** -- summaries, not raw output (see below).
 9. **Enforce loop limits.** Escalate on 11th rejection / 3rd verifier re-entry.
 10. **Crash recovery** -- detect unresponsive teammates, request lead to re-spawn. For executors: review changes before re-spawning. Max 2 re-spawns.
@@ -433,6 +434,7 @@ Compliance:
 |---------|-----|
 | Using Agent tool instead of agent team | STOP. "Create an agent team", not Agent tool |
 | Work without corresponding task | Create task immediately |
+| Task waiting for other tasks before testing | Pipelines are per-task. Code approved + test specs ready → start testing immediately |
 | Spawning custom-named teammates outside defined roles | Unbounded growth | Use role names: executor-N, explorer-N. Reassign idle teammates. |
 | Executor assigned new task with unreviewed previous work | STOP. Assign to a different executor/reviewer pair instead. This executor waits for its reviewer |
 | Executor spawned without paired reviewer already alive | STOP. Batch-spawn all reviewers, confirm all alive, then batch-spawn executors |
@@ -455,7 +457,7 @@ Compliance:
 | No critique log | Reviewer rejects |
 | Test specs don't match interfaces | Test designer waits for contracts |
 | Agent claim accepted without verification | Reviewers validate completion; explorers verify blockers and external blame |
-| Capping executor count | One pair per independent module. No limits |
+| Capping executor count | One pair per independent unit of work. No limits |
 | Skipping phases | All phases mandatory when this skill triggers |
 | Early teammate shutdown | Keep alive until downstream consumers finish (see Lifecycle table) |
 | Trusting reviewer approval blindly | Verifier exists to catch reviewer mistakes |

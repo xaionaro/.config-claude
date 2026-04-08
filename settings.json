@@ -1,4 +1,8 @@
 {
+  "env": {
+    "CLAUDE_CODE_EFFORT_LEVEL": "high",
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
   "attribution": {
     "commit": "",
     "pr": ""
@@ -76,10 +80,6 @@
       }
     }
   },
-  "skipDangerousModePermissionPrompt": true,
   "effortLevel": "high",
-  "env": {
-    "CLAUDE_CODE_EFFORT_LEVEL": "high",
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
-  }
+  "skipDangerousModePermissionPrompt": true
 }
