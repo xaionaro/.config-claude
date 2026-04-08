@@ -344,6 +344,8 @@ Review independently first. Minority dissent requires counter-evidence to overri
 
 **Events and enforcement:**
 
+**On every event:** check for rule violations (untagged claims, missing skills, skipped reviews, shortcuts). Remind the violating agent of the specific rule.
+
 | Event | Lead action |
 |-------|-------------|
 | Coordinator requests spawn | Verify spawn checklist, create agent team / spawn teammate |
@@ -353,7 +355,7 @@ Review independently first. Minority dissent requires counter-evidence to overri
 | Teammate reports coordinator doing work directly | Remind coordinator to delegate |
 | Teammate reports unaddressed issue | Remind coordinator to create task and assign analysis |
 | Coordinator ignores reminder (3+ on same rule) | Escalate to user |
-| Hourly audit (every 60 minutes) | Spot-check agent output for rule violations the coordinator should have caught. Only intervene if coordinator missed them |
+| Hourly audit (every 60 minutes) | Spot-check agent output for violations coordinator should have caught. Only intervene if coordinator missed them |
 
 ### Spawn Checklist (lead verifies before every spawn)
 
