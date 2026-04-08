@@ -10,6 +10,7 @@ description: Use when writing, reviewing, or modifying Go code (*.go, go.mod, go
 - Write idiomatic Go (Effective Go, Go Proverbs).
 - Choose the correct, clean solution even when it's harder than the simple, practical, or convenient one.
 - **Read before using.** Before first use of any package (stdlib or third-party), read its API surface — godoc, source, or context7. Don't guess signatures, defaults, or behavior.
+- **Prefer existing implementations.** Use well-maintained third-party packages over reimplementing functionality. Search for established libraries before writing from scratch.
 
 ## Strong Typing
 
