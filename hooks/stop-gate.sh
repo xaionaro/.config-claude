@@ -14,11 +14,42 @@ if [ -z "$SESSION_ID" ] || [ "$SESSION_ID" = "null" ]; then
   exit 0
 fi
 
+# Skip stop hook for roles that don't write code
+case "${CLAUDE_ROLE:-}" in
+  reviewer|coordinator) exit 0 ;;
+esac
+
 PROOF_DIR="$HOME/.cache/claude-proof/$SESSION_ID"
 PROOF="$PROOF_DIR/proof.md"
 
+# Scope loop detection per agent (subagents share parent session_id)
+AGENT_ID=$(echo "$INPUT" | jq -r '.agent_id // empty')
+if [ -n "$AGENT_ID" ]; then
+  TIMESTAMPS="$PROOF_DIR/stop_timestamps_${AGENT_ID}"
+else
+  TIMESTAMPS="$PROOF_DIR/stop_timestamps"
+fi
+
+# Track stop hook invocations for loop detection
+mkdir -p "$PROOF_DIR"
+echo "$(date +%s)" >> "$TIMESTAMPS"
+# Count invocations in last 5 minutes
+NOW=$(date +%s)
+CUTOFF=$((NOW - 300))
+RECENT_COUNT=0
+if [ -f "$TIMESTAMPS" ]; then
+  RECENT_COUNT=$(awk -v cutoff="$CUTOFF" '$1 >= cutoff' "$TIMESTAMPS" | wc -l)
+  # Prune old entries
+  awk -v cutoff="$CUTOFF" '$1 >= cutoff' "$TIMESTAMPS" > "$TIMESTAMPS.tmp" && mv "$TIMESTAMPS.tmp" "$TIMESTAMPS"
+fi
+
+LOOP_REMINDER=""
+if [ "$RECENT_COUNT" -ge 5 ]; then
+  LOOP_REMINDER=" LOOP DETECTED ($RECENT_COUNT hits in 5min): You are stuck in a stop-hook loop. This is YOUR problem to solve autonomously. How the stop hook works: (1) it blocks your first stop attempt, (2) you read ~/.cache/claude-proof/\$SESSION_ID/instructions.md or ~/.claude/hooks/stop-checklist.md, (3) you write proof to $PROOF, (4) you stop again and it lets you through. Figure out which step you are failing and fix it. Do NOT keep retrying the same approach."
+fi
+
 block() {
-  jq -n --arg reason "$1" '{"decision": "block", "reason": $reason}'
+  jq -n --arg reason "$1$LOOP_REMINDER" '{"decision": "block", "reason": $reason}'
   exit 0
 }
 
