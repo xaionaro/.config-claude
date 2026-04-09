@@ -52,6 +52,7 @@ Example: "Create an agent team with 3 explorer teammates, 1 designer, 1 design r
 | **Test Reviewer** | 1+ | 4 | Paired with test executors. Report only, never edit tests. |
 | **Verifier** | 1+ | per task | For lightweight tasks (no code, no test pipeline). Adversarially checks deliverable against all expectations. Replaces test pipeline when testing is N/A. |
 | **Brainstormer** | 1 | any | On-demand when a blocker emerges. Genius creative unblocker — thinks outside the box. Lists as many solution ideas as possible. Positives only — no negatives, no filtering, no feasibility judgment. Bigger list = better. |
+| **Snitch** | 1 | all | CCed on all completion/blocker claims. Independently verifies all rules are followed. Notifies lead on any violation. Success = finding violations that the lead confirms. The more confirmed violations found, the better. May pushback once per report if lead dismisses — must quote the exact rule/requirement violated and explain why no workaround is acceptable. |
 | **QA** | 1 | final | Final integration check. Runs all tests. Last gate. |
 
 ### Team Sizing
@@ -255,7 +256,7 @@ Phase 2 design **must include**:
 
 ## Feedback Loops
 
-Paired roles communicate **directly**. All other feedback routes through coordinator. **All completion claims and blocker reports must CC the lead** — the lead needs direct access to verify the coordinator doesn't accept claims at face value.
+Paired roles communicate **directly**. All other feedback routes through coordinator. **All completion claims and blocker reports must CC both the lead and the snitch** — independent verification that the coordinator doesn't accept claims at face value.
 
 | From | To | Trigger | Route |
 |------|----|---------|-------|
@@ -394,7 +395,7 @@ Review independently first. Minority dissent requires counter-evidence to overri
 - [ ] Paired reviewer confirmed alive (executor spawns only)
 - [ ] Reviewer/verifier spawns include: executor's original objective with full context, and all scrutiny rules (coding style, claim tagging, OWASP, semantic integrity, etc.)
 - [ ] Preemptive warnings included: coordinator anticipates the most likely mistakes this agent could make given the specific task and explicitly warns against them in the spawn prompt
-- [ ] CLAUDE_ROLE env set to role name for every spawn (coordinator, explorer, designer, reviewer, executor, test-designer, test-executor, test-reviewer, verifier, qa, brainstormer)
+- [ ] CLAUDE_ROLE env set to role name for every spawn (coordinator, explorer, designer, reviewer, executor, test-designer, test-executor, test-reviewer, verifier, qa, brainstormer, snitch)
 
 Lead rejects spawn if any item unchecked.
 
@@ -419,6 +420,7 @@ Downstream agents get **structured summaries**, not raw upstream output.
 | Executors + Reviewers | Phase 4 end | Test failures trace to code |
 | Test Designer | Phase 4 end | Test executors need spec clarification |
 | Test Executors + Reviewers | QA end | QA may request coverage |
+| Snitch | DONE | Monitors all claims throughout |
 | **QA** | DONE | **Always fresh** |
 
 Re-entry: original designer handles Phase 2 re-entry directly — full context preserved.
@@ -456,10 +458,10 @@ Compliance:
 [After both spawned:] Paired with [CONFIRMED NAME]. Message directly.
 
 - [ROLE-SPECIFIC RULES]
-- Set env CLAUDE_ROLE=[role name] (e.g. executor, reviewer, coordinator, explorer, designer, verifier, qa, brainstormer)
+- Set env CLAUDE_ROLE=[role name] (e.g. executor, reviewer, coordinator, explorer, designer, verifier, qa, brainstormer, snitch)
 - [FOR EXECUTORS:] While implementing, actively look for code smell and design issues in all code you study or touch. Report ALL findings to coordinator — do not silently work around them.
-- Mark task complete + notify coordinator when done. **CC the lead on all completion and blocker claims.**
-- If blocked, message coordinator with specifics. **CC the lead.**
+- Mark task complete + notify coordinator when done. **CC the lead and snitch on all completion and blocker claims.**
+- If blocked, message coordinator with specifics. **CC the lead and snitch.**
 ```
 
 ## Red Flags
