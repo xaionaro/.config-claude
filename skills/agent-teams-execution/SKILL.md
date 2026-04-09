@@ -243,8 +243,9 @@ Phase 2 design **must include**:
 **Unit tests:** Written by executors alongside their code. Part of execution, not a separate phase.
 
 **Integration/E2E tests (Phase 4):**
-- **Test designer** writes cross-task integration and E2E specs from dependency graph + interface contracts.
+- **Test designer** writes specs covering all applicable test types: integration tests (cross-task boundaries), full E2E tests (entire user-facing flows), and UI tests (screen manipulation, interaction sequences) when the project has a UI.
 - Every cross-task interface must have at least one test on the real call path (no mocks at boundaries).
+- E2E tests exercise complete workflows as a user would, including UI manipulation when applicable.
 - **Failure routing:** cross-task boundary bug → executor pair. Design flaw → research/design.
 
 ## Feedback Loops
