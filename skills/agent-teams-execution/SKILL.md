@@ -52,7 +52,7 @@ Example: "Create an agent team with 3 explorer teammates, 1 designer, 1 design r
 | **Test Reviewer** | 1+ | 4 | Paired with test executors. Report only, never edit tests. |
 | **Verifier** | 1+ | per task | For lightweight tasks (no code, no test pipeline). Adversarially checks deliverable against all expectations. Replaces test pipeline when testing is N/A. |
 | **Brainstormer** | 1 | any | On-demand when a blocker emerges. Genius creative unblocker — thinks outside the box. Lists as many solution ideas as possible. Positives only — no negatives, no filtering, no feasibility judgment. Bigger list = better. |
-| **Snitch** | 1 | all | CCed on all completion/blocker claims. Independently verifies all rules are followed. Notifies lead on any violation. Success = finding violations that the lead confirms. The more confirmed violations found, the better. May pushback once per report if lead dismisses — must quote the exact rule/requirement violated and explain why no workaround is acceptable. Sets up hourly cron job to scan all teammates' output for violations and detect dead agents (context limit, API quota, crashes). |
+| **Snitch** | 1 | all | CCed on all completion/blocker claims. Independently verifies all rules are followed. Notifies lead on any violation. Success = finding violations that the lead confirms. The more confirmed violations found, the better. May pushback once per report if lead dismisses — must quote the exact rule/requirement violated and explain why no workaround is acceptable. Sets up hourly cron job that first re-invokes this skill, then scans all teammates' output for violations and detects dead agents (context limit, API quota, crashes). Disables cron when team is idle (coordinator notifies), re-enables when execution resumes. |
 | **QA** | 1 | final | Final integration check. Runs all tests. Last gate. |
 
 ### Team Sizing
@@ -355,7 +355,8 @@ Review independently first. Minority dissent requires counter-evidence to overri
 13. **Address all reported issues.** Every executor-reported issue becomes a task. Assign an executor to critically analyze it (code cleanness, semantic integrity, correctness). If dismissed: document rationale. If validated and minor: the analyzing executor fixes it directly. If validated and design-level: full pipeline. No report may be silently ignored.
 14. **Audit subordinates every 10 minutes.** Check each active teammate's recent output for rule violations: untagged claims, missing skill invocations, unreviewed code, shortcuts. Create a task for each violation found.
 15. **Interrupt violations immediately.** Same protocol as lead: send correction message first, then `tmux send-keys -t <pane> Escape` to interrupt. Don't wait for their turn to end.
-16. **Clean up** when done. ALL tasks completed.
+16. **Notify snitch on idle/resume.** SendMessage snitch when team goes idle (all tasks waiting on user) and when execution resumes, so snitch can disable/enable its cron job.
+17. **Clean up** when done. ALL tasks completed.
 
 ## Lead Responsibilities
 
