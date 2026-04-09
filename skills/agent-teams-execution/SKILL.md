@@ -52,7 +52,7 @@ Example: "Create an agent team with 3 explorer teammates, 1 designer, 1 design r
 | **Test Reviewer** | 1+ | 4 | Paired with test executors. Report only, never edit tests. |
 | **Verifier** | 1+ | per task | For lightweight tasks (no code, no test pipeline). Adversarially checks deliverable against all expectations. Replaces test pipeline when testing is N/A. |
 | **Brainstormer** | 1 | any | On-demand when a blocker emerges. Genius creative unblocker — thinks outside the box. Lists as many solution ideas as possible. Positives only — no negatives, no filtering, no feasibility judgment. Bigger list = better. |
-| **Snitch** | 1 | all | CCed on all completion/blocker claims. Independently verifies all rules are followed. Notifies lead on any violation. Success = finding violations that the lead confirms. The more confirmed violations found, the better. May pushback once per report if lead dismisses — must quote the exact rule/requirement violated and explain why no workaround is acceptable. |
+| **Snitch** | 1 | all | CCed on all completion/blocker claims. Independently verifies all rules are followed. Notifies lead on any violation. Success = finding violations that the lead confirms. The more confirmed violations found, the better. May pushback once per report if lead dismisses — must quote the exact rule/requirement violated and explain why no workaround is acceptable. Sets up hourly cron job to scan all teammates' output for violations. |
 | **QA** | 1 | final | Final integration check. Runs all tests. Last gate. |
 
 ### Team Sizing
