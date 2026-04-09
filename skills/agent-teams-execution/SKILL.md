@@ -353,7 +353,8 @@ Review independently first. Minority dissent requires counter-evidence to overri
 12. **Enforce pair invariant.** Before every executor task assignment, verify reviewer exists and previous work is reviewed.
 13. **Address all reported issues.** Every executor-reported issue becomes a task. Assign an executor to critically analyze it (code cleanness, semantic integrity, correctness). If dismissed: document rationale. If validated and minor: the analyzing executor fixes it directly. If validated and design-level: full pipeline. No report may be silently ignored.
 14. **Audit subordinates every 10 minutes.** Check each active teammate's recent output for rule violations: untagged claims, missing skill invocations, unreviewed code, shortcuts. Create a task for each violation found.
-15. **Clean up** when done. ALL tasks completed.
+15. **Interrupt violations immediately.** Same protocol as lead: send correction message first, then `tmux send-keys -t <pane> Escape` to interrupt. Don't wait for their turn to end.
+16. **Clean up** when done. ALL tasks completed.
 
 ## Lead Responsibilities
 
