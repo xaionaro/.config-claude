@@ -7,9 +7,11 @@ description: Use when facing any non-trivial software building or debugging task
 
 Phased agent team with adversarial review loops and tiered information trust.
 
-**Core principle:** Explorers gather hard facts, designer architects from facts, adversarial reviewers tear apart every deliverable, executors loop with reviewers until approved, verifier validates the big picture. Coordinator manages logistics, lead audits rule compliance. Neither implements.
+**Core principle:** Explorers gather hard facts, designer architects from facts, adversarial reviewers tear apart every deliverable, executors loop with reviewers until approved, QA validates the big picture. Coordinator manages logistics, lead audits rule compliance. Neither implements.
 
 **Parallelism principle:** Never serialize independent work. Parallelize everything that can be parallelized.
+
+**No urgency. Infinite time.** Never prioritize speed over discipline. Every shortcut, skipped review, or "good enough" degrades the final result. Do it right, every time.
 
 <CRITICAL>
 **You MUST create an AGENT TEAM -- do NOT use subagents.**
@@ -23,7 +25,7 @@ Example: "Create an agent team with 3 explorer teammates, 1 designer, 1 design r
 
 ## Pipeline Model
 
-**Per-task pipelines, not global phases.** Research and design are global (produce overall architecture). After that, each independent task flows through its own execution → testing pipeline independently. A task ready for testing proceeds immediately — it does not wait for other tasks.
+**Per-task pipelines.** Research and design are global (produce overall architecture + task breakdown). After that, each task flows through its own pipeline independently:
 
 | Stage | Scope | When it starts |
 |-------|-------|---------------|
@@ -31,7 +33,8 @@ Example: "Create an agent team with 3 explorer teammates, 1 designer, 1 design r
 | Design | Global | After research |
 | Execution + review | Per task | After design approved. Executor writes unit tests with the code. |
 | Testing + review | Per task | After that task's code approved. Covers integration/E2E tests. |
-| Verification | Global | After ALL tasks tested |
+
+**Final QA:** After all per-task pipelines complete, QA performs full end-to-end verification of everything touched — runs all tests, checks all requirements, validates the integrated whole. This is not a pipeline stage but a separate final gate.
 
 ## Roles
 
@@ -47,8 +50,9 @@ Example: "Create an agent team with 3 explorer teammates, 1 designer, 1 design r
 | **Test Designer** | 1 | 3 | Write test specs. Waits for interface contracts. |
 | **Test Executor** | 1+ | 4 | Implement tests from specs. |
 | **Test Reviewer** | 1+ | 4 | Paired with test executors. Report only, never edit tests. |
+| **Verifier** | 1+ | per task | For lightweight tasks (no code, no test pipeline). Adversarially checks deliverable against all expectations. Replaces test pipeline when testing is N/A. |
 | **Brainstormer** | 1 | any | On-demand when a blocker emerges. Genius creative unblocker — thinks outside the box. Lists as many solution ideas as possible. Positives only — no negatives, no filtering, no feasibility judgment. Bigger list = better. |
-| **Verifier** | 1 | 5 | Final critical analysis. Runs all tests. Last gate. |
+| **QA** | 1 | final | Final integration check. Runs all tests. Last gate. |
 
 ### Team Sizing
 
@@ -99,9 +103,9 @@ Executors invoke coding style + `proof-driven-development`. Test executors invok
 - Strong typing for domain concepts. No bare primitives where named types belong.
 - Clean solution over hack, always. Reviewers reject shortcuts, workarounds, and "good enough for now."
 
-### Stop Checklist
+### Stop Checklist (BLOCKING — every item must pass or task stays open)
 
-Before marking any task complete:
+A task CANNOT be marked complete until every applicable item passes. Reviewers reject any "done" claim that skips an item. Lead enforces.
 - All changes committed
 - Objective evidence of completion
 - All claims tagged `[T<tier>: source, confidence]`
@@ -115,7 +119,7 @@ Before marking any task complete:
 - `git diff` for secrets before every commit. Static checks before every commit. Never push without user approval. No AI co-author lines.
 - Security first. Never disable security features. OWASP top 10 for all code. Validate at system boundaries.
 
-## Flow (per-module after design)
+## Flow (per-task after design)
 
 ```dot
 digraph phases {
@@ -148,7 +152,7 @@ digraph phases {
     "Report to lead - re-enter Phase 1" [shape=box];
     "Write test specs (wait for interface contracts)" [shape=box];
     "Finalize test specs" [shape=doublecircle];
-    "Mark all modules approved" [shape=doublecircle];
+    "Task code approved" [shape=doublecircle];
     "STOP: 10 exec rejections - escalate" [shape=octagon, style=filled, fillcolor=red, fontcolor=white];
 
     "PHASE 4: TESTING + INTEGRATION" [shape=doublecircle];
@@ -159,13 +163,13 @@ digraph phases {
     "Confirm all tests pass" [shape=doublecircle];
     "STOP: 10 test rejections - escalate" [shape=octagon, style=filled, fillcolor=red, fontcolor=white];
 
-    "PHASE 5: VERIFICATION" [shape=doublecircle];
-    "Spawn verifier" [shape=box];
+    "FINAL QA" [shape=doublecircle];
+    "Spawn QA" [shape=box];
     "Verify against full checklist" [shape=box];
-    "Verifier approves?" [shape=diamond];
+    "QA approves?" [shape=diamond];
     "Route: bug->Ph3, design flaw->Ph1, missing test->Ph4, bad finding->Ph1" [shape=box];
     "DONE" [shape=doublecircle];
-    "STOP: 2 verifier re-entries exhausted - escalate to user" [shape=octagon, style=filled, fillcolor=red, fontcolor=white];
+    "STOP: 2 QA re-entries exhausted - escalate to user" [shape=octagon, style=filled, fillcolor=red, fontcolor=white];
 
     "PHASE 1: RESEARCH" -> "Spawn explorers";
     "Spawn explorers" -> "Explore and cross-check findings";
@@ -199,10 +203,10 @@ digraph phases {
     "Executor blocked by design issue?" -> "Report to lead - re-enter Phase 1" [label="yes"];
     "Report to lead - re-enter Phase 1" -> "Spawn explorers";
     "Executor blocked by design issue?" -> "Execution reviewer approves?" [label="no - retry"];
-    "Execution reviewer approves?" -> "Mark all modules approved" [label="yes - with evidence"];
+    "Execution reviewer approves?" -> "Task code approved" [label="yes - with evidence"];
     "Write test specs (wait for interface contracts)" -> "Finalize test specs";
 
-    "Mark all modules approved" -> "PHASE 4: TESTING + INTEGRATION" [label="per module, not global gate"];
+    "Task code approved" -> "PHASE 4: TESTING + INTEGRATION" [label="immediately, per task"];
     "Finalize test specs" -> "PHASE 4: TESTING + INTEGRATION";
     "PHASE 4: TESTING + INTEGRATION" -> "Spawn test executor/reviewer pairs";
     "Spawn test executor/reviewer pairs" -> "Implement unit + integration tests from specs";
@@ -212,14 +216,14 @@ digraph phases {
     "Revise tests based on feedback" -> "Test reviewer approves?";
     "Test reviewer approves?" -> "Confirm all tests pass" [label="yes - with evidence"];
 
-    "Confirm all tests pass" -> "PHASE 5: VERIFICATION" [label="after ALL modules tested"];
-    "PHASE 5: VERIFICATION" -> "Spawn verifier";
-    "Spawn verifier" -> "Verify against full checklist";
-    "Verify against full checklist" -> "Verifier approves?";
-    "Verifier approves?" -> "Route: bug->Ph3, design flaw->Ph1, missing test->Ph4, bad finding->Ph1" [label="no (re-entry 1-2)"];
-    "Verifier approves?" -> "STOP: 2 verifier re-entries exhausted - escalate to user" [label="no (re-entry 3+)"];
+    "Confirm all tests pass" -> "FINAL QA" [label="after all per-task pipelines complete"];
+    "FINAL QA" -> "Spawn QA";
+    "Spawn QA" -> "Verify against full checklist";
+    "Verify against full checklist" -> "QA approves?";
+    "QA approves?" -> "Route: bug->Ph3, design flaw->Ph1, missing test->Ph4, bad finding->Ph1" [label="no (re-entry 1-2)"];
+    "QA approves?" -> "STOP: 2 QA re-entries exhausted - escalate to user" [label="no (re-entry 3+)"];
     "Route: bug->Ph3, design flaw->Ph1, missing test->Ph4, bad finding->Ph1" -> "Verify against full checklist";
-    "Verifier approves?" -> "DONE" [label="yes - all evidence cited"];
+    "QA approves?" -> "DONE" [label="yes - all evidence cited"];
 }
 ```
 
@@ -234,7 +238,7 @@ After each task milestone (code approved, tests approved), coordinator records: 
 Phase 2 design **must include**:
 1. **Architecture** -- components, data flow, interfaces
 2. **File ownership map** -- no overlaps. Spawn prompts include: "You own ONLY these files: [list]."
-3. **Interface contracts** -- public APIs/signatures per module. Test designer uses these before executors finish.
+3. **Interface contracts** -- public APIs/signatures per task. Test designer uses these before executors finish.
 4. **Module dependency graph** -- coordinator uses for executor sequencing.
 
 **Git worktrees:** 2+ parallel executors -> each gets own worktree. Create before spawning, merge after approval.
@@ -261,14 +265,14 @@ Paired roles communicate **directly**. All other feedback routes through coordin
 | Executor | Coordinator | Design issue or code smell found | Coordinator assigns executor to analyze; minor: executor fixes directly, design-level: full pipeline |
 | Test Reviewer | Test Executor | Test issue | Direct (paired) |
 | Any teammate | Coordinator | Blocker reported | Blocker Resolution Protocol: simultaneously launch brainstormer + explorer |
-| Verifier | Ph1/2/3/4 | Issue found | Coordinator: route by type |
+| QA | Ph1/2/3/4 | Issue found | Coordinator: route by type |
 
 ### Loop Limits
 
 Round = one rejection (initial submission is not a round).
 
-- **10 rounds max** per pair. 11th rejection -> escalate (replace teammate or re-scope). Counters reset on verifier/Phase 2 re-entry.
-- **2 verifier re-entries max** (total). 3rd -> escalate to user with: what failed, what was tried.
+- **10 rounds max** per pair. 11th rejection -> escalate (replace teammate or re-scope). Counters reset on QA/Phase 2 re-entry.
+- **2 QA re-entries max** (total). 3rd -> escalate to user with: what failed, what was tried.
 - **2 designer-to-explorer rounds max.** Then escalate to user.
 
 ### Crash Recovery
@@ -280,8 +284,9 @@ Round = one rejection (initial submission is not a round).
 4. Only if ALL: no response after wait, no active process, no file/git activity → confirmed unresponsive.
 Skipping any step = false positive. Coordinator must document evidence of all 4 checks before requesting re-spawn.
 
+Once confirmed unresponsive, **immediately** re-spawn — no delays. The task must not stall.
 **Executors:** Paired reviewer reviews all changes before re-spawn. Unreviewed output never discarded.
-**Non-executors:** Re-spawn immediately. Max 2 re-spawns, then escalate to user.
+**Non-executors:** Re-spawn immediately. Max 2 re-spawns per role, then escalate to user.
 
 ### Blocker Resolution Protocol
 
@@ -311,7 +316,7 @@ Dispute a finding with evidence: cite code, spec, or test. Reviewer withdraws or
 
 Review independently first. Minority dissent requires counter-evidence to override. T1 outweighs T3.
 
-## Verifier Checklist
+## QA Checklist
 
 - [ ] Implementation matches design
 - [ ] All original requirements met
@@ -339,9 +344,9 @@ Review independently first. Minority dissent requires counter-evidence to overri
 4. **Assign file ownership** per design doc. **Create git worktrees** for 2+ parallel executors.
 5. **Route feedback** between unpaired roles.
 6. **Monitor progress.** Stale task = investigate per Crash Recovery: check for active process and file/git activity in their worktree. If confirmed unresponsive, follow the respawn sequence.
-7. **Drive per-task pipelines.** When a task's code is approved + its test specs are ready → immediately spawn test executor/reviewer pair for that task. Do not wait for other tasks. After ALL tasks tested → spawn verifier. Record checkpoint per task: what was produced, who approved, git SHA.
+7. **Drive per-task pipelines.** When a task's code is approved + its test specs are ready → immediately spawn test executor/reviewer pair for that task. Do not wait for other tasks. After ALL tasks tested → spawn QA. Record checkpoint per task: what was produced, who approved, git SHA.
 8. **Budget context** -- summaries, not raw output (see below).
-9. **Enforce loop limits.** Escalate on 11th rejection / 3rd verifier re-entry.
+9. **Enforce loop limits.** Escalate on 11th rejection / 3rd QA re-entry.
 10. **Crash recovery** -- detect unresponsive teammates, request lead to re-spawn. For executors: review changes before re-spawning. Max 2 re-spawns.
 11. **Manage lifetimes** per Teammate Lifecycle (below).
 12. **Enforce pair invariant.** Before every executor task assignment, verify reviewer exists and previous work is reviewed.
@@ -359,7 +364,7 @@ Review independently first. Minority dissent requires counter-evidence to overri
 
 | Event | Lead action |
 |-------|-------------|
-| Coordinator requests reviewer/verifier spawn | Verify spawn checklist. Additionally verify the prompt drives maximum scrutiny: includes original objective, all scrutiny rules, and adversarial framing. Reject weak prompts |
+| Coordinator requests reviewer/verifier/QA spawn | Verify spawn checklist. Additionally verify the prompt drives maximum scrutiny: includes original objective, all scrutiny rules, and adversarial framing. Reject weak prompts |
 | Coordinator requests other spawn | Verify spawn checklist, create agent team / spawn teammate |
 | Coordinator requests re-spawn (crash recovery) | Verify hang proof, then spawn |
 | Coordinator reports phase transition | Verify rules were followed: pair invariant, reviews completed, reported issues addressed |
@@ -379,7 +384,7 @@ Review independently first. Minority dissent requires counter-evidence to overri
 - [ ] File ownership explicit (executor/test roles)
 - [ ] Paired reviewer confirmed alive (executor spawns only)
 - [ ] Reviewer/verifier spawns include: executor's original objective with full context, and all scrutiny rules (coding style, claim tagging, OWASP, semantic integrity, etc.)
-- [ ] CLAUDE_ROLE env set to role name for every spawn (coordinator, explorer, designer, reviewer, executor, test-designer, test-executor, test-reviewer, verifier)
+- [ ] CLAUDE_ROLE env set to role name for every spawn (coordinator, explorer, designer, reviewer, executor, test-designer, test-executor, test-reviewer, verifier, qa, brainstormer)
 
 Lead rejects spawn if any item unchecked.
 
@@ -393,7 +398,7 @@ Downstream agents get **structured summaries**, not raw upstream output.
 | Executor | Own module's design + interface contracts | Other modules, explorer findings |
 | Reviewer | Executor's original objective (with full context), diff, relevant design, contracts, all scrutiny rules (coding style, claim tagging, OWASP, etc.) | Full codebase, other modules |
 | Test Executor | Test specs + contracts + public APIs | Implementation details |
-| Verifier | Original objectives (all tasks, with full context), phase summaries, test results, all scrutiny rules | Teammate conversation histories |
+| QA | Original objectives (all tasks, with full context), phase summaries, test results, all scrutiny rules | Teammate conversation histories |
 
 ### Teammate Lifecycle
 
@@ -403,8 +408,8 @@ Downstream agents get **structured summaries**, not raw upstream output.
 | Designer + Reviewer | Phase 3 end | Design issues re-enter full pipeline |
 | Executors + Reviewers | Phase 4 end | Test failures trace to code |
 | Test Designer | Phase 4 end | Test executors need spec clarification |
-| Test Executors + Reviewers | Phase 5 end | Verifier may request coverage |
-| **Verifier** | DONE | **Always fresh** |
+| Test Executors + Reviewers | QA end | QA may request coverage |
+| **QA** | DONE | **Always fresh** |
 
 Re-entry: original designer handles Phase 2 re-entry directly — full context preserved.
 
@@ -439,7 +444,7 @@ Compliance:
 [After both spawned:] Paired with [CONFIRMED NAME]. Message directly.
 
 - [ROLE-SPECIFIC RULES]
-- Set env CLAUDE_ROLE=[role name] (e.g. executor, reviewer, coordinator, explorer, designer, verifier)
+- Set env CLAUDE_ROLE=[role name] (e.g. executor, reviewer, coordinator, explorer, designer, verifier, qa, brainstormer)
 - [FOR EXECUTORS:] While implementing, actively look for code smell and design issues in all code you study or touch. Report ALL findings to coordinator — do not silently work around them.
 - Mark task complete + notify coordinator when done
 - If blocked, message coordinator with specifics
@@ -478,5 +483,5 @@ Compliance:
 | Capping executor count | One pair per independent unit of work. No limits |
 | Skipping phases | All phases mandatory when this skill triggers |
 | Early teammate shutdown | Keep alive until downstream consumers finish (see Lifecycle table) |
-| Trusting reviewer approval blindly | Verifier exists to catch reviewer mistakes |
+| Trusting reviewer approval blindly | QA exists to catch reviewer mistakes |
 
