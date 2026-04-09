@@ -40,7 +40,7 @@ Example: "Create an agent team with 3 explorer teammates, 1 designer, 1 design r
 
 | Role | Count | Phase | Responsibility |
 |------|-------|-------|---------------|
-| **Coordinator** | 1 | all | Task assignment, routing, phase management. Requests spawns from lead. **Never implements.** Must invoke `agent-teams-execution` skill via Skill tool as first action. |
+| **Coordinator** | 1 | all | Task assignment, routing, phase management. Requests spawns from lead. **Never implements.** |
 | **Lead** | 1 | all | Spawns teammates. Audits coordinator's rule compliance. Reminds coordinator when it forgets enforcement. **Never implements.** |
 | **Explorer** | 1+ | 1 | Gather facts. Tag sources. Challenge each other. |
 | **Designer** | 1 | 2 | Architect from findings. Produce file ownership map. |
@@ -60,7 +60,7 @@ One executor pair per independent unit of work. ~4 agents per phase before coord
 
 ## Mandatory Compliance
 
-**Every teammate** must obey these. Lead **must include in spawn prompts**.
+**Every teammate** must invoke `agent-teams-execution` skill via Skill tool as their first action. Lead **must include this instruction in every spawn prompt**.
 
 ### Model and Effort Level
 
@@ -378,7 +378,7 @@ Review independently first. Minority dissent requires counter-evidence to overri
 
 ### Spawn Checklist (lead verifies before every spawn)
 
-- [ ] Coordinator spawn includes instruction: "Invoke `agent-teams-execution` skill via Skill tool as your first action"
+- [ ] Spawn prompt includes instruction: "Invoke `agent-teams-execution` skill via Skill tool as your first action"
 - [ ] Model set to opus
 - [ ] Correct coding style skill listed by exact name (not placeholder)
 - [ ] Claim tagging instructions included verbatim
