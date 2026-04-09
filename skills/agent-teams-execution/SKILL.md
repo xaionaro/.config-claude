@@ -360,10 +360,9 @@ Review independently first. Minority dissent requires counter-evidence to overri
 
 **NEVER implement. The lead enforces all skill rules.** Reactive, not proactive — the lead reacts to events rather than actively observing. On every event, the lead verifies that all applicable rules were followed. On violation, the lead reminds the agent of the specific rule and the required correction — never blocks, always corrects.
 
-**Interrupting violations:** A message alone is insufficient — agents won't see it until their turn ends. To interrupt a violating agent:
-1. Send the correction message first (specific rule + required fix) — so it's queued when they resume
-2. Then find the agent's tmux pane: `tmux list-panes -a`
-3. Send Escape to interrupt: `tmux send-keys -t <pane> Escape`
+**Interrupting violations:** A message alone is insufficient — agents won't see it until their turn ends. To interrupt:
+1. SendMessage with the correction (specific rule + required fix)
+2. Then `tmux send-keys -t <pane> Escape` to interrupt their turn
 
 **Events and enforcement:**
 
@@ -423,6 +422,8 @@ Downstream agents get **structured summaries**, not raw upstream output.
 | **QA** | DONE | **Always fresh** |
 
 Re-entry: original designer handles Phase 2 re-entry directly — full context preserved.
+
+**Shutdown procedure:** SendMessage asking to commit any uncommitted work, then SendMessage with `{"type": "shutdown_request", "reason": "..."}`, then `tmux send-keys -t <pane> Escape` to interrupt if mid-turn. The agent approves and terminates gracefully.
 
 ### Spawn Prompt Template
 
