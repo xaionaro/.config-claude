@@ -47,6 +47,7 @@ Example: "Create an agent team with 3 explorer teammates, 1 designer, 1 design r
 | **Test Designer** | 1 | 3 | Write test specs. Waits for interface contracts. |
 | **Test Executor** | 1+ | 4 | Implement tests from specs. |
 | **Test Reviewer** | 1+ | 4 | Paired with test executors. Report only, never edit tests. |
+| **Brainstormer** | 1 | any | On-demand when a blocker emerges. Lists as many solution ideas as possible. Positives only — no negatives, no filtering, no feasibility judgment. Bigger list = better. |
 | **Verifier** | 1 | 5 | Final critical analysis. Runs all tests. Last gate. |
 
 ### Team Sizing
@@ -259,6 +260,7 @@ Paired roles communicate **directly**. All other feedback routes through coordin
 | Execution Reviewer | Executor | Code issue | Direct (paired) |
 | Executor | Coordinator | Design issue or code smell found | Coordinator assigns executor to analyze; minor: executor fixes directly, design-level: full pipeline |
 | Test Reviewer | Test Executor | Test issue | Direct (paired) |
+| Any teammate | Coordinator | Blocker reported | Blocker Resolution Protocol: simultaneously launch brainstormer + explorer |
 | Verifier | Ph1/2/3/4 | Issue found | Coordinator: route by type |
 
 ### Loop Limits
@@ -280,6 +282,14 @@ Skipping any step = false positive. Coordinator must document evidence of all 4 
 
 **Executors:** Paired reviewer reviews all changes before re-spawn. Unreviewed output never discarded.
 **Non-executors:** Re-spawn immediately. Max 2 re-spawns, then escalate to user.
+
+### Blocker Resolution Protocol
+
+When any teammate reports a blocker, coordinator simultaneously launches:
+1. **Brainstormer** — generates as many solution ideas as possible. Positives only, no filtering, no feasibility judgment. Bigger list = better.
+2. **Explorer** — independently investigates the blocker to understand the technical landscape.
+
+After brainstormer finishes, coordinator launches a second explorer to validate **technical feasibility** of the brainstormer's ideas against the explorer's findings. Coordinator picks the best feasible approach and assigns it.
 
 ## Reviewer Protocol
 
