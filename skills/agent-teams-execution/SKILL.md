@@ -349,12 +349,14 @@ Review independently first. Minority dissent requires counter-evidence to overri
 
 | Event | Lead action |
 |-------|-------------|
-| Coordinator requests spawn | Verify spawn checklist, create agent team / spawn teammate |
+| Coordinator requests reviewer/verifier spawn | Verify spawn checklist. Additionally verify the prompt drives maximum scrutiny: includes original objective, all scrutiny rules, and adversarial framing. Reject weak prompts |
+| Coordinator requests other spawn | Verify spawn checklist, create agent team / spawn teammate |
 | Coordinator requests re-spawn (crash recovery) | Verify hang proof, then spawn |
 | Coordinator reports phase transition | Verify rules were followed: pair invariant, reviews completed, reported issues addressed |
 | Coordinator assigns new task to executor | Verify reviewer exists and previous work reviewed |
 | Teammate reports coordinator doing work directly | Remind coordinator to delegate |
 | Teammate reports unaddressed issue | Remind coordinator to create task and assign analysis |
+| Reviewer/verifier approves | Scrutinize the approval: does it cite specific evidence? Does it address all scrutiny rules? A shallow "LGTM" is not an approval — send back with specific areas to examine |
 | Coordinator ignores reminder (3+ on same rule) | Escalate to user |
 | Coordinator not responding | Check tmux panes to see what's happening. Still thinking/processing = acceptable (up to 1 hour). Stuck > 1 hour = re-spawn. Max 2 re-spawns, then escalate to user |
 | Hourly audit (every 60 minutes) | Spot-check agent output for violations coordinator should have caught. Only intervene if coordinator missed them |
@@ -366,6 +368,7 @@ Review independently first. Minority dissent requires counter-evidence to overri
 - [ ] Claim tagging instructions included verbatim
 - [ ] File ownership explicit (executor/test roles)
 - [ ] Paired reviewer confirmed alive (executor spawns only)
+- [ ] Reviewer/verifier spawns include: executor's original objective with full context, and all scrutiny rules (coding style, claim tagging, OWASP, semantic integrity, etc.)
 - [ ] CLAUDE_ROLE env set to role name for every spawn (coordinator, explorer, designer, reviewer, executor, test-designer, test-executor, test-reviewer, verifier)
 
 Lead rejects spawn if any item unchecked.
@@ -378,9 +381,9 @@ Downstream agents get **structured summaries**, not raw upstream output.
 |------|----------|----------|
 | Designer | Explorer findings summary + source tags | Raw tool outputs, full files |
 | Executor | Own module's design + interface contracts | Other modules, explorer findings |
-| Reviewer | Diff + relevant design + contracts | Full codebase, other modules |
+| Reviewer | Executor's original objective (with full context), diff, relevant design, contracts, all scrutiny rules (coding style, claim tagging, OWASP, etc.) | Full codebase, other modules |
 | Test Executor | Test specs + contracts + public APIs | Implementation details |
-| Verifier | Phase summaries + test results | Teammate conversation histories |
+| Verifier | Original objectives (all tasks, with full context), phase summaries, test results, all scrutiny rules | Teammate conversation histories |
 
 ### Teammate Lifecycle
 
