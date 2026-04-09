@@ -279,11 +279,11 @@ Round = one rejection (initial submission is not a round).
 ### Crash Recovery
 
 **Not responding to messages ≠ dead.** Coordinator must investigate before declaring unresponsive:
-1. Send a message asking for status. Wait for response.
-2. Check: does the teammate have an active running process? (compilation, test suite, build, context compaction) → working, not hung.
-3. Check: are files or git state changing in their worktree? → working, not hung.
-4. Only if ALL: no response after wait, no active process, no file/git activity → confirmed unresponsive.
-Skipping any step = false positive. Coordinator must document evidence of all 4 checks before requesting re-spawn.
+1. Check: does the teammate have an active running process? (compilation, test suite, build, context compaction) → working, not hung.
+2. Check: are files or git state changing in their worktree? → working, not hung.
+3. If no active process and no file/git activity: **interrupt first** — send a message asking for status, then `tmux send-keys -t <pane> Escape` to break their turn. Wait for response.
+4. Only if no response after interrupt → confirmed unresponsive.
+Skipping any step = false positive. Coordinator must document evidence of all checks before requesting re-spawn.
 
 Once confirmed unresponsive, **immediately** re-spawn — no delays. The task must not stall.
 **Executors:** Paired reviewer reviews all changes before re-spawn. Unreviewed output never discarded.
