@@ -255,7 +255,7 @@ Phase 2 design **must include**:
 
 ## Feedback Loops
 
-Paired roles communicate **directly**. All other feedback routes through coordinator.
+Paired roles communicate **directly**. All other feedback routes through coordinator. **All completion claims and blocker reports must CC the lead** — the lead needs direct access to verify the coordinator doesn't accept claims at face value.
 
 | From | To | Trigger | Route |
 |------|----|---------|-------|
@@ -372,7 +372,9 @@ Review independently first. Minority dissent requires counter-evidence to overri
 | Coordinator assigns new task to executor | Verify reviewer exists and previous work reviewed |
 | Teammate reports coordinator doing work directly | Remind coordinator to delegate |
 | Teammate reports unaddressed issue | Remind coordinator to create task and assign analysis |
-| Reviewer/verifier approves | Scrutinize the approval: does it cite specific evidence? Does it address all scrutiny rules? A shallow "LGTM" is not an approval — send back with specific areas to examine |
+| CCed completion claim received | Verify the claim has sufficient proof. If not, remind coordinator not to accept it — demand evidence before proceeding |
+| CCed blocker claim received | Verify the blocker claim is substantiated. If evidence is thin, remind coordinator to launch verification (explorer) before accepting |
+| Reviewer/verifier/QA approves | Scrutinize the approval: does it cite specific evidence? Does it address all scrutiny rules? A shallow "LGTM" is not an approval — send back with specific areas to examine |
 | Coordinator ignores reminder (3+ on same rule) | Escalate to user |
 | Coordinator not responding | Check tmux panes to see what's happening. Still thinking/processing = acceptable (up to 1 hour). Stuck > 1 hour = re-spawn. Max 2 re-spawns, then escalate to user |
 | Hourly audit (every 60 minutes) | Spot-check agent output for violations coordinator should have caught. Only intervene if coordinator missed them |
@@ -449,8 +451,8 @@ Compliance:
 - [ROLE-SPECIFIC RULES]
 - Set env CLAUDE_ROLE=[role name] (e.g. executor, reviewer, coordinator, explorer, designer, verifier, qa, brainstormer)
 - [FOR EXECUTORS:] While implementing, actively look for code smell and design issues in all code you study or touch. Report ALL findings to coordinator — do not silently work around them.
-- Mark task complete + notify coordinator when done
-- If blocked, message coordinator with specifics
+- Mark task complete + notify coordinator when done. **CC the lead on all completion and blocker claims.**
+- If blocked, message coordinator with specifics. **CC the lead.**
 ```
 
 ## Red Flags
