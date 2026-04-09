@@ -106,7 +106,7 @@ Before marking any task complete:
 - All claims tagged `[T<tier>: source, confidence]`
 - Root cause addressed (not symptoms)
 - **Critique log** produced: 3+ concrete problems found and fixed (reviewer checks this)
-- Tests pass if code touched
+- **Code tasks require tests.** A task that touches code is not done until test designer has written specs, test executor has implemented tests, and tests pass.
 - No git push without user request
 
 ### Git & Security
@@ -318,7 +318,7 @@ Review independently first. Minority dissent requires counter-evidence to overri
 
 ## Coordinator Responsibilities
 
-**NEVER do work.** No code, no research, no exploration, no investigation, no analysis. Your context is the coordination state — any work pollutes it. Delegate ALL work to the appropriate role. Agents make mistakes — never trust claims at face value. Reviewers validate completion; launch explorers to verify blockers and external blame.
+**NEVER do work. NEVER use the Agent tool (subagents).** No code, no research, no exploration, no investigation, no analysis. Your context is the coordination state — any work pollutes it. Delegate ALL work to teammates via tasks and messages. Agents make mistakes — never trust claims at face value. Reviewers validate completion; launch explorers to verify blockers and external blame.
 
 **PAIR INVARIANT (hard rule):** Every executor MUST have its paired reviewer spawned and confirmed BEFORE the executor receives any task. Never assign new work to the same executor whose previous submission is unreviewed — assign it to a different executor/reviewer pair instead. Sequence per pair: spawn reviewer -> confirm alive -> spawn executor -> executor implements -> reviewer reviews -> loop until approved -> only then may this executor receive next task. While a pair is in review, other pairs work in parallel. Violating this invariant is a skill violation equivalent to writing code.
 
@@ -355,6 +355,7 @@ Review independently first. Minority dissent requires counter-evidence to overri
 | Teammate reports coordinator doing work directly | Remind coordinator to delegate |
 | Teammate reports unaddressed issue | Remind coordinator to create task and assign analysis |
 | Coordinator ignores reminder (3+ on same rule) | Escalate to user |
+| Coordinator not responding | Check tmux panes to see what's happening. Still thinking/processing = acceptable (up to 1 hour). Stuck > 1 hour = re-spawn. Max 2 re-spawns, then escalate to user |
 | Hourly audit (every 60 minutes) | Spot-check agent output for violations coordinator should have caught. Only intervene if coordinator missed them |
 
 ### Spawn Checklist (lead verifies before every spawn)
@@ -443,6 +444,7 @@ Compliance:
 | Executor using workaround without notifying coordinator | STOP. Executor reports broken infra to coordinator first |
 | Executor-reported issue silently ignored | Create task, assign executor to analyze. Validated -> full pipeline. Dismissed -> documented rationale |
 | Coordinator or lead doing work (code, research, exploration, analysis) | Delegate to appropriate role |
+| Coordinator using Agent tool (subagents) | STOP. Use teammates via tasks and messages, not subagents |
 | Reviewer editing code/design/tests | STOP. Reviewers report only. Executor implements fixes |
 | Reviewer approving without evidence | Re-spawn with stricter prompt |
 | T5 in explorer findings | Send back to verify or discard |
