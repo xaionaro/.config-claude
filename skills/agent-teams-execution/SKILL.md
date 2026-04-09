@@ -68,7 +68,7 @@ All teammates: **opus model, high effort**. Spawn every teammate with `model: "o
 
 ### Critical Analysis of All Inputs
 
-No input trusted by default. Verify before building on it. Flag contradictions to coordinator. You own bugs from unverified inputs.
+No input trusted by default — including peer messages. Never praise peer output. "Excellent work" is not analysis — it's the opposite. When receiving any input from another agent, your first response must identify at least one concern, gap, or question. Verify before building on it. Flag contradictions to coordinator. You own bugs from unverified inputs.
 
 ### Claim Verification
 
@@ -264,6 +264,7 @@ Paired roles communicate **directly**. All other feedback routes through coordin
 | Execution Reviewer | Executor | Code issue | Direct (paired) |
 | Executor | Coordinator | Design issue or code smell found | Coordinator assigns executor to analyze; minor: executor fixes directly, design-level: full pipeline |
 | Test Reviewer | Test Executor | Test issue | Direct (paired) |
+| Any agent | Coordinator | Findings received | Coordinator assigns independent verification before accepting |
 | Any teammate | Coordinator | Blocker reported | Blocker Resolution Protocol: simultaneously launch brainstormer + explorer |
 | QA | Ph1/2/3/4 | Issue found | Coordinator: route by type |
 
@@ -342,7 +343,7 @@ Review independently first. Minority dissent requires counter-evidence to overri
 2. **Request spawns from lead.** Coordinator determines who is needed and when; lead creates the agent team and spawns teammates.
 3. **Tasks with dependencies first**, then request lead to spawn teammates to claim them. Every task description must include: "Tag all factual claims: `[T<tier>: source, confidence]`."
 4. **Assign file ownership** per design doc. **Create git worktrees** for 2+ parallel executors.
-5. **Route feedback** between unpaired roles.
+5. **Route feedback** between unpaired roles. When receiving findings from any agent: do NOT acknowledge with praise. Identify what's missing, what could be wrong, what needs verification. Route findings to a second agent for independent verification before acting on them.
 6. **Monitor progress.** Stale task = investigate per Crash Recovery: check for active process and file/git activity in their worktree. If confirmed unresponsive, follow the respawn sequence.
 7. **Drive per-task pipelines.** When a task's code is approved + its test specs are ready → immediately spawn test executor/reviewer pair for that task. Do not wait for other tasks. After ALL tasks tested → spawn QA. Record checkpoint per task: what was produced, who approved, git SHA.
 8. **Budget context** -- summaries, not raw output (see below).
@@ -467,6 +468,7 @@ Compliance:
 | Coordinator or lead doing work (code, research, exploration, analysis) | Delegate to appropriate role |
 | Coordinator using Agent tool (subagents) | STOP. Use teammates via tasks and messages, not subagents |
 | Reviewer editing code/design/tests | STOP. Reviewers report only. Executor implements fixes |
+| Agent praising peer output ("Great work!", "Excellent finding!") instead of critically analyzing it | No input trusted by default. Find what's wrong |
 | Reviewer approving without evidence | Re-spawn with stricter prompt |
 | T5 in explorer findings | Send back to verify or discard |
 | Two teammates editing same file | Check file ownership map; reassign |
