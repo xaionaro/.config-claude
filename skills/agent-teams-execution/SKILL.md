@@ -60,7 +60,7 @@ One executor pair per independent unit of work. ~4 agents per phase before coord
 
 ## Mandatory Compliance
 
-**Every teammate** must invoke `agent-teams-execution` skill via Skill tool as their first action. Lead **must include this instruction in every spawn prompt**. Coordinator and lead: re-invoke the skill after every context compaction (a UserPromptSubmit hook will remind you).
+**Every teammate** must invoke `agent-teams-execution` skill via Skill tool as their first action. Lead **must include this instruction in every spawn prompt**. Coordinator and lead: re-invoke the skill after every context compaction.
 
 ### Model and Effort Level
 
