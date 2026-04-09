@@ -106,7 +106,9 @@ Executors invoke coding style + `proof-driven-development`. Test executors invok
 
 ### Stop Checklist (BLOCKING — every item must pass or task stays open)
 
-A task CANNOT be marked complete until every applicable item passes. Reviewers reject any "done" claim that skips an item. Lead enforces.
+**Submitted ≠ complete.** Agents mark tasks as "submitted" when they believe they're done. Only after review, testing, and proof does a task become "complete." No agent can mark a task complete — only the verification process can.
+
+Reviewers reject any "complete" claim that skips an item. Lead enforces.
 - All changes committed
 - Objective evidence of completion
 - All claims tagged `[T<tier>: source, confidence]`
@@ -256,7 +258,7 @@ Phase 2 design **must include**:
 
 ## Feedback Loops
 
-Paired roles communicate **directly**. All other feedback routes through coordinator. **All completion claims and blocker reports must CC both the lead and the snitch** — independent verification that the coordinator doesn't accept claims at face value.
+Paired roles communicate **directly**. All other feedback routes through coordinator. **All "submitted", "blocked", and "completed" claims must CC both the lead and the snitch** — independent verification that the coordinator doesn't accept claims at face value.
 
 | From | To | Trigger | Route |
 |------|----|---------|-------|
@@ -379,7 +381,7 @@ Review independently first. Minority dissent requires counter-evidence to overri
 | Coordinator assigns new task to executor | Verify reviewer exists and previous work reviewed |
 | Teammate reports coordinator doing work directly | Remind coordinator to delegate |
 | Teammate reports unaddressed issue | Remind coordinator to create task and assign analysis |
-| CCed completion claim received | Verify the claim has sufficient proof. If not, remind coordinator not to accept it — demand evidence before proceeding |
+| CCed "submitted" claim received | Verify the claim has sufficient proof. If not, remind coordinator not to accept it — demand evidence before marking complete |
 | CCed blocker claim received | Verify the blocker claim is substantiated. If evidence is thin, remind coordinator to launch verification (explorer) before accepting |
 | Reviewer/verifier/QA approves | Scrutinize the approval: does it cite specific evidence? Does it address all scrutiny rules? A shallow "LGTM" is not an approval — send back with specific areas to examine |
 | Coordinator ignores reminder (3+ on same rule) | Escalate to user |
@@ -461,7 +463,7 @@ Compliance:
 - [ROLE-SPECIFIC RULES]
 - Set env CLAUDE_ROLE=[role name] (e.g. executor, reviewer, coordinator, explorer, designer, verifier, qa, brainstormer, snitch)
 - [FOR EXECUTORS:] While implementing, actively look for code smell and design issues in all code you study or touch. Report ALL findings to coordinator — do not silently work around them.
-- Mark task complete + notify coordinator when done. **CC the lead and snitch on all completion and blocker claims.**
+- Mark task as "submitted" (not "complete") + notify coordinator when done. **CC the lead and snitch on all submitted, blocked, and completed claims.**
 - If blocked, message coordinator with specifics. **CC the lead and snitch.**
 ```
 
