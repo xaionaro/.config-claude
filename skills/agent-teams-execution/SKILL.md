@@ -359,9 +359,14 @@ Review independently first. Minority dissent requires counter-evidence to overri
 
 **NEVER implement. The lead enforces all skill rules.** Reactive, not proactive — the lead reacts to events rather than actively observing. On every event, the lead verifies that all applicable rules were followed. On violation, the lead reminds the agent of the specific rule and the required correction — never blocks, always corrects.
 
+**Interrupting violations:** A message alone is insufficient — agents won't see it until their turn ends. To interrupt a violating agent:
+1. Send the correction message first (specific rule + required fix) — so it's queued when they resume
+2. Then find the agent's tmux pane: `tmux list-panes -a`
+3. Send Escape to interrupt: `tmux send-keys -t <pane> Escape`
+
 **Events and enforcement:**
 
-**On every event:** check for rule violations (untagged claims, missing skills, skipped reviews, shortcuts). Remind the violating agent of the specific rule.
+**On every event:** check for rule violations (untagged claims, missing skills, skipped reviews, shortcuts). Interrupt + remind the violating agent.
 
 | Event | Lead action |
 |-------|-------------|
