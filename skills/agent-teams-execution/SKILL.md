@@ -384,6 +384,7 @@ Review independently first. Minority dissent requires counter-evidence to overri
 - [ ] File ownership explicit (executor/test roles)
 - [ ] Paired reviewer confirmed alive (executor spawns only)
 - [ ] Reviewer/verifier spawns include: executor's original objective with full context, and all scrutiny rules (coding style, claim tagging, OWASP, semantic integrity, etc.)
+- [ ] Preemptive warnings included: coordinator anticipates the most likely mistakes this agent could make given the specific task and explicitly warns against them in the spawn prompt
 - [ ] CLAUDE_ROLE env set to role name for every spawn (coordinator, explorer, designer, reviewer, executor, test-designer, test-executor, test-reviewer, verifier, qa, brainstormer)
 
 Lead rejects spawn if any item unchecked.
