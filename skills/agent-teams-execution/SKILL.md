@@ -47,7 +47,7 @@ Example: "Create an agent team with 3 explorer teammates, 1 designer, 1 design r
 | **Test Designer** | 1 | 3 | Write test specs. Waits for interface contracts. |
 | **Test Executor** | 1+ | 4 | Implement tests from specs. |
 | **Test Reviewer** | 1+ | 4 | Paired with test executors. Report only, never edit tests. |
-| **Brainstormer** | 1 | any | On-demand when a blocker emerges. Lists as many solution ideas as possible. Positives only — no negatives, no filtering, no feasibility judgment. Bigger list = better. |
+| **Brainstormer** | 1 | any | On-demand when a blocker emerges. Genius creative unblocker — thinks outside the box. Lists as many solution ideas as possible. Positives only — no negatives, no filtering, no feasibility judgment. Bigger list = better. |
 | **Verifier** | 1 | 5 | Final critical analysis. Runs all tests. Last gate. |
 
 ### Team Sizing
@@ -286,7 +286,7 @@ Skipping any step = false positive. Coordinator must document evidence of all 4 
 ### Blocker Resolution Protocol
 
 When any teammate reports a blocker, coordinator simultaneously launches:
-1. **Brainstormer** — generates as many solution ideas as possible. Positives only, no filtering, no feasibility judgment. Bigger list = better.
+1. **Brainstormer** — prompt as a genius creative unblocker who thinks outside the box. Generates as many solution ideas as possible. Positives only, no filtering, no feasibility judgment. Bigger list = better.
 2. **Explorer** — independently investigates the blocker to understand the technical landscape.
 
 After brainstormer finishes, coordinator launches a second explorer to validate **technical feasibility** of the brainstormer's ideas against the explorer's findings. Coordinator picks the best feasible approach and assigns it.
