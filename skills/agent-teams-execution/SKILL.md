@@ -291,7 +291,7 @@ Phase 2 design **must include**:
 
 ## Feedback Loops
 
-Paired roles communicate **directly**. All other feedback routes through coordinator. **All "submitted", "blocked", and "completed" claims must CC both the lead and the snitch** — independent verification that the coordinator doesn't accept claims at face value.
+Paired roles communicate **directly**. All other feedback routes through coordinator. **All "submitted", "blocked", and "completed" claims must CC both the lead and the snitch** — independent verification that the coordinator doesn't accept claims at face value. **All coordinator → lead requests (spawn, re-spawn, phase transition) must also CC the snitch** — so the snitch can independently verify spawn prompts, checklists, and rule compliance.
 
 | From | To | Trigger | Route |
 |------|----|---------|-------|
