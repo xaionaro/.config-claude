@@ -327,7 +327,7 @@ Once confirmed unresponsive, **immediately** re-spawn — no delays. The task mu
 
 ### Misbehavior Recovery (any agent)
 
-**Every violation:** SendMessage with the specific rule + correction, then `tmux send-keys -t <pane> Escape` to interrupt immediately. No violation goes uninterrupted.
+**Every violation:** Whoever detects it (lead, coordinator, or snitch) SendMessages the violating agent with the specific rule + correction, **CC'ing the other two oversight roles (lead, coordinator, snitch)** so all three stay aware. Then `tmux send-keys -t <pane> Escape` to interrupt immediately. No violation goes uninterrupted.
 
 **Repeated violations (3+ on same rule):** After interrupting, force context compaction: `tmux send-keys -t <pane> '/compact' Enter`, then SendMessage to re-read the skill and continue. If still misbehaving after compaction, escalate to user.
 
