@@ -325,6 +325,12 @@ Once confirmed unresponsive, **immediately** re-spawn — no delays. The task mu
 **Executors:** Paired reviewer reviews all changes before re-spawn. Unreviewed output never discarded.
 **Non-executors:** Re-spawn immediately. Max 2 re-spawns per role, then escalate to user.
 
+### Misbehavior Recovery (any agent)
+
+**Every violation:** SendMessage with the specific rule + correction, then `tmux send-keys -t <pane> Escape` to interrupt immediately. No violation goes uninterrupted.
+
+**Repeated violations (3+ on same rule):** After interrupting, force context compaction: `tmux send-keys -t <pane> '/compact' Enter`, then SendMessage to re-read the skill and continue. If still misbehaving after compaction, escalate to user.
+
 ### Blocker Resolution Protocol
 
 When any teammate reports a blocker, coordinator simultaneously launches:
@@ -418,7 +424,7 @@ Review independently first. Minority dissent requires counter-evidence to overri
 | CCed "submitted" claim received | Verify the claim has sufficient proof. If not, remind coordinator not to accept it — demand evidence before marking complete |
 | CCed blocker claim received | Verify the blocker claim is substantiated. If evidence is thin, remind coordinator to launch verification (explorer) before accepting |
 | Reviewer/verifier/QA approves | Scrutinize the approval: does it cite specific evidence? Does it address all scrutiny rules? A shallow "LGTM" is not an approval — send back with specific areas to examine |
-| Coordinator ignores reminder (3+ on same rule) | Escalate to user |
+| Any agent ignores reminder (3+ on same rule) | Misbehavior Recovery: force `/compact`, re-read skill, continue. If still misbehaving, escalate to user |
 | Coordinator not responding | Check tmux panes to see what's happening. Still thinking/processing = acceptable (up to 1 hour). Stuck > 1 hour = re-spawn. Max 2 re-spawns, then escalate to user |
 | Hourly audit (every 60 minutes) | Spot-check agent output for violations coordinator should have caught. Only intervene if coordinator missed them |
 
