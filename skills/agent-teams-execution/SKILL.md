@@ -111,6 +111,7 @@ Executors invoke coding style + `proof-driven-development`. Test executors invok
 | **pending** | Created, not yet started | Coordinator |
 | **in_progress** | Agent is actively working on it | Assigned agent |
 | **blocked** | Cannot proceed — needs resolution | Assigned agent (CC lead + snitch) |
+| **blocked_by_task** | Waiting for another task to complete first | Coordinator |
 | **exploring** | Explorer investigating (research phase or blocker investigation) | Coordinator |
 | **unblocking** | Brainstormer + explorer working to resolve blocker | Coordinator (after blocker reported) |
 | **submitted** | Agent believes done, awaiting verification | Assigned agent (CC lead + snitch) |
@@ -128,6 +129,8 @@ Executors invoke coding style + `proof-driven-development`. Test executors invok
 | pending → exploring | Research task: route to explorer |
 | exploring → submitted | Explorer findings complete (research-only tasks). CC lead + snitch |
 | exploring → in_progress | Exploration done, task needs execution next. Executors: pair invariant satisfied |
+| pending → blocked_by_task | Task depends on another task that isn't complete yet |
+| blocked_by_task → in_progress | Blocking task completed. Agent assigned |
 | in_progress → blocked | Agent reports specific blocker. CC lead + snitch |
 | blocked → unblocking | Coordinator launches brainstormer + explorer simultaneously per Blocker Resolution Protocol |
 | unblocking → in_progress | Feasible solution found and assigned. Blocker resolved |
