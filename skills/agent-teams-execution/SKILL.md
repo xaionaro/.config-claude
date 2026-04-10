@@ -104,18 +104,48 @@ Executors invoke coding style + `proof-driven-development`. Test executors invok
 - Strong typing for domain concepts. No bare primitives where named types belong.
 - Clean solution over hack, always. Reviewers reject shortcuts, workarounds, and "good enough for now."
 
-### Stop Checklist (BLOCKING — every item must pass or task stays open)
+### Task States
 
-**Submitted ≠ complete.** Agents mark tasks as "submitted" when they believe they're done. Only after review, testing, and proof does a task become "complete." No agent can mark a task complete — only the verification process can.
+| State | Meaning | Who sets it |
+|-------|---------|-------------|
+| **pending** | Created, not yet started | Coordinator |
+| **in_progress** | Agent is actively working on it | Assigned agent |
+| **blocked** | Cannot proceed — needs resolution | Assigned agent (CC lead + snitch) |
+| **exploring** | Explorer investigating (research phase or blocker investigation) | Coordinator |
+| **unblocking** | Brainstormer + explorer working to resolve blocker | Coordinator (after blocker reported) |
+| **submitted** | Agent believes done, awaiting verification | Assigned agent (CC lead + snitch) |
+| **in_review** | Reviewer is actively reviewing | Coordinator (after submission checklist passes) |
+| **in_test_design** | Test designer writing test specs (code tasks only) | Coordinator (after reviewer approves) |
+| **in_testing** | Test executor implementing and running tests (code tasks only) | Coordinator (after test specs ready) |
+| **in_verification** | Verifier adversarially checking (non-code tasks) | Coordinator (after reviewer approves) |
+| **complete** | Proved done — reviewed, tested, evidence provided | Coordinator (after all verification passes) |
 
-Reviewers reject any "complete" claim that skips an item. Lead enforces.
-- All changes committed
-- Objective evidence of completion
-- All claims tagged `[T<tier>: source, confidence]`
-- Root cause addressed (not symptoms)
-- **Critique log** produced: 3+ concrete problems found and fixed (reviewer checks this)
-- **Code tasks require tests.** A task that touches code is not done until test designer has written specs, test executor has implemented tests, and tests pass.
-- No git push without user request
+**Transition requirements:**
+
+| Transition | Requirements |
+|------------|-------------|
+| pending → in_progress | Agent assigned. Executors: pair invariant satisfied (reviewer alive) |
+| pending → exploring | Research task: route to explorer |
+| exploring → submitted | Explorer findings complete (research-only tasks). CC lead + snitch |
+| exploring → in_progress | Exploration done, task needs execution next. Executors: pair invariant satisfied |
+| in_progress → blocked | Agent reports specific blocker. CC lead + snitch |
+| blocked → unblocking | Coordinator launches brainstormer + explorer simultaneously per Blocker Resolution Protocol |
+| unblocking → in_progress | Feasible solution found and assigned. Blocker resolved |
+| unblocking → blocked | No feasible solution found. Escalate to user |
+| in_progress → submitted | All claims tagged `[T<tier>: source, confidence]`. Critique log produced (3+ problems found/fixed). Code tasks: all changes committed, hard proof that the solution works (test output, command output, screenshots). CC lead + snitch |
+| submitted → in_progress | Coordinator bounces back: submission checklist failed |
+| submitted → in_review | Coordinator verifies submission checklist passes. Routes to paired reviewer |
+| in_review → in_progress | Reviewer rejected. Routes back to executor with feedback |
+| in_review → in_test_design | Reviewer approved with evidence. Code tasks only: route to test designer for specs |
+| in_test_design → in_testing | Test specs ready. Route to test executor |
+| in_test_design → in_progress | Test designer finds interface contracts wrong/incomplete. Routes back to executor |
+| in_review → in_verification | Reviewer approved with evidence. Non-code tasks: route to verifier |
+| in_testing → complete | Tests implemented and passing. Test reviewer approved. CC lead + snitch |
+| in_testing → in_progress | Tests reveal bugs. Routes back to executor |
+| in_verification → complete | Verifier approved with evidence against all expectations. CC lead + snitch |
+| in_verification → in_progress | Verifier found issues. Routes back to executor |
+
+**No agent can set a task to "complete"** — only the coordinator after all verification passes. No git push without user request. Lead enforces all transitions.
 
 ### Git & Security
 
