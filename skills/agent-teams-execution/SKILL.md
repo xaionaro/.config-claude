@@ -52,7 +52,7 @@ Example: "Create an agent team with 3 explorer teammates, 1 designer, 1 design r
 | **Test Reviewer** | 1+ | 4 | Paired with test executors. Report only, never edit tests. |
 | **Verifier** | 1+ | per task | For lightweight tasks (no code, no test pipeline). Adversarially checks deliverable against all expectations. Replaces test pipeline when testing is N/A. |
 | **Brainstormer** | 1 | any | On-demand when a blocker emerges. Genius creative unblocker — thinks outside the box. Lists as many solution ideas as possible. Positives only — no negatives, no filtering, no feasibility judgment. Bigger list = better. |
-| **Snitch** | 1 | all | CCed on all submitted/blocked/completed claims. Independently verifies all rules are followed. Notifies lead on any violation. Success = finding violations that the lead confirms. The more confirmed violations found, the better. May pushback once per report if lead dismisses — must quote the exact rule/requirement violated and explain why no workaround is acceptable. Sets up hourly cron job whose prompt includes: role description, instruction to re-invoke this skill, then scan all teammates' output for violations and detect dead agents (context limit, API quota, crashes). Disables cron when team is idle (coordinator notifies), re-enables when execution resumes. |
+| **Snitch** | 1 | all | CCed on all submitted/blocked/completed claims and QA verdicts. Independently verifies all rules are followed. Notifies lead on any violation. Success = finding violations that the lead confirms. The more confirmed violations found, the better. May pushback once per report if lead dismisses — must quote the exact rule/requirement violated and explain why no workaround is acceptable. On QA approvals, looks for gaps in testing — insufficient coverage, proxy-only evidence where direct was possible, untested criteria. Sets up hourly cron job whose prompt includes: role description, instruction to re-invoke this skill, then scan all teammates' output for violations and detect dead agents (context limit, API quota, crashes). Disables cron when team is idle (coordinator notifies), re-enables when execution resumes. |
 | **QA** | 1 | final | Final integration check. Runs all tests. Last gate. |
 
 ### Team Sizing
@@ -302,7 +302,7 @@ Paired roles communicate **directly**. All other feedback routes through coordin
 | Test Reviewer | Test Executor | Test issue | Direct (paired) |
 | Any agent | Coordinator | Findings received | Coordinator assigns independent verification before accepting |
 | Any teammate | Coordinator | Blocker reported | Blocker Resolution Protocol: simultaneously launch brainstormer + explorer |
-| QA | Ph1/2/3/4 | Issue found | Coordinator: route by type |
+| QA | Coordinator | Any verdict (approval or rejection) | CC snitch. On approval, QA must demonstrate sufficient testing was performed (which criteria, what evidence, direct vs proxy). On rejection, route by type. Snitch looks for gaps in testing |
 
 ### Loop Limits
 
@@ -359,15 +359,27 @@ Dispute a finding with evidence: cite code, spec, or test. Reviewer withdraws or
 
 Review independently first. Minority dissent requires counter-evidence to override. T1 outweighs T3.
 
-## QA Checklist
+## QA Protocol
+
+**Four-step protocol applied to every acceptance criterion:**
+
+1. **State** — explicitly state what must be true (the criterion)
+2. **Identify** — identify what evidence would prove it, distinguishing **direct** from **proxy**:
+   - **Direct evidence**: shows the thing itself working (running the actual program end-to-end, observing the output, reproducing the user-facing flow)
+   - **Proxy evidence**: indirect signal (unit tests pass, linter clean, type check passes)
+3. **Obtain** — actually obtain the evidence. Run the commands. Execute the program. Reproduce the flow. **Always prefer direct evidence.** Proxy evidence alone never satisfies a criterion that can be verified directly.
+4. **Judge** — judge whether the evidence proves the criterion. Cite the exact output/observation. "Looks right" is not judgment — quote the evidence.
+
+**Acceptance criteria checklist:**
 
 - [ ] Implementation matches design
 - [ ] All original requirements met
 - [ ] All claims tagged, no T5 remaining
 - [ ] OWASP top 10 security review
 - [ ] Edge cases handled
-- [ ] Integration tests pass (run them)
-- [ ] All unit tests pass (run them)
+- [ ] Integration tests pass (run them — direct)
+- [ ] All unit tests pass (run them — proxy, still required)
+- [ ] End-to-end flows verified (direct — run the program as a user)
 - [ ] No uncommitted changes, no secrets in diffs
 - [ ] Static checks pass
 - [ ] Mandatory skills invoked by all teammates
