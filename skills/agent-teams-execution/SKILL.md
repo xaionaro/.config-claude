@@ -52,7 +52,7 @@ Example: "Create an agent team with 3 explorer teammates, 1 designer, 1 design r
 | **Test Reviewer** | 1+ | 4 | Paired with test executors. Report only, never edit tests. |
 | **Verifier** | 1+ | per task | For lightweight tasks (no code, no test pipeline). Adversarially checks deliverable against all expectations. Replaces test pipeline when testing is N/A. |
 | **Brainstormer** | 1 | any | On-demand when a blocker emerges. Genius creative unblocker — thinks outside the box. Lists as many solution ideas as possible. Positives only — no negatives, no filtering, no feasibility judgment. Bigger list = better. |
-| **Snitch** | 1 | all | CCed on all completion/blocker claims. Independently verifies all rules are followed. Notifies lead on any violation. Success = finding violations that the lead confirms. The more confirmed violations found, the better. May pushback once per report if lead dismisses — must quote the exact rule/requirement violated and explain why no workaround is acceptable. Sets up hourly cron job whose prompt includes: role description, instruction to re-invoke this skill, then scan all teammates' output for violations and detect dead agents (context limit, API quota, crashes). Disables cron when team is idle (coordinator notifies), re-enables when execution resumes. |
+| **Snitch** | 1 | all | CCed on all submitted/blocked/completed claims. Independently verifies all rules are followed. Notifies lead on any violation. Success = finding violations that the lead confirms. The more confirmed violations found, the better. May pushback once per report if lead dismisses — must quote the exact rule/requirement violated and explain why no workaround is acceptable. Sets up hourly cron job whose prompt includes: role description, instruction to re-invoke this skill, then scan all teammates' output for violations and detect dead agents (context limit, API quota, crashes). Disables cron when team is idle (coordinator notifies), re-enables when execution resumes. |
 | **QA** | 1 | final | Final integration check. Runs all tests. Last gate. |
 
 ### Team Sizing
@@ -348,17 +348,18 @@ Review independently first. Minority dissent requires counter-evidence to overri
 4. **Assign file ownership** per design doc. **Create git worktrees** for 2+ parallel executors.
 5. **Route feedback** between unpaired roles. When receiving findings from any agent: do NOT acknowledge with praise. Identify what's missing, what could be wrong, what needs verification. Route findings to a second agent for independent verification before acting on them.
 6. **Monitor progress.** Stale task = investigate per Crash Recovery: check for active process and file/git activity in their worktree. If confirmed unresponsive, follow the respawn sequence.
-7. **Drive per-task pipelines.** When a task's code is approved + its test specs are ready → immediately spawn test executor/reviewer pair for that task. Do not wait for other tasks. After ALL tasks tested → spawn QA. Record checkpoint per task: what was produced, who approved, git SHA.
-8. **Budget context** -- summaries, not raw output (see below).
-9. **Enforce loop limits.** Escalate on 11th rejection / 3rd QA re-entry.
-10. **Crash recovery** -- detect unresponsive teammates, request lead to re-spawn. For executors: review changes before re-spawning. Max 2 re-spawns.
-11. **Manage lifetimes** per Teammate Lifecycle (below).
-12. **Enforce pair invariant.** Before every executor task assignment, verify reviewer exists and previous work is reviewed.
-13. **Address all reported issues.** Every executor-reported issue becomes a task. Assign an executor to critically analyze it (code cleanness, semantic integrity, correctness). If dismissed: document rationale. If validated and minor: the analyzing executor fixes it directly. If validated and design-level: full pipeline. No report may be silently ignored.
-14. **Audit subordinates every 10 minutes.** Check each active teammate's recent output for rule violations: untagged claims, missing skill invocations, unreviewed code, shortcuts. Create a task for each violation found.
-15. **Interrupt violations immediately.** Same protocol as lead: send correction message first, then `tmux send-keys -t <pane> Escape` to interrupt. Don't wait for their turn to end.
-16. **Notify snitch on idle/resume.** SendMessage snitch when team goes idle (all tasks waiting on user) and when execution resumes, so snitch can disable/enable its cron job.
-17. **Clean up** when done. ALL tasks completed.
+7. **Handle "submitted" tasks.** When a task is submitted: verify Stop Checklist items (changes committed, claims tagged, critique log exists). Bounce back immediately if incomplete — don't waste reviewer time. If checklist passes, route to paired reviewer. After reviewer approves, route to test pipeline (code tasks) or verifier (non-code tasks).
+8. **Drive per-task pipelines.** When a task's code is approved + its test specs are ready → immediately spawn test executor/reviewer pair for that task. Do not wait for other tasks. After ALL tasks tested → spawn QA. Record checkpoint per task: what was produced, who approved, git SHA.
+9. **Budget context** -- summaries, not raw output (see below).
+10. **Enforce loop limits.** Escalate on 11th rejection / 3rd QA re-entry.
+11. **Crash recovery** -- detect unresponsive teammates, request lead to re-spawn. For executors: review changes before re-spawning. Max 2 re-spawns.
+12. **Manage lifetimes** per Teammate Lifecycle (below).
+13. **Enforce pair invariant.** Before every executor task assignment, verify reviewer exists and previous work is reviewed.
+14. **Address all reported issues.** Every executor-reported issue becomes a task. Assign an executor to critically analyze it (code cleanness, semantic integrity, correctness). If dismissed: document rationale. If validated and minor: the analyzing executor fixes it directly. If validated and design-level: full pipeline. No report may be silently ignored.
+15. **Audit subordinates every 10 minutes.** Check each active teammate's recent output for rule violations: untagged claims, missing skill invocations, unreviewed code, shortcuts. Create a task for each violation found.
+16. **Interrupt violations immediately.** Same protocol as lead: send correction message first, then `tmux send-keys -t <pane> Escape` to interrupt. Don't wait for their turn to end.
+17. **Notify snitch on idle/resume.** SendMessage snitch when team goes idle (all tasks waiting on user) and when execution resumes, so snitch can disable/enable its cron job.
+18. **Clean up** when done. ALL tasks completed.
 
 ## Lead Responsibilities
 
