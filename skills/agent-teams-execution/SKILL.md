@@ -106,20 +106,20 @@ Executors invoke coding style + `proof-driven-development`. Test executors invok
 
 ### Task States
 
-| State | Meaning | Who sets it |
-|-------|---------|-------------|
-| **pending** | Created, not yet started | Coordinator |
-| **in_progress** | Agent is actively working on it | Assigned agent |
-| **blocked** | Cannot proceed — needs resolution | Assigned agent (CC lead + snitch) |
-| **blocked_by_task** | Waiting for another task to complete first | Coordinator |
-| **exploring** | Explorer investigating (research phase or blocker investigation) | Coordinator |
-| **unblocking** | Brainstormer + explorer working to resolve blocker | Coordinator (after blocker reported) |
-| **submitted** | Agent believes done, awaiting verification | Assigned agent (CC lead + snitch) |
-| **in_review** | Reviewer is actively reviewing | Coordinator (after submission checklist passes) |
-| **in_test_design** | Test designer writing test specs (code tasks only) | Coordinator (after reviewer approves) |
-| **in_testing** | Test executor implementing and running tests (code tasks only) | Coordinator (after test specs ready) |
-| **in_verification** | Verifier adversarially checking (non-code tasks) | Coordinator (after reviewer approves) |
-| **complete** | Proved done — reviewed, tested, evidence provided | Coordinator (after all verification passes) |
+| Skill state | System state | Meaning | Who sets it |
+|-------------|-------------|---------|-------------|
+| **pending** | pending | Created, not yet started | Coordinator |
+| **blocked_by_task** | pending | Waiting for another task to complete first | Coordinator |
+| **in_progress** | in_progress | Agent is actively working on it | Assigned agent |
+| **blocked** | in_progress | Cannot proceed — needs resolution | Assigned agent (CC lead + snitch) |
+| **exploring** | in_progress | Explorer investigating (research phase or blocker investigation) | Coordinator |
+| **unblocking** | in_progress | Brainstormer + explorer working to resolve blocker | Coordinator (after blocker reported) |
+| **submitted** | in_progress | Agent believes done, awaiting verification | Assigned agent (CC lead + snitch) |
+| **in_review** | in_progress | Reviewer is actively reviewing | Coordinator (after submission checklist passes) |
+| **in_test_design** | in_progress | Test designer writing test specs (code tasks only) | Coordinator (after reviewer approves) |
+| **in_testing** | in_progress | Test executor implementing and running tests (code tasks only) | Coordinator (after test specs ready) |
+| **in_verification** | in_progress | Verifier adversarially checking (non-code tasks) | Coordinator (after reviewer approves) |
+| **complete** | completed | Proved done — reviewed, tested, evidence provided. ONLY after full verification | Coordinator |
 
 **Transition requirements:**
 
