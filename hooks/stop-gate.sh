@@ -16,11 +16,19 @@ fi
 
 # Skip stop hook for roles that don't write code
 case "${CLAUDE_ROLE:-}" in
-  reviewer|coordinator) exit 0 ;;
+  lead|coordinator|snitch|explorer|brainstormer|designer|reviewer|test-designer|test-reviewer|verifier|qa)
+    exit 0 ;;
 esac
 
 PROOF_DIR="$HOME/.cache/claude-proof/$SESSION_ID"
 PROOF="$PROOF_DIR/proof.md"
+
+# Skill-controlled bypass: any skill that knows the main thread never
+# implements code can touch this marker on entry and remove it on exit.
+# See ~/.claude/bin/skip-stop for the helper that manages it.
+if [ -f "$PROOF_DIR/skip_stop" ]; then
+  exit 0
+fi
 
 # Scope loop detection per agent (subagents share parent session_id)
 AGENT_ID=$(echo "$INPUT" | jq -r '.agent_id // empty')

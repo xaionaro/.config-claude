@@ -1,0 +1,73 @@
+#!/bin/bash
+# skip-stop {on|off|status}
+#
+# Toggles a per-session marker that tells stop-gate.sh to bypass verification.
+# Used by skills whose main thread only orchestrates and never implements
+# code (e.g. agent-teams-execution lead).
+#
+# Session discovery:
+#   1. If $CLAUDE_SESSION_ID is set, use it directly.
+#   2. Otherwise, pick the most-recently-modified session directory under
+#      ~/.cache/claude-proof/ whose name matches a UUID.
+#
+# Edge cases: if two Claude sessions are active concurrently and neither
+# exports CLAUDE_SESSION_ID, this script resolves to whichever session was
+# touched most recently. Acceptable for the typical single-session use case.
+
+set -euo pipefail
+
+CACHE_DIR="$HOME/.cache/claude-proof"
+ACTION="${1:-}"
+
+resolve_session_dir() {
+  if [ -n "${CLAUDE_SESSION_ID:-}" ]; then
+    echo "$CACHE_DIR/$CLAUDE_SESSION_ID"
+    return
+  fi
+  [ -d "$CACHE_DIR" ] || return
+  # Pure-bash newest-dir scan: no pipes, no SIGPIPE races with pipefail.
+  local newest="" newest_mtime=0 d name mtime
+  shopt -s nullglob
+  for d in "$CACHE_DIR"/*/; do
+    d="${d%/}"
+    name="${d##*/}"
+    [[ "$name" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || continue
+    mtime=$(stat -c '%Y' "$d" 2>/dev/null) || continue
+    if [ "$mtime" -gt "$newest_mtime" ]; then
+      newest_mtime=$mtime
+      newest=$d
+    fi
+  done
+  shopt -u nullglob
+  echo "$newest"
+}
+
+SESSION_DIR=$(resolve_session_dir)
+
+if [ -z "$SESSION_DIR" ]; then
+  echo "skip-stop: no session directory found under $CACHE_DIR" >&2
+  exit 1
+fi
+
+case "$ACTION" in
+  on)
+    mkdir -p "$SESSION_DIR"
+    touch "$SESSION_DIR/skip_stop"
+    echo "skip-stop: enabled ($SESSION_DIR)"
+    ;;
+  off)
+    rm -f "$SESSION_DIR/skip_stop"
+    echo "skip-stop: disabled ($SESSION_DIR)"
+    ;;
+  status)
+    if [ -f "$SESSION_DIR/skip_stop" ]; then
+      echo "on ($SESSION_DIR)"
+    else
+      echo "off ($SESSION_DIR)"
+    fi
+    ;;
+  *)
+    echo "usage: skip-stop {on|off|status}" >&2
+    exit 2
+    ;;
+esac

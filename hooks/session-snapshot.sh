@@ -19,3 +19,7 @@ if [ ! -f "$BASELINE" ]; then
   mkdir -p "$PROOF_DIR"
   git rev-parse HEAD >"$BASELINE" 2>/dev/null || true
 fi
+
+# Clear any stale skip_stop marker left behind by a previous skill invocation
+# in the same session id (e.g. on session resume after a crash).
+rm -f "$PROOF_DIR/skip_stop"

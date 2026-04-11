@@ -416,6 +416,8 @@ Review independently first. Minority dissent requires counter-evidence to overri
 
 **NEVER implement. The lead enforces all skill rules.** Reactive, not proactive — the lead reacts to events rather than actively observing. On every event, the lead verifies that all applicable rules were followed. On violation, the lead reminds the agent of the specific rule and the required correction — never blocks, always corrects.
 
+**Stop-hook bypass (first action, unconditional):** As the very first action on entering this skill — before spawning any teammate — run `~/.claude/bin/skip-stop on`. The main thread never implements code, so the verification gate is pure overhead here. On **any** skill exit (team completion, user abort, escalation halt, fatal error), run `~/.claude/bin/skip-stop off` to clear the marker. Leaving it stale would silently bypass verification in the next normal dev session.
+
 **Interrupting violations:** A message alone is insufficient — agents won't see it until their turn ends. To interrupt:
 1. SendMessage with the correction (specific rule + required fix)
 2. Then `tmux send-keys -t <pane> Escape` to interrupt their turn
