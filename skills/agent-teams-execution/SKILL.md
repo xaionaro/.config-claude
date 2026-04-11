@@ -52,7 +52,7 @@ Example: "Create an agent team with 3 explorer teammates, 1 designer, 1 design r
 | **Test Reviewer** | 1+ | 4 | Paired with test executors. Report only, never edit tests. |
 | **Verifier** | 1+ | per task | For lightweight tasks (no code, no test pipeline). Adversarially checks deliverable against all expectations. Replaces test pipeline when testing is N/A. |
 | **Brainstormer** | 1 | any | On-demand when a blocker emerges. Genius creative unblocker — thinks outside the box. Lists as many solution ideas as possible. Positives only — no negatives, no filtering, no feasibility judgment. Bigger list = better. |
-| **Snitch** | 1 | all | CCed on all submitted/blocked/completed claims and QA verdicts. Independently verifies all rules are followed. Notifies lead on any violation. Success = finding violations that the lead confirms. The more confirmed violations found, the better. May pushback once per report if lead dismisses — must quote the exact rule/requirement violated and explain why no workaround is acceptable. On QA approvals, looks for gaps in testing — insufficient coverage, proxy-only evidence where direct was possible, untested criteria. Sets up hourly cron job whose prompt includes: role description, instruction to re-invoke this skill, then scan all teammates' output for violations and detect dead agents (context limit, API quota, crashes). Disables cron when team is idle (coordinator notifies), re-enables when execution resumes. |
+| **Snitch** | 1 | all | CCed on all submitted/blocked/completed claims and QA verdicts. Independently verifies all rules are followed. Notifies lead on any violation. Success = finding violations that the lead confirms. The more confirmed violations found, the better. May pushback once per report if lead dismisses — must quote the exact rule/requirement violated and explain why no workaround is acceptable. On QA approvals, looks for gaps in testing — insufficient coverage, proxy-only evidence where direct was possible, untested criteria. On every reviewer APPROVED message, runs rubber-stamp check: compare reviewer findings against executor's critique log. Reviewer citing zero issues beyond executor self-reports = flag to lead. Lead demands reviewer either (a) confirm self-reported issues are adequately fixed with cited evidence, or (b) find at least one independent issue, or (c) confirm the artifact has none after scrutinizing each checklist item. Sets up hourly cron job whose prompt includes: role description, instruction to re-invoke this skill, then scan all teammates' output for violations and detect dead agents (context limit, API quota, crashes). Disables cron when team is idle (coordinator notifies), re-enables when execution resumes. |
 | **QA** | 1 | final | Final integration check. Runs all tests. Last gate. |
 
 ### Team Sizing
@@ -347,7 +347,7 @@ After brainstormer finishes, coordinator launches a second explorer to validate 
 
 1. **Assume wrong.** Find errors. Look for what's missing.
 2. **Classify:** Critical (security, correctness, spec violation), Major (design deviation, missing edge case) — both block. Minor (doesn't block), Nit (never blocks).
-3. **Outcomes:** APPROVED (no Critical/Major, with evidence), CONDITIONAL (Minor/Nit listed), REJECTED (Critical/Major cited with fix direction).
+3. **Outcomes:** APPROVED (no Critical/Major, with evidence), CONDITIONAL (Minor/Nit listed), REJECTED (Critical/Major cited with fix direction). Every Critical/Major must cite `file:line`. Fix direction must name the exact symbol changed. Vague findings ("refactor this function", "clean this up") are inadmissible. Rejections must enumerate reasons before any approval statement — no mixed verdicts.
 4. **Check against:** design doc, coding style skill (semantic integrity, naming, typing, no shortcuts — every rule), OWASP top 10, edge cases, error handling, requirements, claim tags, critique log. No coding style invocation = reject. Untagged factual claims = reject. T5 claims not promoted = reject. No critique log = reject.
 5. **Max 10 rounds** then escalate.
 
@@ -357,7 +357,9 @@ Dispute a finding with evidence: cite code, spec, or test. Reviewer withdraws or
 
 ### Multi-Reviewer (2+)
 
-Review independently first. Minority dissent requires counter-evidence to override. T1 outweighs T3.
+Review independently first — no reading peer findings before writing your own. Minority dissent requires counter-evidence to override. T1 outweighs T3.
+
+**Lens partition.** Coordinator assigns non-overlapping lenses per reviewer: reviewer-1 = correctness/edge cases, reviewer-2 = security/OWASP, reviewer-3 = design/semantic integrity/naming. Each produces findings under its lens before lenses converge. Issues outside a lens are still reported, but lens coverage is primary. Identical spawn prompts for sibling reviewers = reject.
 
 ## QA Protocol
 
@@ -445,6 +447,7 @@ Review independently first. Minority dissent requires counter-evidence to overri
 ### Spawn Checklist (lead verifies before every spawn)
 
 - [ ] Spawn prompt includes instruction: "Invoke `agent-teams-execution` skill via Skill tool as your first action"
+- [ ] Stop condition stated as observable criterion; false-stops enumerated
 - [ ] Model set to opus
 - [ ] Correct coding style skill listed by exact name (not placeholder)
 - [ ] Claim tagging instructions included verbatim
@@ -490,6 +493,9 @@ Re-entry: original designer handles Phase 2 re-entry directly — full context p
 You are the [ROLE] for this agent team.
 
 Your task: [SPECIFIC TASK]
+
+Stop when: [OBSERVABLE COMPLETION CRITERION — concrete state, not "when you think it's done"]
+Do NOT stop on: [COMMON FALSE-STOPS — e.g. "first draft ready", "happy path works", "build compiles"]
 
 Context:
 - Explorer findings: [summary or "see task list"]
