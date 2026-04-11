@@ -1,6 +1,6 @@
 ---
 name: harness-tuning
-description: Use when writing or editing skills, system prompts, CLAUDE.md
+description: Use when writing, reviewing, shortening, tightening, deduplicating, or compressing any skill file, system prompt, subagent prompt, or CLAUDE.md — including when asked to "fix" or "improve" a prompt file.
 ---
 
 # Harness Tuning
@@ -32,15 +32,26 @@ Every token costs context window in every session. Waste is cumulative.
 | "Each and every factual claim must be tagged" | "Tag all claims" |
 | "Before marking any task as complete, they must verify against..." | "Before marking done:" |
 
+## Triggering (frontmatter `description`)
+
+Always-loaded. Optimize for match, not compression.
+
+| Rule | Example |
+|------|---------|
+| First 6 words carry the trigger | `Use when writing or shortening...` not `This skill helps when...` |
+| List verbs users actually say | `writing, reviewing, shortening, fixing` — cover synonyms |
+| Enumerate file types + aliases | `skill file, SKILL.md, system prompt, CLAUDE.md` |
+| Name the failure the skill prevents | `...ensures every word earns its place` |
+
+Bad → good:
+- `description: helps with prompts` → `description: Use when writing, reviewing, or shortening skill files, system prompts, CLAUDE.md`
+- `description: for skill authoring` → `description: Use when writing or editing any SKILL.md, agent prompt, or CLAUDE.md — including "fix this prompt" and "tighten this"`
+
 ## Targets
 
-| Scope | Max words |
-|-------|-----------|
-| Session-loaded skills | 200 |
-| Complex discipline skills | 1500 |
-| CLAUDE.md / system prompts | Minimize ruthlessly |
+No fixed word budget. The target is marginal value per word: every rule, every example, every sentence must change reader behavior. A 3000-word skill that eliminates repeated failures earns its length; a 200-word skill with filler does not.
 
-20%+ word reduction with same rules = better version.
+Test: 20%+ word reduction with same rules = better version.
 
 ## Process
 
@@ -48,7 +59,7 @@ Every token costs context window in every session. Waste is cumulative.
 2. Each sentence: "Does this change behavior?" No -> delete.
 3. Deduplicate. Keep most scannable version (table > list > prose).
 4. 3+ parallel items -> table.
-5. `wc -w`. Target met?
+5. Repeat 2-4 until no further cut preserves all rules.
 
 ## Red Flags
 

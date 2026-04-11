@@ -23,7 +23,7 @@ Separate the hand that builds from the hand that tears down. The builder cannot 
 | 1 | Explore | Separate research agent | Ranked options + cited sources |
 | 2 | Critique explorations | Different critic agent | Per-option verdict + shortlist |
 | 3 | Loop: Implement | Implementer (subagent or main) | One shortlist item applied |
-| 3 | Loop: Critique implementation | Different critic agent OR self-critique | Issues list or "clean" |
+| 3 | Loop: Critique implementation | Different critic agent | Issues list or "clean" |
 | Exit | Main thread | Apply / commit / report |
 
 **Never run any phase in the same session as the previous phase's producer.** Main thread orchestrates; agents produce.
@@ -43,9 +43,10 @@ Spawn a separate agent. Prompt must include:
 Spawn a DIFFERENT agent — not the explorer, not the main thread.
 
 The critic's prompt must include:
+- **"Step 0 — Independent baseline."** Read the source material (target file, existing code, prior art) and write your own 3-5 bullet assessment BEFORE opening the explorer's report. Include this baseline in the critique output so independence is auditable.
 - "Assume every suggestion is wrong until you prove otherwise."
 - "Read the current state first" (the file/code/doc the explorer was working on) — verify duplication claims independently.
-- "Independently verify a sample of the explorer's citations" — fetch URLs, read primary sources. Flag hallucinated or misquoted citations.
+- **Cite-verify protocol.** Default: fetch every T1/T2 URL the explorer cites. Use WebFetch. Quote the exact passage that supports the claim. Flag hallucinated URLs, misquoted findings, training-recall masquerading as T1. A citation may be skipped only if the critic explicitly writes "non-load-bearing: no verdict depends on this source" next to it — load-bearing means any citation the explorer uses to justify a KEEP/MODIFY verdict. T3/T4 references may be sampled.
 - Per-option verdict: KEEP / MODIFY / REJECT / DUPLICATE, with evidence-tied justification.
 - Shortlist of survivors with CONCRETE TEXT of the proposed change, not "add a section".
 - Rejected list with per-item reason.
@@ -54,9 +55,9 @@ The critic's prompt must include:
 ## Phase 3: Loop (Implement → Critique)
 
 1. **Implement one item at a time.** No batching — one shortlist item, one diff.
-2. **Critique the diff.** Either spawn a different critic agent OR self-critique by re-reading the diff against the critic's Phase-2 checks. Prefer a separate agent when the change is load-bearing.
-3. **Issues found → fix → re-critique.** Repeat until clean pass.
-4. **Loop limit: 3 implement→critique cycles per item.** At round 4, escalate to user with what was tried.
+2. **Critique the diff.** Spawn a different critic agent — never the implementer, never the main thread. Self-critique is banned: producers systematically underweight their own errors.
+3. **Issues found → fix → re-critique.** Repeat until clean pass. Critic emits only issues that, if unresolved, would make the item wrong, unsafe, or contradict its concrete text. Polish and taste items do not belong in the critique — they waste cycles and invite aesthetic churn. "Clean pass" = the critic returns zero issues.
+4. **Loop limit: 3 implement→critique cycles per item.** If cycle 3 still ends in rejection, do not attempt a 4th — escalate to user with: (a) the original shortlist item, (b) diff of each cycle's changes, (c) the last blocking issue that could not be resolved, (d) the next-best alternative from the explorer's ranking. Silent punts forbidden.
 
 ## Exit conditions
 
@@ -68,22 +69,16 @@ The critic's prompt must include:
 
 | Symptom | Fix |
 |---------|-----|
-| Same session explores and critiques | Spawn separate agent for critique |
-| Critic rubber-stamps (0 rejections, 0 citations verified) | Re-spawn with harsher adversarial prompt |
-| Critic paraphrases explorer's rationale | Not independent. Reject. Re-spawn |
-| Citations not fetched by critic | Critic uses tools, not training recall |
 | Implementing 2+ items before re-critiquing | Stop. One at a time |
-| Main thread researching or critiquing | Delegate. Main thread orchestrates only |
-| "Good enough" at round 3 | Escalate, don't settle |
-| Critic sees explorer's output before writing its own assessment of the source material | Order: read source → form view → then read explorer |
+| "Good enough" at cycle 3 | Escalate per loop-limit rule, don't settle |
 | Shortlist items lack concrete text | Critic under-specified. Re-spawn with "concrete text required" |
-| No rejected list | Critic is not adversarial. Re-spawn |
+| No rejected list in Phase 2 | Critic is not adversarial. Re-spawn |
 
 ## Relationship to other skills
 
 | Skill | Difference |
 |-------|-----------|
 | `superpowers:brainstorming` | Explores user intent before design. This skill explores solutions after intent is clear. |
-| `agent-teams-execution` | Full multi-role pipeline for large builds. This skill is the lightweight 2-agent pattern for smaller, research-heavy tasks. |
+| `agent-teams-execution` | Full multi-role pipeline for large builds. This skill is the lightweight 2-agent pattern for smaller, research-heavy tasks. Borrow its Snitch rubber-stamp check: critic citing zero issues beyond producer's self-reports = re-spawn with harsher prompt. |
 | `superpowers:systematic-debugging` | For diagnosing a known bug. This skill is for open-ended improvement/design research. |
 | `proof-driven-development` | Proves correctness of logic. This skill selects which logic to build. |
