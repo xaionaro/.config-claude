@@ -359,7 +359,7 @@ Dispute a finding with evidence: cite code, spec, or test. Reviewer withdraws or
 
 Review independently first — no reading peer findings before writing your own. Minority dissent requires counter-evidence to override. T1 outweighs T3.
 
-**Lens partition.** Coordinator assigns non-overlapping lenses per reviewer: reviewer-1 = correctness/edge cases, reviewer-2 = security/OWASP, reviewer-3 = design/semantic integrity/naming. Each produces findings under its lens before lenses converge. Issues outside a lens are still reported, but lens coverage is primary. Identical spawn prompts for sibling reviewers = reject.
+**Lens partition.** Coordinator assigns non-overlapping lenses, allocated in priority order: (1) correctness/edge cases, (2) security/OWASP, (3) design/semantic integrity/naming. With 2 reviewers: lenses 1+2. With 3 reviewers: lenses 1+2+3. With 4+: split correctness into happy-path vs edge-case, or split design into naming vs architecture. Each reviewer produces findings under its lens before lenses converge. Issues outside a lens are still reported, but lens coverage is primary. Identical spawn prompts for sibling reviewers = reject.
 
 ## QA Protocol
 
