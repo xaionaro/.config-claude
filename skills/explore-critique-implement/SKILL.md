@@ -27,8 +27,9 @@ Coding task? Every subagent prompt (explorer, critic, implementer) must include:
 | 1 | Explore | Separate research agent | Ranked options + cited sources |
 | 2 | Critique explorations | Different critic agent | Per-option verdict + shortlist |
 | 3 | Loop: Implement | Implementer (subagent or main) | One shortlist item applied |
-| 3 | Loop: Critique implementation | Different critic agent | Issues list or "clean" |
-| 4 | E2E confirmation | Main thread or subagent | Pass/fail with evidence |
+| 3a | Loop: General critique | Critic agent A | Issues list or "clean" |
+| 3b | Loop: Tech debt / style critique | Critic agent B (not A) | Debt/smell issues or "clean" |
+| 3c | Loop: E2E verification | Main thread or subagent | Pass/fail with evidence |
 | Exit | Main thread | Apply / commit / report |
 
 **Never run any phase in the same session as the previous phase's producer.** Main thread orchestrates; agents produce.
@@ -57,30 +58,57 @@ The critic's prompt must include:
 - Rejected list with per-item reason.
 - "Be harsh. Most suggestions are noise. Fewer survivors is fine."
 
-## Phase 3: Loop (Implement → Critique)
+## Phase 3: Loop (Implement → Critique → Critique → E2E)
 
-1. **Implement one item at a time.** No batching — one shortlist item, one diff. Code tasks: implementer invokes `superpowers:test-driven-development`, `debugging-discipline`, and the applicable `<language>-coding-style` skill.
-2. **Critique the diff.** Spawn a different critic agent — never the implementer, never the main thread. Self-critique is banned: producers systematically underweight their own errors.
-3. **Issues found → fix → re-critique.** Repeat until clean pass. Critic emits only issues that, if unresolved, would make the item wrong, unsafe, or contradict its concrete text. Polish and taste items do not belong in the critique — they waste cycles and invite aesthetic churn. "Clean pass" = the critic returns zero issues.
-4. **Loop limit: 3 implement→critique cycles per item.** If cycle 3 still ends in rejection, do not attempt a 4th — escalate to user with: (a) the original shortlist item, (b) diff of each cycle's changes, (c) the last blocking issue that could not be resolved, (d) the next-best alternative from the explorer's ranking. Silent punts forbidden.
+For each shortlist item, run the full loop: implement, two independent critiques, E2E verification. Do not advance to the next item until the current one passes all steps.
 
-## Phase 4: E2E Confirmation
+### 3.1 Implement
 
-**Implementation and debugging tasks only.** Skip for non-code tasks (docs, config, design).
+One shortlist item, one diff. No batching. Code tasks: implementer invokes `superpowers:test-driven-development`, `debugging-discipline`, and the applicable `<language>-coding-style` skill.
 
-After all shortlist items land with clean critique, run end-to-end verification:
-1. Build the project. Compilation failure = back to Phase 3.
-2. Run full test suite. Failures = back to Phase 3.
+### 3.2 General critique (Critic A)
+
+Spawn a critic agent — never the implementer, never the main thread. Self-critique is banned.
+
+Focus: correctness, safety, contract violations, contradictions with the shortlist item's concrete text. Emits only issues that, if unresolved, would make the item wrong, unsafe, or contradict its concrete text. Polish and taste items do not belong — they waste cycles and invite aesthetic churn.
+
+### 3.3 Tech debt / style / smell critique (Critic B)
+
+Spawn a DIFFERENT critic agent — not Critic A, not the implementer, not the main thread. Two independent perspectives catch what one misses.
+
+Focus — adversarial, long-term lens:
+- **Tech debt**: Does this change introduce coupling, hidden dependencies, or shortcuts that will cost more to fix later than to fix now?
+- **Coding style**: Load the applicable `<language>-coding-style` skill. Does the diff follow naming, error handling, structure, and idiom conventions?
+- **Code smells**: God methods, feature envy, primitive obsession, duplicated logic, unclear names, missing abstractions (or premature ones). Flag only smells that materially hurt readability or maintainability — not nitpicks.
+- **Architectural fit**: Does the change sit in the right layer? Does it respect existing module boundaries?
+
+Critic B emits only issues that matter for long-term health. "Would refactor eventually" is not an issue — "will cause bugs or confusion within 3 months" is.
+
+### 3.4 Fix → re-critique
+
+Issues from either critic → fix → re-critique (both critics review again). Repeat until both return zero issues. "Clean pass" = both Critic A and Critic B return zero issues.
+
+### 3.5 E2E verification
+
+**Code/debugging tasks only.** Skip for non-code tasks (docs, config, design).
+
+After clean pass from both critics:
+1. Build the project. Compilation failure = back to 3.1.
+2. Run full test suite. Failures = back to 3.1.
 3. Exercise the affected feature through real UI or API as a user would. Verify observable outcomes (output, screenshots, state). Proxy evidence (unit tests pass, linter clean) alone insufficient — direct evidence required.
 4. Confirm no regressions in related features.
 
-Fail at any step → return to Phase 3 with specific failure as new issue.
+Fail at any step → return to 3.1 with specific failure as new issue.
+
+### Loop limit
+
+**3 full cycles (implement → critiques → E2E) per item.** If cycle 3 still fails, do not attempt a 4th — escalate to user with: (a) the original shortlist item, (b) diff of each cycle's changes, (c) the last blocking issue that could not be resolved, (d) the next-best alternative from the explorer's ranking. Silent punts forbidden.
 
 ## Exit conditions
 
-- All shortlist items landed with clean critique + Phase 4 passed (code/debug tasks), OR
+- All shortlist items landed with clean pass from both critics + E2E passed (code/debug tasks), OR
 - Loop limit hit on any item → escalate, do not force, OR
-- Critic finds no further actionable issues + Phase 4 passed (code/debug tasks).
+- Both critics find no further actionable issues + E2E passed (code/debug tasks).
 
 ## Red flags
 
@@ -88,6 +116,8 @@ Fail at any step → return to Phase 3 with specific failure as new issue.
 |---------|-----|
 | Implementing 2+ items before re-critiquing | Stop. One at a time |
 | "Good enough" at cycle 3 | Escalate per loop-limit rule, don't settle |
+| Same agent for both critiques | Banned. Critic A ≠ Critic B ≠ implementer. Three distinct agents minimum |
+| Skipping E2E inside loop | E2E runs every cycle, not just at the end |
 | Shortlist items lack concrete text | Critic under-specified. Re-spawn with "concrete text required" |
 | No rejected list in Phase 2 | Critic is not adversarial. Re-spawn |
 
