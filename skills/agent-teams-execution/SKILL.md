@@ -103,6 +103,7 @@ Executors invoke coding style + `proof-driven-development` + `superpowers:test-d
 - Names are contracts: implementation fulfills exactly what the name promises. No smuggled decisions or side effects.
 - Same concept = same name everywhere. Related concepts use parallel structure.
 - Strong typing for domain concepts. No bare primitives where named types belong.
+- Package/binary scope: code belongs in the binary whose stated purpose matches the code's function. A standalone CLI tool must not contain code requiring a running daemon.
 - Clean solution over hack, always. Reviewers reject shortcuts, workarounds, and "good enough for now."
 
 ### Task States
@@ -275,11 +276,12 @@ After each task milestone (code approved, tests approved), coordinator records: 
 Phase 2 design **must include**:
 1. **Architecture** -- components, data flow, error/failure flow, interfaces
 2. **File ownership map** -- no overlaps. Spawn prompts include: "You own ONLY these files: [list]."
-3. **Interface contracts** -- public APIs/signatures per task, including: error/failure modes, preconditions/postconditions, data invariants, thread safety. Test designer uses these before executors finish.
-4. **Module dependency graph** -- coordinator uses for executor sequencing.
-5. **Requirement traceability** -- component → user requirement mapping. Every requirement covered, every component justified.
-6. **Security design** (when applicable) -- trust boundaries, attack surfaces, security controls, auth strategy. OWASP at design time, not just code review.
-7. **Shared concerns register** -- logic/types/patterns needed by 2+ tasks. Each entry: {what, which tasks, designated shared location}. Executors consume this to avoid reimplementation.
+3. **Binary/service purpose map** -- for each binary or deployable, one-sentence statement of purpose, scope, and dependencies. File ownership map must be consistent with this.
+4. **Interface contracts** -- public APIs/signatures per task, including: error/failure modes, preconditions/postconditions, data invariants, thread safety. Test designer uses these before executors finish.
+5. **Module dependency graph** -- coordinator uses for executor sequencing.
+6. **Requirement traceability** -- component → user requirement mapping. Every requirement covered, every component justified.
+7. **Security design** (when applicable) -- trust boundaries, attack surfaces, security controls, auth strategy. OWASP at design time, not just code review.
+8. **Shared concerns register** -- logic/types/patterns needed by 2+ tasks. Each entry: {what, which tasks, designated shared location}. Executors consume this to avoid reimplementation.
 
 **Git worktrees:** 2+ parallel executors -> each gets own worktree. Create before spawning, merge after approval.
 
@@ -358,10 +360,11 @@ After brainstormer finishes, coordinator launches a second explorer to validate 
 ### Design Reviewer — Additional Rejection Criteria
 
 REJECT if any are missing or incomplete:
-- Requirement traceability (item 5) — every requirement mapped, every component justified
-- Security design (item 6, when applicable) — trust boundaries, attack surfaces, controls
-- Shared concerns register (item 7) — all cross-task logic/types identified with designated locations
-- Enriched interface contracts (item 3) — error modes, pre/postconditions, invariants, thread safety
+- Requirement traceability (item 6) — every requirement mapped, every component justified
+- Security design (item 7, when applicable) — trust boundaries, attack surfaces, controls
+- Shared concerns register (item 8) — all cross-task logic/types identified with designated locations
+- Enriched interface contracts (item 4) — error modes, pre/postconditions, invariants, thread safety
+- File ownership map contradicts binary/service purpose map (items 2 vs 3)
 
 ### Execution Reviewer Checklist
 
@@ -370,6 +373,7 @@ Extends the general Reviewer Protocol above (which already covers OWASP, edge ca
 - [ ] Load the `<language>-coding-style` skill via Skill tool. Check every rule.
 - [ ] Requirements coverage — each user requirement → code
 - [ ] Design compliance — implementation matches architecture + interface contracts (error modes, pre/postconditions, invariants, thread safety)
+- [ ] Code location — files in correct binary per purpose map
 - [ ] Shared concerns register — no reimplementation (REJECT); missed abstraction (CONDITIONAL)
 
 ### Executor Disputes

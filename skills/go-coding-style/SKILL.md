@@ -132,6 +132,7 @@ A name is a contract — implementation fulfills exactly what the name promises.
 - **Return type matches name.** `GetUser` → User. `IsValid` → bool. `ListItems` → collection.
 - **No smuggled decisions.** `doX()` assumes X should happen. "If not needed, return early" inside it is a violation — the caller decides.
 - **No smuggled side effects.** Getters don't mutate. Predicates (`Is`, `Has`, `Can`) don't change state. If they must, the name must reveal it.
+- **Package scope.** Verify code belongs in THIS package/binary. A package named `foocli` (standalone tool) must not contain code requiring a running `food` daemon.
 
 Review check: read the name, predict the body, read the body. Any surprise is a violation.
 

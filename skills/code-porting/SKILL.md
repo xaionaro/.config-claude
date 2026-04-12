@@ -170,6 +170,7 @@ Checks:
 - Missing steps?
 - Over-engineering (porting things that aren't needed)?
 - Under-scoping (missing integration glue)?
+- File-to-binary assignment coherence — does each file belong in the binary whose purpose matches?
 - Task granularity appropriate for `explore-critique-implement`?
 
 Verdict: PASS (with NITs) or FAIL (with mandatory fixes). On FAIL, loop back to 5a with critic's feedback. Word cap: 1500 words.

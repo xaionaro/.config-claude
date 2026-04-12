@@ -98,7 +98,7 @@ Focus — adversarial, long-term lens:
 - **Tech debt**: Coupling, hidden dependencies, or shortcuts costing more to fix later than now?
 - **Coding style**: Load the applicable `<language>-coding-style` skill. Does the diff follow naming, error handling, structure, and idiom conventions?
 - **Code smells**: God methods, feature envy, primitive obsession, duplicated logic, unclear names, missing/premature abstractions. Flag only smells that materially hurt readability or maintainability.
-- **Architectural fit**: Right layer? Respects module boundaries?
+- **Architectural fit**: Right layer? Respects module boundaries? Code in correct binary/package per its stated purpose?
 
 Emit only issues that matter for long-term health. "Would refactor eventually" is not an issue — "will cause bugs or confusion within 3 months" is.
 
