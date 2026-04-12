@@ -235,7 +235,7 @@ digraph phases {
     "Spawn executor/reviewer pairs + test designer" -> "Write test specs (wait for interface contracts)";
     "Implement module (owns assigned files only)" -> "Execution reviewer approves?";
     "Execution reviewer approves?" -> "Revise code based on feedback" [label="no (round 1-10)"];
-    "Execution reviewer approves?" -> "STOP: 3 exec rejections - escalate" [label="no (round 11+)"];
+    "Execution reviewer approves?" -> "STOP: 10 exec rejections - escalate" [label="no (round 11+)"];
     "Revise code based on feedback" -> "Executor blocked by design issue?";
     "Executor blocked by design issue?" -> "Report to lead - re-enter Phase 1" [label="yes"];
     "Report to lead - re-enter Phase 1" -> "Spawn explorers";
@@ -249,7 +249,7 @@ digraph phases {
     "Spawn test executor/reviewer pairs" -> "Implement unit + integration tests from specs";
     "Implement unit + integration tests from specs" -> "Test reviewer approves?";
     "Test reviewer approves?" -> "Revise tests based on feedback" [label="no (round 1-10)"];
-    "Test reviewer approves?" -> "STOP: 3 test rejections - escalate" [label="no (round 11+)"];
+    "Test reviewer approves?" -> "STOP: 10 test rejections - escalate" [label="no (round 11+)"];
     "Revise tests based on feedback" -> "Test reviewer approves?";
     "Test reviewer approves?" -> "Confirm all tests pass" [label="yes - with evidence"];
 
@@ -273,10 +273,13 @@ After each task milestone (code approved, tests approved), coordinator records: 
 ## Design Output Requirements
 
 Phase 2 design **must include**:
-1. **Architecture** -- components, data flow, interfaces
+1. **Architecture** -- components, data flow, error/failure flow, interfaces
 2. **File ownership map** -- no overlaps. Spawn prompts include: "You own ONLY these files: [list]."
-3. **Interface contracts** -- public APIs/signatures per task. Test designer uses these before executors finish.
+3. **Interface contracts** -- public APIs/signatures per task, including: error/failure modes, preconditions/postconditions, data invariants, thread safety. Test designer uses these before executors finish.
 4. **Module dependency graph** -- coordinator uses for executor sequencing.
+5. **Requirement traceability** -- component → user requirement mapping. Every requirement covered, every component justified.
+6. **Security design** (when applicable) -- trust boundaries, attack surfaces, security controls, auth strategy. OWASP at design time, not just code review.
+7. **Shared concerns register** -- logic/types/patterns needed by 2+ tasks. Each entry: {what, which tasks, designated shared location}. Executors consume this to avoid reimplementation.
 
 **Git worktrees:** 2+ parallel executors -> each gets own worktree. Create before spawning, merge after approval.
 
@@ -351,6 +354,23 @@ After brainstormer finishes, coordinator launches a second explorer to validate 
 3. **Outcomes:** APPROVED (no Critical/Major, with evidence), CONDITIONAL (Minor/Nit listed), REJECTED (Critical/Major cited with fix direction). Every Critical/Major must cite `file:line`. Fix direction must name the exact symbol changed. Vague findings ("refactor this function", "clean this up") are inadmissible. Rejections must enumerate reasons before any approval statement — no mixed verdicts.
 4. **Check against:** design doc, coding style skill (semantic integrity, naming, typing, no shortcuts — every rule), OWASP top 10, edge cases, error handling, requirements, claim tags, critique log. No coding style invocation = reject. Untagged factual claims = reject. T5 claims not promoted = reject. No critique log = reject.
 5. **Max 10 rounds** then escalate.
+
+### Design Reviewer — Additional Rejection Criteria
+
+REJECT if any are missing or incomplete:
+- Requirement traceability (item 5) — every requirement mapped, every component justified
+- Security design (item 6, when applicable) — trust boundaries, attack surfaces, controls
+- Shared concerns register (item 7) — all cross-task logic/types identified with designated locations
+- Enriched interface contracts (item 3) — error modes, pre/postconditions, invariants, thread safety
+
+### Execution Reviewer Checklist
+
+Extends the general Reviewer Protocol above (which already covers OWASP, edge cases, error handling, claim tags, critique log). Execution reviewers additionally check:
+
+- [ ] Load the `<language>-coding-style` skill via Skill tool. Check every rule.
+- [ ] Requirements coverage — each user requirement → code
+- [ ] Design compliance — implementation matches architecture + interface contracts (error modes, pre/postconditions, invariants, thread safety)
+- [ ] Shared concerns register — no reimplementation (REJECT); missed abstraction (CONDITIONAL)
 
 ### Executor Disputes
 
@@ -455,6 +475,7 @@ Review independently first — no reading peer findings before writing your own.
 - [ ] File ownership explicit (executor/test roles)
 - [ ] Paired reviewer confirmed alive (executor spawns only)
 - [ ] Reviewer/verifier spawns include: executor's original objective with full context, and all scrutiny rules (coding style, claim tagging, OWASP, semantic integrity, etc.)
+- [ ] Execution reviewer spawns include: explicit "Load the `<language>-coding-style` skill via Skill tool" instruction + shared concerns register
 - [ ] Preemptive warnings included: coordinator anticipates the most likely mistakes this agent could make given the specific task and explicitly warns against them in the spawn prompt
 - [ ] CLAUDE_ROLE env set to role name for every spawn (coordinator, explorer, designer, reviewer, executor, test-designer, test-executor, test-reviewer, verifier, qa, brainstormer, snitch)
 
@@ -468,7 +489,7 @@ Downstream agents get **structured summaries**, not raw upstream output.
 |------|----------|----------|
 | Designer | Explorer findings summary + source tags | Raw tool outputs, full files |
 | Executor | Own module's design + interface contracts | Other modules, explorer findings |
-| Reviewer | Executor's original objective (with full context), diff, relevant design, contracts, all scrutiny rules (coding style, claim tagging, OWASP, etc.) | Full codebase, other modules |
+| Reviewer | Executor's original objective (with full context), diff, relevant design, enriched interface contracts, shared concerns register, all scrutiny rules (coding style, claim tagging, OWASP, etc.) | Full codebase, other modules |
 | Test Executor | Test specs + contracts + public APIs | Implementation details |
 | QA | Original objectives (all tasks, with full context), phase summaries, test results, all scrutiny rules | Teammate conversation histories |
 
@@ -558,6 +579,8 @@ Compliance:
 | Non-executor confirmed unresponsive | Re-spawn immediately |
 | Executor confirmed unresponsive | Review its changes first (paired reviewer), then re-spawn for remaining work |
 | No critique log | Reviewer rejects |
+| Duplicated logic across modules | Check shared concerns register. Extract to designated shared location |
+| Execution reviewer not loading coding style skill | STOP. Must load `<language>-coding-style` via Skill tool per Execution Reviewer Checklist |
 | Test specs don't match interfaces | Test designer waits for contracts |
 | Agent claim accepted without verification | Reviewers validate completion; explorers verify blockers and external blame |
 | Capping executor count | One pair per independent unit of work. No limits |
