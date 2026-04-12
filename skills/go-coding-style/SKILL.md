@@ -128,6 +128,7 @@ A name is a contract — implementation fulfills exactly what the name promises.
 
 - **Does only what it says.** `resolveTable` resolves a table — not decide *whether* to, retry, or log analytics. Extra behavior belongs in the caller or the name.
 - **Does everything it says.** `ValidateAndSave` must validate and save. If either can happen without the other, split or rename.
+- **Interface implementation is a contract.** Implementing an interface claims "I fulfill this." Always-erroring or no-op primary methods = violation. Deferred is not an implementation strategy — either implement or don't create the type yet.
 - **No opposite behavior.** `disable` must not return an "enabled" state. `remove` must not archive.
 - **Return type matches name.** `GetUser` → User. `IsValid` → bool. `ListItems` → collection.
 - **No smuggled decisions.** `doX()` assumes X should happen. "If not needed, return early" inside it is a violation — the caller decides.

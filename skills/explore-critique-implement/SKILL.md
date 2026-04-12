@@ -88,7 +88,7 @@ Both critics tag every issue per the severity codes table above.
 
 ### Critic A — correctness
 
-Emit only issues affecting correctness, safety, or fidelity to the concrete text. Polish and taste items are NITs at most.
+Emit only issues affecting correctness, safety, or fidelity to the concrete text. Interface contract fulfillment — does every interface implementation actually work, not just compile? Polish and taste items are NITs at most.
 
 ### Critic B — long-term health
 

@@ -105,6 +105,7 @@ Executors invoke coding style + `proof-driven-development` + `superpowers:test-d
 - Strong typing for domain concepts. No bare primitives where named types belong.
 - Package/binary scope: code belongs in the binary whose stated purpose matches the code's function. A standalone CLI tool must not contain code requiring a running daemon.
 - Clean solution over hack, always. Reviewers reject shortcuts, workarounds, and "good enough for now."
+- Interface implementation is a contract: "I fulfill this interface." An always-erroring implementation is a false claim — same as naming a function Save that doesn't save. Stub implementations that always error must not exist in production code.
 
 ### Task States
 
@@ -351,11 +352,14 @@ After brainstormer finishes, coordinator launches a second explorer to validate 
 
 **Reviewers report, never fix.** No editing code, designs, or tests. Describe the problem and suggest a fix direction. The paired executor implements all changes.
 
+0. **Does it work?** Before evaluating quality, verify code fulfills its stated purpose. Always-erroring implementation, stub returning zero values, handler silently dropping input — REJECT immediately. "Plan says deferred" is not a defense. If code exists, it must work.
 1. **Assume wrong.** Find errors. Look for what's missing.
 2. **Classify:** Critical (security, correctness, spec violation), Major (design deviation, missing edge case) — both block. Minor (doesn't block), Nit (never blocks).
 3. **Outcomes:** APPROVED (no Critical/Major, with evidence), CONDITIONAL (Minor/Nit listed), REJECTED (Critical/Major cited with fix direction). Every Critical/Major must cite `file:line`. Fix direction must name the exact symbol changed. Vague findings ("refactor this function", "clean this up") are inadmissible. Rejections must enumerate reasons before any approval statement — no mixed verdicts.
 4. **Check against:** design doc, coding style skill (semantic integrity, naming, typing, no shortcuts — every rule), OWASP top 10, edge cases, error handling, requirements, claim tags, critique log. No coding style invocation = reject. Untagged factual claims = reject. T5 claims not promoted = reject. No critique log = reject.
 5. **Max 10 rounds** then escalate.
+
+Design creates a type/component but defers making it work = reject. Valid deferral: don't create it yet. Invalid deferral: create a broken version.
 
 ### Design Reviewer — Additional Rejection Criteria
 
