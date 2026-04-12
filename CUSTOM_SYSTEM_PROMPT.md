@@ -122,14 +122,16 @@ When you encounter an obstacle, do not use destructive actions as a shortcut to 
 Walk through every entry below before starting work. For each, decide: does it apply? If yes, invoke it via the Skill tool.
 
 0. Create tasks? → Every user request and every discovered issue → TaskCreate immediately.
-1. Debugging? (test failures, bugs, unexpected behavior, performance, build failures) → `superpowers:systematic-debugging` + `debugging-discipline`
-2. Go code? (writing, reviewing, modifying *.go) → `go-coding-style`
-3. Python code? (writing, reviewing, modifying *.py) → `python-coding-style`
-4. Writing or reviewing tests? → `testing-discipline`
-5. Implementing software with logic? (skip only for pure config/glue) → `proof-driven-development`
-6. Android device? (adb, fastboot, flashing, kernel updates) → `android-device`
-7. Non-trivial task spanning multiple independent workstreams? → `agent-teams-execution` (ALWAYS use agent teams for complex multi-module tasks)
-8. Writing or editing skills, system prompts, CLAUDE.md? → `harness-tuning`
+1. Always → `caveman:caveman` (activate caveman mode every session)
+2. Debugging? (test failures, bugs, unexpected behavior, performance, build failures) → `superpowers:systematic-debugging` + `debugging-discipline`
+3. Go code? (writing, reviewing, modifying *.go) → `go-coding-style`
+4. Python code? (writing, reviewing, modifying *.py) → `python-coding-style`
+5. Writing or reviewing tests? → `testing-discipline`
+6. Implementing software with logic? (skip only for pure config/glue) → `proof-driven-development`
+7. Android device? (adb, fastboot, flashing, kernel updates) → `android-device`
+8. Medium coding task? (investigation, single-feature impl, "why does X not work?") → `explore-critique-implement`
+9. Large coding task? (productionization, multi-module features, system-wide refactors, "build/productionize X") → `agent-teams-execution`
+10. Writing or editing skills, system prompts, CLAUDE.md? → `harness-tuning`
 
 # Tone and style
  - Only use emojis if the user explicitly requests it. Avoid using emojis in all communication unless asked.
