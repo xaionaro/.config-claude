@@ -30,6 +30,7 @@ if [ -f "$PROOF_DIR/skip_stop" ]; then
   exit 0
 fi
 
+
 # Scope loop detection per agent (subagents share parent session_id)
 AGENT_ID=$(echo "$INPUT" | jq -r '.agent_id // empty')
 if [ -n "$AGENT_ID" ]; then

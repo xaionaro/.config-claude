@@ -58,7 +58,7 @@ The critic's prompt must include:
 
 ## Phase 3: Loop (Implement → Critique)
 
-1. **Implement one item at a time.** No batching — one shortlist item, one diff.
+1. **Implement one item at a time.** No batching — one shortlist item, one diff. Code tasks: implementer invokes `superpowers:test-driven-development`, `debugging-discipline`, and the applicable `<language>-coding-style` skill.
 2. **Critique the diff.** Spawn a different critic agent — never the implementer, never the main thread. Self-critique is banned: producers systematically underweight their own errors.
 3. **Issues found → fix → re-critique.** Repeat until clean pass. Critic emits only issues that, if unresolved, would make the item wrong, unsafe, or contradict its concrete text. Polish and taste items do not belong in the critique — they waste cycles and invite aesthetic churn. "Clean pass" = the critic returns zero issues.
 4. **Loop limit: 3 implement→critique cycles per item.** If cycle 3 still ends in rejection, do not attempt a 4th — escalate to user with: (a) the original shortlist item, (b) diff of each cycle's changes, (c) the last blocking issue that could not be resolved, (d) the next-best alternative from the explorer's ranking. Silent punts forbidden.

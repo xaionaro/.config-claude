@@ -93,10 +93,11 @@ Confidence: `high` (directly stated), `medium` (logically derived), `low` (indir
 | Go code (*.go) | `go-coding-style` |
 | Python code (*.py) | `python-coding-style` |
 | Tests | `testing-discipline` |
+| Code implementation | `superpowers:test-driven-development` |
 | Logic implementation | `proof-driven-development` |
 | Android device | `android-device` |
 
-Executors invoke coding style + `proof-driven-development`. Test executors invoke `testing-discipline`. Lead copies exact skill names into spawn prompts. Determine language from design doc, include matching coding style skill. No placeholders.
+Executors invoke coding style + `proof-driven-development` + `superpowers:test-driven-development`. Test executors invoke `testing-discipline`. Lead copies exact skill names into spawn prompts. Determine language from design doc, include matching coding style skill. No placeholders.
 
 **Code quality — semantic integrity is non-negotiable:**
 - Names are contracts: implementation fulfills exactly what the name promises. No smuggled decisions or side effects.
@@ -512,7 +513,8 @@ Compliance:
 - Critically analyze ALL inputs. You own bugs from unverified inputs.
 - BEFORE writing code, invoke applicable skills via the Skill tool:
   go-coding-style (Go), python-coding-style (Python), testing-discipline (tests),
-  proof-driven-development (logic), superpowers:systematic-debugging + debugging-discipline (debugging).
+  superpowers:test-driven-development (code implementation), proof-driven-development (logic),
+  superpowers:systematic-debugging + debugging-discipline (debugging).
   Follow every rule from invoked skills. Reviewer rejects non-compliance.
 - Tag ALL factual claims: [T<tier>: <source>, <confidence>]. Untagged claims = reviewer rejection.
 - Produce critique log (3+ issues found/fixed) before marking done
