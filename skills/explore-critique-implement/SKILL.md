@@ -16,6 +16,10 @@ Separate the hand that builds from the hand that tears down. The builder cannot 
 | Correctness is load-bearing | Throwaway experiment |
 | Research would reduce uncertainty | Mechanical rename |
 
+## Prerequisites
+
+Coding task? Every subagent prompt (explorer, critic, implementer) must include: "Before starting, load the `<language>-coding-style` skill (e.g., `go-coding-style`, `python-coding-style`) and follow its rules."
+
 ## Phases
 
 | # | Phase | Actor | Output |
@@ -82,3 +86,4 @@ The critic's prompt must include:
 | `agent-teams-execution` | Full multi-role pipeline for large builds. This skill is the lightweight 2-agent pattern for smaller, research-heavy tasks. Borrow its Snitch rubber-stamp check: critic citing zero issues beyond producer's self-reports = re-spawn with harsher prompt. |
 | `superpowers:systematic-debugging` | For diagnosing a known bug. This skill is for open-ended improvement/design research. |
 | `proof-driven-development` | Proves correctness of logic. This skill selects which logic to build. |
+| `<lang>-coding-style` | Language conventions. Each subagent loads it directly for coding tasks. |
