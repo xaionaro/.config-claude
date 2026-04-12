@@ -49,13 +49,29 @@ Spawn extraction agent. Prompt must include:
 
 - Source codebase paths and user-specified scope.
 - "List AS MUCH AS POSSIBLE. Err on over-listing. The critique phases prune — you do not."
-- Required output format per feature:
+
+### Semantic context tree (required, before feature list)
+
+Extract the full semantic hierarchy from project root to modified parts:
+
+```
+Project: what it is, who it serves, core purpose
+  └── Module: what this module does within the project
+        └── Component: what this component does within the module
+              └── Modified parts: what changed and how it affects the component/module/project semantics
+```
+
+Every feature in the inventory must be anchored to its branch in this tree. Reviewers need to understand not just WHAT was changed but HOW it affects the system's meaning at every level.
+
+### Per-feature output format
 
 | Field | Content |
 |-------|---------|
 | Feature | Name/identifier |
+| Semantic path | Project → Module → Component (branch from tree above) |
 | What | What it does |
 | Why | Why it exists (user-facing purpose) |
+| Semantic impact | How this feature affects the meaning/behavior of its parent module and the project |
 | Dependencies | Internal and external deps |
 | Complexity | S/M/L estimate with justification |
 | Source files | Exact paths read |
