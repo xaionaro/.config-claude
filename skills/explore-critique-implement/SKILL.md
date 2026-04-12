@@ -18,7 +18,7 @@ Separate the hand that builds from the hand that tears down. The builder cannot 
 
 ## Prerequisites
 
-Coding task? Every subagent prompt (explorer, critic, implementer) must include: "Before starting, load the `<language>-coding-style` skill (e.g., `go-coding-style`, `python-coding-style`) and follow its rules."
+Coding task? Every subagent prompt (explorer, critic, implementer) must include: "Before starting, load the `<language>-coding-style` skill and follow its rules."
 
 ## Loop structure
 
@@ -32,7 +32,7 @@ Each iteration tackles one change. All four steps run per iteration. Do not adva
 | 4 | Review gate (parallel) | Critic A + Critic B + E2E agent | All three run concurrently; wait for all |
 | Exit | Main thread | Apply / commit / report |
 
-**Never run any step in the same session as the previous step's producer.** Main thread orchestrates; agents produce.
+Agent separation: see Red Flags. Main thread orchestrates; agents produce.
 
 ## Step 1: Explore
 
@@ -73,21 +73,33 @@ One change, one diff. Code tasks: implementer invokes `superpowers:test-driven-d
 
 Spawn all three agents in a single message (parallel Agent tool calls). Wait for all three to complete before evaluating results.
 
+### Issue severity codes
+
+Every issue from Critic A and Critic B must carry exactly one code:
+
+| Code | Meaning | Effect |
+|------|---------|--------|
+| **REJECT** | Would make the change wrong, unsafe, or contradictory | Triggers gate re-run after fix |
+| **CONDITIONAL** | Fix needed, but obvious/trivial enough to trust without re-review | Must be fixed; no re-run needed |
+| **NIT** | Soft recommendation | May be ignored |
+
+Both critics tag every issue per the severity codes table above.
+
 ### Critic A — correctness
 
-Emits only issues that, if unresolved, would make the change wrong, unsafe, or contradict its concrete text. Polish and taste items do not belong.
+Emit only issues affecting correctness, safety, or fidelity to the concrete text. Polish and taste items are NITs at most.
 
 ### Critic B — long-term health
 
-Different agent from Critic A. Two independent perspectives catch what one misses.
+Different agent from Critic A.
 
 Focus — adversarial, long-term lens:
-- **Tech debt**: Does this change introduce coupling, hidden dependencies, or shortcuts that will cost more to fix later than to fix now?
+- **Tech debt**: Coupling, hidden dependencies, or shortcuts costing more to fix later than now?
 - **Coding style**: Load the applicable `<language>-coding-style` skill. Does the diff follow naming, error handling, structure, and idiom conventions?
-- **Code smells**: God methods, feature envy, primitive obsession, duplicated logic, unclear names, missing abstractions (or premature ones). Flag only smells that materially hurt readability or maintainability — not nitpicks.
-- **Architectural fit**: Does the change sit in the right layer? Does it respect existing module boundaries?
+- **Code smells**: God methods, feature envy, primitive obsession, duplicated logic, unclear names, missing/premature abstractions. Flag only smells that materially hurt readability or maintainability.
+- **Architectural fit**: Right layer? Respects module boundaries?
 
-Critic B emits only issues that matter for long-term health. "Would refactor eventually" is not an issue — "will cause bugs or confusion within 3 months" is.
+Emit only issues that matter for long-term health. "Would refactor eventually" is not an issue — "will cause bugs or confusion within 3 months" is.
 
 ### E2E agent — end-to-end verification
 
@@ -100,28 +112,71 @@ Critic B emits only issues that matter for long-term health. "Would refactor eve
 
 ### Evaluating results
 
-Collect results from all three agents. If ANY agent found issues → spawn a new implementer agent (not any gate agent) to apply the fix → re-run the entire gate. Repeat until all three return zero issues in the same run.
+Collect results from all three agents. Apply severity logic:
 
-Cap gate retries at 3 per cycle. If the gate still fails after 3 retries, count the cycle as failed and proceed to the next full cycle (Steps 1-4 from scratch), or escalate if at cycle 3.
+- At least one REJECT from Critic A or Critic B, OR any E2E failure → fix all REJECTs, CONDITIONALs, and E2E failures → re-run gate.
+- Zero REJECTs but CONDITIONALs exist → fix them → gate passes (no re-run).
+- Only NITs → gate passes.
 
-"Clean pass" = Critic A zero issues + Critic B zero issues + E2E pass, all from the same gate run.
+Gate retry and cycle limits defined in Escalation table.
+
+**Clean pass** = zero REJECTs + zero CONDITIONALs + E2E pass, all from the same gate run.
+
+## Loop-breaker
+
+A FRESH agent — not any of the cycle agents — gets one chance to break the loop before escalating to the user.
+
+**One loop-breaker invocation per change**, regardless of trigger. If the granted retry fails → hard escalate to user.
+
+### Prompt must include
+
+- Original problem statement.
+- All cycle attempts: what was tried, what failed, remaining issues verbatim.
+- Current code state (file paths — loop-breaker reads them independently).
+- "You are a fresh reviewer. Read the code and issues yourself. Do not trust prior agents' assessments."
+
+### Decision — exactly one of
+
+| Decision | Meaning | Effect |
+|----------|---------|--------|
+| **ACCEPT** | Remaining issues are cosmetic, speculative, or not worth another iteration | Accept current state with reasoning. Gate passes. |
+| **RETRY** | Remaining issues are real and fixable | Grant exactly one more attempt (gate retry or full cycle, matching the trigger). Provide specific guidance. |
+
+### Constraints
+
+- Must NOT be any of the 6 cycle agents (explorer, Step 2 critic, implementer, Critic A, Critic B, E2E agent).
+- Reads code and issues independently — no reliance on prior agent summaries.
+- One invocation per change. Granted retry fails → escalate to user.
+
+## Escalation
+
+Single decision table for all limit hits. One loop-breaker per change total.
+
+| Trigger | Condition | Action | If retry fails |
+|---------|-----------|--------|----------------|
+| Gate retry cap | 3 gate retries failed within one cycle | Invoke loop-breaker (if not yet used for this change) | Hard escalate to user |
+| Cycle limit | 3 full cycles failed for one change | Invoke loop-breaker (if not yet used for this change) | Hard escalate to user |
+| Loop-breaker already used | Either limit hit but loop-breaker was consumed by prior trigger | Skip loop-breaker → hard escalate to user immediately | — |
+
+**Hard escalate** = report to user with: (a) original problem, (b) what each cycle tried, (c) loop-breaker's assessment (if invoked), (d) last blocking issue, (e) next-best alternative from explorer's ranking. Silent punts forbidden.
 
 ## Iteration limit
 
-**3 full cycles (explore → critique → implement → review gate) per change.** If cycle 3 still fails, do not attempt a 4th — escalate to user with: (a) the original problem, (b) what each cycle tried, (c) the last blocking issue that could not be resolved, (d) the next-best alternative from the explorer's ranking. Silent punts forbidden.
+Cycle limit defined in Escalation table (3 full cycles per change).
 
 ## Exit conditions
 
-- All changes landed with clean pass from review gate, OR
-- Iteration limit hit → escalate, do not force.
+- All changes landed with clean pass, OR
+- Loop-breaker ACCEPT → current state accepted with reasoning, OR
+- Hard escalate triggered → report to user per Escalation table.
 
 ## Red flags
 
 | Symptom | Fix |
 |---------|-----|
 | Implementing 2+ changes before re-critiquing | Stop. One at a time |
-| "Good enough" at cycle 3 | Escalate per iteration-limit rule, don't settle |
-| Any two of {explorer, Step 2 critic, implementer, Critic A, Critic B, E2E agent} are the same agent | Banned. Six distinct agents per cycle |
+| "Good enough" at cycle 3 | Invoke loop-breaker, don't settle or force |
+| Any two of {explorer, Step 2 critic, implementer, Critic A, Critic B, E2E agent, loop-breaker} are the same agent | Banned. Up to seven distinct agents (six per normal cycle + loop-breaker at limits) |
 | Skipping E2E inside loop | E2E is part of the review gate — runs every iteration, not at the end |
 | Skipping exploration or critique for later iterations | Every iteration runs all four steps — none are optional |
 | Winner lacks concrete text | Critic under-specified. Re-spawn with "concrete text required" |
