@@ -28,6 +28,7 @@ Coding task? Every subagent prompt (explorer, critic, implementer) must include:
 | 2 | Critique explorations | Different critic agent | Per-option verdict + shortlist |
 | 3 | Loop: Implement | Implementer (subagent or main) | One shortlist item applied |
 | 3 | Loop: Critique implementation | Different critic agent | Issues list or "clean" |
+| 4 | E2E confirmation | Main thread or subagent | Pass/fail with evidence |
 | Exit | Main thread | Apply / commit / report |
 
 **Never run any phase in the same session as the previous phase's producer.** Main thread orchestrates; agents produce.
@@ -63,11 +64,23 @@ The critic's prompt must include:
 3. **Issues found → fix → re-critique.** Repeat until clean pass. Critic emits only issues that, if unresolved, would make the item wrong, unsafe, or contradict its concrete text. Polish and taste items do not belong in the critique — they waste cycles and invite aesthetic churn. "Clean pass" = the critic returns zero issues.
 4. **Loop limit: 3 implement→critique cycles per item.** If cycle 3 still ends in rejection, do not attempt a 4th — escalate to user with: (a) the original shortlist item, (b) diff of each cycle's changes, (c) the last blocking issue that could not be resolved, (d) the next-best alternative from the explorer's ranking. Silent punts forbidden.
 
+## Phase 4: E2E Confirmation
+
+**Implementation and debugging tasks only.** Skip for non-code tasks (docs, config, design).
+
+After all shortlist items land with clean critique, run end-to-end verification:
+1. Build the project. Compilation failure = back to Phase 3.
+2. Run full test suite. Failures = back to Phase 3.
+3. Exercise the affected feature through real UI or API as a user would. Verify observable outcomes (output, screenshots, state). Proxy evidence (unit tests pass, linter clean) alone insufficient — direct evidence required.
+4. Confirm no regressions in related features.
+
+Fail at any step → return to Phase 3 with specific failure as new issue.
+
 ## Exit conditions
 
-- All shortlist items landed with clean critique, OR
+- All shortlist items landed with clean critique + Phase 4 passed (code/debug tasks), OR
 - Loop limit hit on any item → escalate, do not force, OR
-- Critic finds no further actionable issues.
+- Critic finds no further actionable issues + Phase 4 passed (code/debug tasks).
 
 ## Red flags
 
