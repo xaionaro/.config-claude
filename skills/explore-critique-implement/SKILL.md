@@ -49,6 +49,7 @@ Spawn a separate agent. Prompt must include:
 Spawn a DIFFERENT agent — not the explorer, not the main thread.
 
 The critic's prompt must include:
+- **Original user requirements verbatim.** The critic must verify options against what the user actually asked for, not just technical soundness.
 - **"Step 0 — Independent baseline."** Read the source material (target file, existing code, prior art) and write your own 3-5 bullet assessment BEFORE opening the explorer's report. Include this baseline in the critique output.
 - "Assume every suggestion is wrong until you prove otherwise."
 - "Read the current state first" (the file/code/doc the explorer was working on) — verify duplication claims independently.
@@ -71,7 +72,7 @@ One change, one diff. Code tasks: implementer invokes `superpowers:test-driven-d
 
 ## Step 4: Review gate (parallel)
 
-Spawn all three agents in a single message (parallel Agent tool calls). Wait for all three to complete before evaluating results.
+Spawn all three agents in a single message (parallel Agent tool calls). Wait for all three to complete before evaluating results. Every reviewer prompt must include the **original user requirements verbatim** — reviewers catch requirement deviations, not just technical issues.
 
 ### Issue severity codes
 
