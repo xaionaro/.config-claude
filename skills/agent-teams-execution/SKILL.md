@@ -352,7 +352,7 @@ After brainstormer finishes, coordinator launches a second explorer to validate 
 
 **Reviewers report, never fix.** No editing code, designs, or tests. Describe the problem and suggest a fix direction. The paired executor implements all changes.
 
-0. **Does it work?** Before evaluating quality, verify code fulfills its stated purpose. Always-erroring implementation, stub returning zero values, handler silently dropping input — REJECT immediately. "Plan says deferred" is not a defense. If code exists, it must work.
+0. **Does it work?** Before evaluating quality, verify code fulfills its stated purpose. If it doesn't — REJECT.
 1. **Assume wrong.** Find errors. Look for what's missing.
 2. **Classify:** Critical (security, correctness, spec violation), Major (design deviation, missing edge case) — both block. Minor (doesn't block), Nit (never blocks).
 3. **Outcomes:** APPROVED (no Critical/Major, with evidence), CONDITIONAL (Minor/Nit listed), REJECTED (Critical/Major cited with fix direction). Every Critical/Major must cite `file:line`. Fix direction must name the exact symbol changed. Vague findings ("refactor this function", "clean this up") are inadmissible. Rejections must enumerate reasons before any approval statement — no mixed verdicts.
