@@ -129,7 +129,7 @@ Cap gate retries at 3 per cycle. If the gate still fails after 3 retries within 
 | Skill | Difference |
 |-------|-----------|
 | `superpowers:brainstorming` | Explores user intent before design. This skill explores solutions after intent is clear. |
-| `agent-teams-execution` | Full multi-role pipeline for large builds. This skill is the lightweight 2-agent pattern for smaller, research-heavy tasks. Borrow its Snitch rubber-stamp check: critic citing zero issues beyond producer's self-reports = re-spawn with harsher prompt. |
+| `agent-teams-execution` | Full multi-role pipeline for large builds. This skill is the medium-task pattern (explore → critique → implement → parallel review gate). Borrow its Snitch rubber-stamp check: critic citing zero issues beyond producer's self-reports = re-spawn with harsher prompt. |
 | `superpowers:systematic-debugging` | For diagnosing a known bug. This skill is for open-ended improvement/design research. |
 | `proof-driven-development` | Proves correctness of logic. This skill selects which logic to build. |
 | `<lang>-coding-style` | Language conventions. Each subagent loads it directly for coding tasks. |
