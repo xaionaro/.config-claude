@@ -36,6 +36,20 @@ Example: "Create an agent team with 3 explorer teammates, 1 designer, 1 design r
 
 **Final QA:** After all per-task pipelines complete, QA performs full end-to-end verification of everything touched — runs all tests, checks all requirements, validates the integrated whole. This is not a pipeline stage but a separate final gate.
 
+### User Followups
+
+After the team reports a QA verdict, the user may send followups (bug reports, tweaks, new features, questions). Coordinator routes each followup through **as much of the full pipeline as reasonably applies** — never skip stages for "small" requests.
+
+| Followup type | Pipeline |
+|---------------|----------|
+| Question / clarification | Explorer → answer to user. No code. |
+| Trivial config tweak (1-line, no logic) | Executor → Reviewer → QA |
+| Bug fix | Executor → Reviewer → Test Designer → Test Executor → Test Reviewer → QA |
+| Behavior change in existing feature | Designer → Design Reviewer + Fundamentals Reviewer → full Phase 3 + 4 → QA |
+| New feature | Full pipeline: Research → Design → both Design Reviewers → Phase 3 → Phase 4 → QA |
+
+**Default: when in doubt, run more pipeline, not less.** Skipping stages for "small" requests is how regressions ship. Coordinator justifies any skipped stage with explicit reasoning to lead + snitch.
+
 ## Roles
 
 | Role | Count | Phase | Responsibility |
@@ -44,7 +58,8 @@ Example: "Create an agent team with 3 explorer teammates, 1 designer, 1 design r
 | **Lead** | 1 | all | Spawns teammates. Audits coordinator's rule compliance. Reminds coordinator when it forgets enforcement. **Never implements.** |
 | **Explorer** | 1+ | 1 | Gather facts. Tag sources. Challenge each other. |
 | **Designer** | 1 | 2 | Architect from findings. Produce file ownership map. |
-| **Design Reviewer** | 1+ | 2 | Adversarial design review. Report only, never edit design. 2+ for large tasks. |
+| **Design Reviewer** | 1+ | 2 | Adversarial design review against the design itself. Report only, never edit design. 2+ for large tasks. |
+| **Fundamentals Design Reviewer** | 1 | 2 | Runs in parallel with Design Reviewer. Challenges design fundamentals, not surface issues. Spawns 3 subagents via Agent tool: (1) brainstormer — list possible fundamental issues (premise, problem framing, architectural axioms, hidden assumptions, scope, alternatives); (2) reviewer — investigate design against each listed issue and report; (3) meta-reviewer — critically review the reviewer's report for missed angles, weak evidence, rubber-stamping. Report only, never edit design. |
 | **Executor** | 1+ | 3 | Implement assigned task + unit tests. One per independent unit of work. Actively look for code smell and design issues in code they study/touch, report all to coordinator. Broken infra or resorting to a workaround = notify coordinator before proceeding. |
 | **Execution Reviewer** | 1+ | 3 | Paired 1:1 with executors. Adversarial code review. Report only, never edit code. |
 | **Test Designer** | 1 | 3 | Write test specs. Waits for interface contracts. |
@@ -207,7 +222,11 @@ digraph phases {
     "Verify against full checklist" [shape=box];
     "QA approves?" [shape=diamond];
     "Route: bug->Ph3, design flaw->Ph1, missing test->Ph4, bad finding->Ph1" [shape=box];
-    "DONE" [shape=doublecircle];
+    "Report verdict + evidence to user. Wait." [shape=box];
+    "User confirms?" [shape=diamond];
+    "User followup?" [shape=diamond];
+    "Route per User Followups table" [shape=box];
+    "Wait for user shutdown request" [shape=doublecircle];
     "STOP: 2 QA re-entries exhausted - escalate to user" [shape=octagon, style=filled, fillcolor=red, fontcolor=white];
 
     "PHASE 1: RESEARCH" -> "Spawn explorers";
@@ -220,11 +239,20 @@ digraph phases {
     "T5 claims remaining?" -> "Produce findings document" [label="no"];
 
     "Produce findings document" -> "PHASE 2: DESIGN";
-    "PHASE 2: DESIGN" -> "Spawn designer + design reviewer(s)";
-    "Spawn designer + design reviewer(s)" -> "Design architecture + file ownership map";
+    "PHASE 2: DESIGN" -> "Spawn designer + design reviewer(s) + fundamentals reviewer";
+    "Spawn designer + design reviewer(s) + fundamentals reviewer" -> "Design architecture + file ownership map";
     "Design architecture + file ownership map" -> "Design reviewer approves?";
+    "Design architecture + file ownership map" -> "Fundamentals reviewer approves?";
+    "Fundamentals reviewer approves?" [shape=diamond];
+    "Fundamentals reviewer approves?" -> "Revise design based on feedback" [label="no (round 1-10)"];
+    "Fundamentals reviewer approves?" -> "STOP: 10 rejections - escalate to user" [label="no (round 11+)"];
+    "Fundamentals reviewer approves?" -> "Both reviewers approved?" [label="yes - with evidence"];
+    "Both reviewers approved?" [shape=diamond];
     "Design reviewer approves?" -> "Revise design based on feedback" [label="no (round 1-10)"];
     "Design reviewer approves?" -> "STOP: 10 rejections - escalate to user" [label="no (round 11+)"];
+    "Design reviewer approves?" -> "Both reviewers approved?" [label="yes - with evidence"];
+    "Both reviewers approved?" -> "Finalize approved design + file ownership" [label="yes"];
+    "Both reviewers approved?" -> "Design architecture + file ownership map" [label="no - wait for other"];
     "Revise design based on feedback" -> "Designer needs more info?";
     "Designer needs more info?" -> "Re-spawn explorers for targeted research" [label="yes"];
     "Re-spawn explorers for targeted research" -> "Design architecture + file ownership map";
@@ -262,7 +290,15 @@ digraph phases {
     "QA approves?" -> "Route: bug->Ph3, design flaw->Ph1, missing test->Ph4, bad finding->Ph1" [label="no (re-entry 1-2)"];
     "QA approves?" -> "STOP: 2 QA re-entries exhausted - escalate to user" [label="no (re-entry 3+)"];
     "Route: bug->Ph3, design flaw->Ph1, missing test->Ph4, bad finding->Ph1" -> "Verify against full checklist";
-    "QA approves?" -> "DONE" [label="yes - all evidence cited"];
+    "QA approves?" -> "Report verdict + evidence to user. Wait." [label="yes - all evidence cited"];
+    "Report verdict + evidence to user. Wait." -> "User followup?";
+    "User followup?" -> "Route per User Followups table" [label="yes"];
+    "Route per User Followups table" -> "PHASE 1: RESEARCH" [label="new feature"];
+    "Route per User Followups table" -> "PHASE 2: DESIGN" [label="behavior change"];
+    "Route per User Followups table" -> "PHASE 3: EXECUTION" [label="bug fix / tweak"];
+    "User followup?" -> "User confirms?" [label="no"];
+    "User confirms?" -> "Wait for user shutdown request" [label="yes"];
+    "User confirms?" -> "Report verdict + evidence to user. Wait." [label="no - keep waiting"];
 }
 ```
 
@@ -441,7 +477,8 @@ Review independently first — no reading peer findings before writing your own.
 15. **Audit subordinates every 10 minutes.** Check each active teammate's recent output for rule violations: untagged claims, missing skill invocations, unreviewed code, shortcuts. Create a task for each violation found.
 16. **Interrupt violations immediately.** Same protocol as lead: send correction message first, then `tmux send-keys -t <pane> Escape` to interrupt. Don't wait for their turn to end.
 17. **Notify snitch on idle/resume.** SendMessage snitch when team goes idle (all tasks waiting on user) and when execution resumes, so snitch can disable/enable its cron job.
-18. **Clean up** when done. ALL tasks completed.
+18. **Report QA verdict to user, then wait.** Never declare mission accomplished. Never auto-shutdown teammates. Mission complete only when user explicitly confirms. Followups → route per User Followups table.
+19. **Shutdown only on user request.** Then run Shutdown procedure for every teammate, mark all tasks completed.
 
 ## Lead Responsibilities
 
@@ -471,6 +508,9 @@ Review independently first — no reading peer findings before writing your own.
 | Reviewer/verifier/QA approves | Scrutinize the approval: does it cite specific evidence? Does it address all scrutiny rules? A shallow "LGTM" is not an approval — send back with specific areas to examine |
 | Any agent ignores reminder (3+ on same rule) | Misbehavior Recovery: force `/compact`, re-read skill, continue. If still misbehaving, escalate to user |
 | Coordinator not responding | Check tmux panes to see what's happening. Still thinking/processing = acceptable (up to 1 hour). Stuck > 1 hour = re-spawn. Max 2 re-spawns, then escalate to user |
+| Coordinator declares mission accomplished without explicit user confirmation | Reject. Force coordinator to report verdict + evidence to user and wait |
+| Coordinator initiates shutdown without explicit user request | Reject. Team stays alive for followups |
+| Coordinator skips pipeline stages on user followup | Verify against User Followups table. Demand justification or reject |
 | Hourly audit (every 60 minutes) | Spot-check agent output for violations coordinator should have caught. Only intervene if coordinator missed them |
 
 ### Spawn Checklist (lead verifies before every spawn)
@@ -509,9 +549,14 @@ Downstream agents get **structured summaries**, not raw upstream output.
 | Designer + Reviewer | Phase 3 end | Design issues re-enter full pipeline |
 | Executors + Reviewers | Phase 4 end | Test failures trace to code |
 | Test Designer | Phase 4 end | Test executors need spec clarification |
-| Test Executors + Reviewers | QA end | QA may request coverage |
-| Snitch | DONE | Monitors all claims throughout |
-| **QA** | DONE | **Always fresh** |
+| Test Executors + Reviewers | User shutdown | User may request followups |
+| Snitch | User shutdown | Monitors all claims throughout |
+| **QA** | User shutdown | **Re-spawned fresh per QA cycle** |
+| Coordinator + Lead | User shutdown | Stand by for user followups |
+
+**No "DONE" state.** QA approval ≠ mission accomplished. After QA approves, coordinator reports verdict + evidence to user and **waits**. Mission is accomplished only when the user explicitly confirms (e.g. "ship it", "done", "approved"). Until then, all teammates remain alive.
+
+**Shutdown only on user request.** Coordinator never auto-shuts down the team. User must explicitly request shutdown ("disband", "end team", "shut down"). Then coordinator runs Shutdown procedure for every teammate.
 
 Re-entry: original designer handles Phase 2 re-entry directly — full context preserved.
 
@@ -565,7 +610,7 @@ Compliance:
 | Using Agent tool instead of agent team | STOP. "Create an agent team", not Agent tool |
 | Work without corresponding task | Create task immediately |
 | Task waiting for other tasks before testing | Pipelines are per-task. Code approved + test specs ready → start testing immediately |
-| Spawning custom-named teammates outside defined roles | Unbounded growth | Use role names: executor-N, explorer-N. Reassign idle teammates. |
+| Spawning custom-named teammates outside defined roles | Unbounded growth. Use role names: executor-N, explorer-N. Reassign idle teammates. |
 | Executor assigned new task with unreviewed previous work | STOP. Assign to a different executor/reviewer pair instead. This executor waits for its reviewer |
 | Executor spawned without paired reviewer already alive | STOP. Batch-spawn all reviewers, confirm all alive, then batch-spawn executors |
 | Executor using workaround without notifying coordinator | STOP. Executor reports broken infra to coordinator first |
@@ -594,5 +639,8 @@ Compliance:
 | Capping executor count | One pair per independent unit of work. No limits |
 | Skipping phases | All phases mandatory when this skill triggers |
 | Early teammate shutdown | Keep alive until downstream consumers finish (see Lifecycle table) |
+| Coordinator declares mission accomplished after QA approval | Report to user, wait for explicit confirmation. Mission complete only on user confirmation |
+| Coordinator shuts team down without user request | STOP. Team alive until user requests shutdown |
+| Pipeline stage skipped on user followup ("just a small fix") | Route per User Followups table. Default: more pipeline, not less |
+| Only one design reviewer spawned in Phase 2 | Spawn both: standard Design Reviewer + Fundamentals Design Reviewer in parallel |
 | Trusting reviewer approval blindly | QA exists to catch reviewer mistakes |
-
