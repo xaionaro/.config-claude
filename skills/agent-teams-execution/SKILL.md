@@ -78,6 +78,8 @@ One executor pair per independent unit of work. ~4 agents per phase before coord
 
 **Every teammate** must invoke `agent-teams-execution` skill via Skill tool as their first action. Lead **must include this instruction in every spawn prompt**. Coordinator and lead: re-invoke the skill after every context compaction.
 
+**Hourly skill re-read (coordinator, lead, snitch).** Each sets up a cron that fires every 60 minutes with a prompt: "Re-invoke `agent-teams-execution` skill via Skill tool, then resume your role duties (audit / scan / coordinate)." Prevents rule drift over long sessions. Disable cron when team is idle (user-waiting), re-enable on execution resume.
+
 ### Model and Effort Level
 
 All teammates: **opus model, high effort**. Spawn every teammate with `model: "opus"`. `CLAUDE_CODE_EFFORT_LEVEL=high` in settings.json `env` block propagates to all sessions.
