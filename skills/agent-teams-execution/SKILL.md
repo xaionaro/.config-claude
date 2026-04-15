@@ -562,7 +562,9 @@ Downstream agents get **structured summaries**, not raw upstream output.
 
 Re-entry: original designer handles Phase 2 re-entry directly — full context preserved.
 
-**Shutdown procedure:** SendMessage asking to commit any uncommitted work, then SendMessage with `{"type": "shutdown_request", "reason": "..."}`, then `tmux send-keys -t <pane> Escape` to interrupt if mid-turn. The agent approves and terminates gracefully.
+**Shutdown procedure:** Always prefer graceful: SendMessage asking to commit any uncommitted work, then SendMessage with `{"type": "shutdown_request", "reason": "..."}`. If the agent is mid-turn, `tmux send-keys -t <pane> Escape` to interrupt, then re-send. Agent approves and terminates.
+
+If graceful shutdown fails and harsher methods are used (SIGTERM/SIGKILL the process, kill the session), **always close the tmux pane afterward** (`tmux kill-pane -t <pane>`). A lingering pane means the teammate is not actually gone — future coordinators may try to SendMessage it and wait forever.
 
 ### Spawn Prompt Template
 
