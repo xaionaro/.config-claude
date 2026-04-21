@@ -178,6 +178,7 @@ Cycle limit defined in Escalation table (3 full cycles per change).
 | Implementing 2+ changes before re-critiquing | Stop. One at a time |
 | "Good enough" at cycle 3 | Invoke loop-breaker, don't settle or force |
 | Any two of {explorer, Step 2 critic, implementer, Critic A, Critic B, E2E agent, loop-breaker} are the same agent | Banned. Up to seven distinct agents (six per normal cycle + loop-breaker at limits) |
+| Review-gate Critic A returned before Critic B was spawned | Sequential gate. Spawn Critic A + Critic B (+ E2E when in scope) in one message with parallel Agent tool calls; do not serialize even if one critic's view seems sufficient. |
 | Skipping E2E inside loop | E2E is part of the review gate — runs every iteration, not at the end |
 | Skipping exploration or critique for later iterations | Every iteration runs all four steps — none are optional |
 | Winner lacks concrete text | Critic under-specified. Re-spawn with "concrete text required" |
