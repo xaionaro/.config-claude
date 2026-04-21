@@ -52,11 +52,11 @@ Before stopping, verify ALL of the following. If any check fails → continue wo
 - Assumption without attempt = not blocked. Actually try it.
 - A limitation is a problem to fix, not a reason to give up. Solve it.
 
-## System instructions compliance
+## Rule-compliance self-audit
 
-- Re-read ALL system instructions (CLAUDE.md, project instructions, skill constraints).
-- Verify every instruction that applies to this session's work was followed.
-- If any instruction was violated → fix it before stopping.
+- You violated at least one system instruction this session. Find them.
+- Walk backward through what you actually did and find where you fell short.
+- For each violation: quote what you did, name the rule, correct it at the strongest feasible level (Eliminate > Facilitate > Detect > Document).
 
 ## Testing (if code was touched this session)
 

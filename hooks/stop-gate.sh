@@ -73,6 +73,7 @@ if [ -f "$PROOF" ]; then
     grep -qi "pre.mortem\|pre mortem\|premortem" "$PROOF" || MISSING="$MISSING Pre-mortem"
     grep -qi "adversarial.critique\|adversarial critique\|objection" "$PROOF" || MISSING="$MISSING Adversarial-critique"
     grep -qi "verified\|likely\|uncertain\|confidence" "$PROOF" || MISSING="$MISSING Confidence-calibration"
+    grep -qi "rule.compliance\|rule compliance\|self.audit\|self audit" "$PROOF" || MISSING="$MISSING Rule-compliance-self-audit"
 
     if [ -n "$MISSING" ]; then
       block "Proof file is missing required sections:$MISSING. Re-read instructions.md and write a complete proof."

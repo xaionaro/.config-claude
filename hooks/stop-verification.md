@@ -119,13 +119,24 @@ Do not present them as facts.
 - "Can't test this" is almost never true. List 3 ways you could test it. Pick one. Do it.
 - An assumption is not a blocker. An attempt that failed (with error output) is a blocker.
 
-### Step 5 — System instructions compliance
+### Step 5 — Rule-compliance self-audit
 
-Re-read ALL system instructions (CLAUDE.md, project instructions, skill constraints).
-For each instruction that applies to this session's work, verify it was followed.
-If any instruction was violated → fix it before proceeding.
+You violated at least one system instruction this session. Find them.
 
-Save the list of checked instructions and their compliance status to $BUNDLE.
+CLAUDE.md, skill rules, and project instructions are in your context.
+Walk backward through what you actually did this session and find the
+deviations. The question is not "which rules exist?" but "where did I
+fall short?"
+
+For each violation found:
+- Quote the exact tool call, claim, or decision.
+- Name the rule it violated — by content, not by section title.
+- Correct it at the strongest feasible level per CLAUDE.md's "Learning
+  from Mistakes" hierarchy (Eliminate > Facilitate > Detect > Document).
+  Fix in-session what can still be fixed; for Document-level corrections,
+  say so explicitly — that is the weakest tier.
+
+Save the audit to $BUNDLE under a "Rule-compliance self-audit" heading.
 
 ### Step 6 — Testing
 
@@ -152,4 +163,5 @@ Write to the proof file:
 - Verification questions asked and tool-verified answers
 - Any UNCERTAIN or UNKNOWN claims that remain
 - Witness test name and results (with/without the production change)
+- Rule-compliance self-audit: violations found, rule violated per violation, correction applied per violation
 - Overall verdict
