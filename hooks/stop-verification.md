@@ -131,6 +131,10 @@ CLAUDE.md, a skill, a project instruction, or memory, it is. Prioritize
 violations the user did not flag — those carry the signal of incomplete
 self-correction.
 
+The scope of this audit is the last turn only — conduct between the
+previous stop (or session start) and this stop attempt. Earlier turns
+belong to earlier stops' audits; this stop audits only its own turn.
+
 The gate parses this section. It accepts exactly one of two forms:
 
 **Form A — no violations found.** One line, naming at least three rule
@@ -166,6 +170,14 @@ or `command:` fails the gate. Fake commit hashes fail `git cat-file`.
 Prefer the strongest feasible fix (Eliminate > Facilitate > Detect >
 Document). After corrections, re-scan and iterate until a scan finds
 none, then record the final state as Form A or Form B.
+
+The scan is an act performed this turn, not a recorded result carried
+forward. When HEAD has advanced or the working tree has uncommitted
+changes since the previous stop, the audit text must reflect that
+motion — cite evidence from the new range, or record a fresh
+clean-scan. When the repo is unchanged, a repeat finding is acceptable
+but must include a line naming the sources re-read this turn, e.g.
+`rescanned: CLAUDE.md, <skill>, <memory> — <UTC time>`.
 
 Save the audit to $BUNDLE under a "Rule-compliance self-audit" heading.
 

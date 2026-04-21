@@ -59,12 +59,16 @@ Before stopping, verify ALL of the following. If any check fails → continue wo
 
 The audit subject is the written rule (CLAUDE.md, skill rules, project instructions, memories), not user reactions. Prioritize violations the user did not flag.
 
+Scope: the last turn only — conduct between the previous stop (or session start) and this stop attempt. Earlier turns belong to earlier stops' audits.
+
 Write one of:
 
 - **Form A** — no violations: `clean-scan: CLAUDE.md, <skill>, <memory>` (minimum three rule sources actually scanned).
 - **Form B** — one or more `Violation:` blocks, each carrying a correction marker below it: `commit: <hash>`, an `` ```edit `` fence, an `` ```grep `` fence, an `` ```restate `` fence, or a `blocker:` with `input:` and `command:` lines. Listing without correction is not accepted. Fake commit hashes fail `git cat-file`.
 
 Prefer the strongest feasible fix (Eliminate > Facilitate > Detect > Document). Iterate until a scan finds none.
+
+The scan is performed this turn, not carried forward from a prior stop. When HEAD advanced or the working tree is dirty, the audit must reflect that motion. When the repo is unchanged, a repeat finding is acceptable but must include a `rescanned: <source1>, <source2>, ... — <UTC time>` line.
 
 ## Testing (if code was touched this session)
 

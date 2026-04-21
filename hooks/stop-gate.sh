@@ -166,6 +166,63 @@ if [ -f "$PROOF" ]; then
     if [ -n "$BAD_COMMITS" ]; then
       block "Rule-compliance self-audit cites commits unreachable in the current repo or ~/.claude:$BAD_COMMITS"
     fi
+
+    # --- freshness oracle --------------------------------------------------
+    # Prevents carrying an audit verbatim across stop cycles. Persists outside
+    # $PROOF_DIR so state survives the STOP_ACTIVE=true cleanup at line 179.
+    HISTORY_DIR="$HOME/.cache/claude-proof/history"
+    mkdir -p "$HISTORY_DIR"
+    HISTORY_FILE="$HISTORY_DIR/${SESSION_ID}.log"
+
+    # Fingerprint the audit section bytes.
+    AUDIT_SECTION=$(awk '
+      /^#+[[:space:]]*Rule-compliance/ && !in_a { in_a=1; match($0,/^#+/); lvl=RLENGTH; print; next }
+      in_a && /^#+[[:space:]]/ { match($0,/^#+/); if (RLENGTH<=lvl) in_a=0 }
+      in_a { print }
+    ' "$PROOF")
+    AUDIT_SHA=$(printf %s "$AUDIT_SECTION" | sha256sum | cut -d' ' -f1)
+    CUR_HEAD=$(git rev-parse HEAD 2>/dev/null || echo "")
+    WORKDIR_DIRTY=0
+    [ -n "$(git status --porcelain 2>/dev/null)" ] && WORKDIR_DIRTY=1
+
+    if [ -f "$HISTORY_FILE" ]; then
+      LAST_LINE=$(tail -n1 "$HISTORY_FILE")
+      PREV_SHA=$(printf %s "$LAST_LINE" | cut -d'|' -f1)
+      PREV_HEAD=$(printf %s "$LAST_LINE" | cut -d'|' -f2)
+
+      if [ "$AUDIT_SHA" = "$PREV_SHA" ]; then
+        if [ -n "$CUR_HEAD" ] && [ -n "$PREV_HEAD" ] && [ "$CUR_HEAD" != "$PREV_HEAD" ]; then
+          block "Rule-compliance self-audit is byte-identical to the prior stop, but HEAD advanced ($PREV_HEAD → $CUR_HEAD). Re-scan against the current state and write an audit that reflects it."
+        fi
+        if [ "$WORKDIR_DIRTY" = "1" ]; then
+          block "Rule-compliance self-audit is byte-identical to the prior stop, but the working tree has uncommitted changes. Re-scan against the current state."
+        fi
+        # Unchanged repo + identical audit: require a re-scan gesture.
+        if ! grep -qiE 'rescanned:|re-scanned:|scanned-at:' "$PROOF"; then
+          block "Rule-compliance self-audit is byte-identical to the prior stop. Repo has not moved, so a repeat finding is acceptable, but record the re-scan as a line like: 'rescanned: <source1>, <source2>, ... — <UTC timestamp>'."
+        fi
+      fi
+
+      # When HEAD advanced, cited commits must include one reachable from the
+      # PREV_HEAD → HEAD range. Applies only if audit cites any commits.
+      if [ -n "$CUR_HEAD" ] && [ -n "$PREV_HEAD" ] && [ "$CUR_HEAD" != "$PREV_HEAD" ]; then
+        if grep -qE '^[[:space:]]*commit:[[:space:]]+[0-9a-f]{7,40}' "$PROOF"; then
+          RANGE_OK=0
+          for H in $(grep -oE '^[[:space:]]*commit:[[:space:]]+[0-9a-f]{7,40}' "$PROOF" | awk '{print $NF}'); do
+            if [ "$H" != "$PREV_HEAD" ] && git merge-base --is-ancestor "$PREV_HEAD" "$H" 2>/dev/null; then
+              RANGE_OK=1; break
+            fi
+          done
+          if [ "$RANGE_OK" = "0" ]; then
+            block "Rule-compliance self-audit cites only pre-existing commits. HEAD advanced since the previous stop — cite at least one commit from the new range, or explain why new work produced no violations."
+          fi
+        fi
+      fi
+    fi
+
+    # Record audit fingerprint + HEAD for the next stop cycle.
+    printf '%s|%s|%s\n' "$AUDIT_SHA" "$CUR_HEAD" "$(date -u +%s)" >> "$HISTORY_FILE"
+    # -----------------------------------------------------------------------
   fi
 
   SUMMARY="$PROOF_DIR/summary-to-print.md"
