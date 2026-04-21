@@ -123,31 +123,50 @@ Do not present them as facts.
 
 <!-- Keep in sync with stop-checklist.md "Rule-compliance self-audit". -->
 <!-- Kept as prose by design — sub-steps invite rubber-stamping. -->
+<!-- TODO: reflexive self-audit is load-bearing on agent honesty.
+     Candidate structural fixes: extract testable rules (e.g.
+     untagged T5 claims) into stop-gate.sh grep-level checks, or
+     split discovery and correction across two subagents. -->
 
-You violated at least one system instruction this session. Find them.
+You violated at least one system instruction this session. Find them
+and correct them in this session.
 
 The audit subject is the written rule, not any user reaction to your
 output. An uncodified session-objection from the user is not itself a
 rule; once codified into CLAUDE.md, a skill, a project instruction, or
-memory, it is. Rule sources in your context: CLAUDE.md, skill rules,
-project instructions, memories.
+memory, it is.
 
-Start from the rules, not from session narrative. For each rule, search
-the session for conduct inconsistent with it. Prioritize violations the
-user did not flag — those are the signal of incomplete self-correction.
-Find at least three violations before stopping; after any correction,
-re-audit, since corrections can introduce new violations. Iterate until
-a pass finds none new.
+Start from the rule sources (CLAUDE.md, skill rules, project
+instructions, memories), not from session narrative. For each rule,
+search the session for conduct inconsistent with it. Prioritize
+violations the user did not flag — those carry the signal of incomplete
+self-correction.
 
-For each violation found:
+A correction is an in-session amendment to the rule source, the code,
+the artifact the violation produced, or a current-turn restatement that
+supersedes the violating conduct (e.g., re-issuing an untagged claim
+with the correct tier tag), such that a re-read of the current state
+shows the violation no longer holds. Prefer the strongest feasible fix
+(Eliminate > Facilitate > Detect > Document).
+
+For each violation:
 - Quote the exact tool call, claim, or decision.
 - Name the rule it violated — by content, not by section title.
-- Correct it at the strongest feasible level (Eliminate > Facilitate >
-  Detect > Document). Fix in-session what can still be fixed; for
-  Document-level corrections, say so explicitly — that is the weakest
-  tier.
+- Apply the correction and cite the evidence — a file-edit confirmation,
+  a commit hash, or a grep result showing the amended content.
 
-Save the audit to $BUNDLE under a "Rule-compliance self-audit" heading.
+If a violation requires input only the user or a future session can
+supply, record it as a blocker: name the specific input and the exact
+command or file change that would apply the correction. A blocker
+lacking either a named required-input or the exact remediation command
+is an open violation.
+
+After correcting, re-scan the same rule sources for new violations the
+corrections introduced; iterate until a scan finds none.
+
+Save the audit to $BUNDLE under a "Rule-compliance self-audit" heading,
+with each violation followed by either the cited correction evidence or
+the blocker record.
 
 ### Step 6 — Testing
 
