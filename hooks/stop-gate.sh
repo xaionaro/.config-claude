@@ -80,33 +80,89 @@ if [ -f "$PROOF" ]; then
     fi
 
     # Evidence-grammar check for the Rule-compliance self-audit section.
-    # Extract the section (from its heading until the next same-or-higher heading).
-    AUDIT=$(awk '
-      /^#+[[:space:]]*Rule-compliance/ {flag=1; next}
-      flag && /^#+[[:space:]]/         {flag=0}
-      flag                              {print}
+    # awk parses the section into per-violation blocks, enforces:
+    #   - extraction terminates only on same-or-higher heading level (closes sub-heading bypass);
+    #   - each Violation: must have at least one correction marker within its own block;
+    #   - blocker: must carry non-empty input: AND command: sub-fields; placeholder command values rejected;
+    #   - mutual exclusion between clean-scan (Form A) and Violation blocks (Form B);
+    #   - clean-scan must include "CLAUDE.md" and at least three comma-separated sources.
+    # Shell then verifies emitted commit hashes via git cat-file.
+    AUDIT_HASHES=$(mktemp)
+    AUDIT_ERRS=$(awk -v hashfile="$AUDIT_HASHES" '
+      BEGIN { in_audit=0; opener=0; vn=0; has_corr=0; blk_open=0; blk_inp=0; blk_cmd=0; scan="" }
+
+      /^#+[[:space:]]*Rule-compliance/ && !in_audit {
+        in_audit=1
+        match($0, /^#+/); opener=RLENGTH
+        next
+      }
+
+      in_audit && /^#+[[:space:]]/ {
+        match($0, /^#+/)
+        if (RLENGTH <= opener) { in_audit=0 }
+      }
+
+      !in_audit { next }
+
+      /^[[:space:]]*clean-scan:[[:space:]]+/ { scan = $0 }
+
+      /^[[:space:]]*[*_-]*[[:space:]]*Violation:/ {
+        if (vn > 0) {
+          if (!has_corr) print "  - violation #" vn ": no correction marker"
+          if (blk_open && (!blk_inp || !blk_cmd)) print "  - violation #" vn ": blocker missing non-empty input: or command:"
+        }
+        vn++; has_corr=0; blk_open=0; blk_inp=0; blk_cmd=0
+      }
+
+      vn > 0 && /^[[:space:]]*commit:[[:space:]]+[0-9a-f]{7,40}/ {
+        has_corr=1
+        match($0, /[0-9a-f]{7,40}/)
+        print substr($0, RSTART, RLENGTH) > hashfile
+      }
+
+      vn > 0 && /^[[:space:]]*```(edit|grep|restate)/ { has_corr=1 }
+
+      vn > 0 && /^[[:space:]]*blocker:/ { has_corr=1; blk_open=1 }
+      vn > 0 && blk_open && /^[[:space:]]*input:[[:space:]]+[^[:space:]]+/ { blk_inp=1 }
+      vn > 0 && blk_open && /^[[:space:]]*command:[[:space:]]+[^[:space:]]+/ {
+        if ($0 ~ /command:[[:space:]]+(TBD|tbd|later|TODO|todo|fix[[:space:]]+later|figure[[:space:]]+out)[[:space:]]*$/) {
+          print "  - violation #" vn ": blocker command: is a placeholder"
+        } else {
+          blk_cmd=1
+        }
+      }
+
+      END {
+        if (vn > 0) {
+          if (!has_corr) print "  - violation #" vn ": no correction marker"
+          if (blk_open && (!blk_inp || !blk_cmd)) print "  - violation #" vn ": blocker missing non-empty input: or command:"
+        }
+        if (vn == 0 && scan == "") print "  - empty audit: provide clean-scan: <3+ sources> or one or more Violation: blocks"
+        if (vn > 0 && scan != "")  print "  - mutual-exclusion: both clean-scan and Violation blocks present; use one form"
+        if (vn == 0 && scan != "") {
+          if (scan !~ /CLAUDE\.md/) print "  - clean-scan: must include CLAUDE.md among the sources"
+          sl = scan; sub(/^[[:space:]]*clean-scan:[[:space:]]+/, "", sl)
+          n = split(sl, p, ","); ne = 0
+          for (i=1; i<=n; i++) { g=p[i]; gsub(/^[[:space:]]+|[[:space:]]+$/, "", g); if (length(g) > 0) ne++ }
+          if (ne < 3) print "  - clean-scan: need at least three non-empty sources"
+        }
+      }
     ' "$PROOF")
-
-    # Count violation markers and correction/blocker markers.
-    V_COUNT=$(printf '%s\n' "$AUDIT" | grep -cE '^[[:space:]]*[*_-]*[[:space:]]*Violation:' || true)
-    S_COUNT=$(printf '%s\n' "$AUDIT" | grep -cE '^[[:space:]]*clean-scan:[[:space:]]+[^,]+(,[[:space:]]*[^,]+){2,}' || true)
-    E_COUNT=$(printf '%s\n' "$AUDIT" | grep -cE '^[[:space:]]*(commit:[[:space:]]+[0-9a-f]{7,40}|```(edit|grep|restate)|blocker:)' || true)
-
-    if [ "$V_COUNT" = "0" ] && [ "$S_COUNT" = "0" ]; then
-      block "Rule-compliance self-audit is empty. Provide either a 'clean-scan: <source1>, <source2>, <source3>' line (minimum three rule sources) or one or more 'Violation:' blocks with cited corrections per the grammar in Step 5."
-    fi
-
-    if [ "$V_COUNT" -gt 0 ] && [ "$E_COUNT" -lt "$V_COUNT" ]; then
-      block "Rule-compliance self-audit: found $V_COUNT 'Violation:' markers but only $E_COUNT correction markers. Each violation needs one of: 'commit: <hash>', an edit fence, a grep fence, a restate fence, or 'blocker:' with input: and command: lines. Listing without correction is not accepted."
-    fi
 
     # Verify any claimed commit hashes exist (in either $PWD or ~/.claude).
     BAD_COMMITS=""
-    for H in $(printf '%s\n' "$AUDIT" | grep -oE '^[[:space:]]*commit:[[:space:]]+[0-9a-f]{7,40}' | awk '{print $NF}'); do
-      git cat-file -e "${H}^{commit}" 2>/dev/null || \
-        git -C "$HOME/.claude" cat-file -e "${H}^{commit}" 2>/dev/null || \
-        BAD_COMMITS="$BAD_COMMITS $H"
-    done
+    if [ -s "$AUDIT_HASHES" ]; then
+      while read -r H; do
+        git cat-file -e "${H}^{commit}" 2>/dev/null || \
+          git -C "$HOME/.claude" cat-file -e "${H}^{commit}" 2>/dev/null || \
+          BAD_COMMITS="$BAD_COMMITS $H"
+      done < "$AUDIT_HASHES"
+    fi
+    rm -f "$AUDIT_HASHES"
+
+    if [ -n "$AUDIT_ERRS" ]; then
+      block "Rule-compliance self-audit grammar failures:"$'\n'"$AUDIT_ERRS"
+    fi
     if [ -n "$BAD_COMMITS" ]; then
       block "Rule-compliance self-audit cites commits unreachable in the current repo or ~/.claude:$BAD_COMMITS"
     fi
