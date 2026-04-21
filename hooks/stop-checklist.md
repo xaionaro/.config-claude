@@ -54,9 +54,14 @@ Before stopping, verify ALL of the following. If any check fails → continue wo
 
 ## Rule-compliance self-audit
 
+<!-- Keep in sync with stop-verification.md Step 5. -->
+<!-- Kept as prose/bullets by design — sub-steps invite rubber-stamping. -->
+
 - You violated at least one system instruction this session. Find them.
-- Walk backward through what you actually did and find where you fell short.
-- For each violation: quote what you did, name the rule, correct it at the strongest feasible level (Eliminate > Facilitate > Detect > Document).
+- Audit subject is the written rule, not any user reaction. An uncodified session-objection is not itself a rule; once codified into CLAUDE.md, a skill, a project instruction, or memory, it is.
+- Start from the rules (CLAUDE.md, skill rules, project instructions, memories), not from session narrative. For each rule, search the session for conduct inconsistent with it.
+- Prioritize violations the user did not flag — those are the signal of incomplete self-correction. Find at least three before stopping; after any correction, re-audit.
+- For each violation: quote what you did, name the rule by content, correct it at the strongest feasible level (Eliminate > Facilitate > Detect > Document). Document-level is the weakest tier; say so explicitly when you use it.
 
 ## Testing (if code was touched this session)
 

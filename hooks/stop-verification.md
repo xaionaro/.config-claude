@@ -121,20 +121,31 @@ Do not present them as facts.
 
 ### Step 5 — Rule-compliance self-audit
 
+<!-- Keep in sync with stop-checklist.md "Rule-compliance self-audit". -->
+<!-- Kept as prose by design — sub-steps invite rubber-stamping. -->
+
 You violated at least one system instruction this session. Find them.
 
-CLAUDE.md, skill rules, and project instructions are in your context.
-Walk backward through what you actually did this session and find the
-deviations. The question is not "which rules exist?" but "where did I
-fall short?"
+The audit subject is the written rule, not any user reaction to your
+output. An uncodified session-objection from the user is not itself a
+rule; once codified into CLAUDE.md, a skill, a project instruction, or
+memory, it is. Rule sources in your context: CLAUDE.md, skill rules,
+project instructions, memories.
+
+Start from the rules, not from session narrative. For each rule, search
+the session for conduct inconsistent with it. Prioritize violations the
+user did not flag — those are the signal of incomplete self-correction.
+Find at least three violations before stopping; after any correction,
+re-audit, since corrections can introduce new violations. Iterate until
+a pass finds none new.
 
 For each violation found:
 - Quote the exact tool call, claim, or decision.
 - Name the rule it violated — by content, not by section title.
-- Correct it at the strongest feasible level per CLAUDE.md's "Learning
-  from Mistakes" hierarchy (Eliminate > Facilitate > Detect > Document).
-  Fix in-session what can still be fixed; for Document-level corrections,
-  say so explicitly — that is the weakest tier.
+- Correct it at the strongest feasible level (Eliminate > Facilitate >
+  Detect > Document). Fix in-session what can still be fixed; for
+  Document-level corrections, say so explicitly — that is the weakest
+  tier.
 
 Save the audit to $BUNDLE under a "Rule-compliance self-audit" heading.
 
