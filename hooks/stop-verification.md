@@ -122,51 +122,52 @@ Do not present them as facts.
 ### Step 5 — Rule-compliance self-audit
 
 <!-- Keep in sync with stop-checklist.md "Rule-compliance self-audit". -->
-<!-- Kept as prose by design — sub-steps invite rubber-stamping. -->
-<!-- TODO: reflexive self-audit is load-bearing on agent honesty.
-     Candidate structural fixes: extract testable rules (e.g.
-     untagged T5 claims) into stop-gate.sh grep-level checks, or
-     split discovery and correction across two subagents. -->
+<!-- Grammar below is machine-parsed by stop-gate.sh — deviations block the gate. -->
 
-You violated at least one system instruction this session. Find them
-and correct them in this session.
-
-The audit subject is the written rule, not any user reaction to your
-output. An uncodified session-objection from the user is not itself a
-rule; once codified into CLAUDE.md, a skill, a project instruction, or
-memory, it is.
-
-Start from the rule sources (CLAUDE.md, skill rules, project
-instructions, memories), not from session narrative. For each rule,
-search the session for conduct inconsistent with it. Prioritize
+The audit subject is the written rule (CLAUDE.md, skill rules, project
+instructions, memories), not any user reaction to your output. An
+uncodified session-objection is not itself a rule; once codified into
+CLAUDE.md, a skill, a project instruction, or memory, it is. Prioritize
 violations the user did not flag — those carry the signal of incomplete
 self-correction.
 
-A correction is an in-session amendment to the rule source, the code,
-the artifact the violation produced, or a current-turn restatement that
-supersedes the violating conduct (e.g., re-issuing an untagged claim
-with the correct tier tag), such that a re-read of the current state
-shows the violation no longer holds. Prefer the strongest feasible fix
-(Eliminate > Facilitate > Detect > Document).
+The gate parses this section. It accepts exactly one of two forms:
 
-For each violation:
-- Quote the exact tool call, claim, or decision.
-- Name the rule it violated — by content, not by section title.
-- Apply the correction and cite the evidence — a file-edit confirmation,
-  a commit hash, or a grep result showing the amended content.
+**Form A — no violations found.** One line, naming at least three rule
+sources you actually scanned:
 
-If a violation requires input only the user or a future session can
-supply, record it as a blocker: name the specific input and the exact
-command or file change that would apply the correction. A blocker
-lacking either a named required-input or the exact remediation command
-is an open violation.
+    clean-scan: CLAUDE.md, <skill name>, <memory or project instruction>
 
-After correcting, re-scan the same rule sources for new violations the
-corrections introduced; iterate until a scan finds none.
+**Form B — one or more violation blocks.** Each block starts with
+`Violation:` and carries a correction marker below it:
 
-Save the audit to $BUNDLE under a "Rule-compliance self-audit" heading,
-with each violation followed by either the cited correction evidence or
-the blocker record.
+    Violation: <short label>
+    Quote: <exact tool call, claim, or decision>
+    Rule: <path>:<line or section>
+    Correction:
+      commit: <40-hex-hash>             ← git cat-file verifies it exists
+      ```edit <path>                    ← new content that now exists there
+      <content>
+      ```
+      ```grep <path>                    ← grep output proving amended state
+      <output>
+      ```
+      ```restate                        ← current-turn restatement that
+      <restated claim/decision>           supersedes the violating conduct
+      ```
+      blocker:                          ← correction needs user/future input
+      input: <named required input>
+      command: <exact command or edit that would apply the correction>
+
+Every `Violation:` needs at least one correction marker. Listing
+without a correction fails the gate. A blocker missing either `input:`
+or `command:` fails the gate. Fake commit hashes fail `git cat-file`.
+
+Prefer the strongest feasible fix (Eliminate > Facilitate > Detect >
+Document). After corrections, re-scan and iterate until a scan finds
+none, then record the final state as Form A or Form B.
+
+Save the audit to $BUNDLE under a "Rule-compliance self-audit" heading.
 
 ### Step 6 — Testing
 

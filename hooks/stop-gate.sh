@@ -78,6 +78,38 @@ if [ -f "$PROOF" ]; then
     if [ -n "$MISSING" ]; then
       block "Proof file is missing required sections:$MISSING. Re-read instructions.md and write a complete proof."
     fi
+
+    # Evidence-grammar check for the Rule-compliance self-audit section.
+    # Extract the section (from its heading until the next same-or-higher heading).
+    AUDIT=$(awk '
+      /^#+[[:space:]]*Rule-compliance/ {flag=1; next}
+      flag && /^#+[[:space:]]/         {flag=0}
+      flag                              {print}
+    ' "$PROOF")
+
+    # Count violation markers and correction/blocker markers.
+    V_COUNT=$(printf '%s\n' "$AUDIT" | grep -cE '^[[:space:]]*[*_-]*[[:space:]]*Violation:' || true)
+    S_COUNT=$(printf '%s\n' "$AUDIT" | grep -cE '^[[:space:]]*clean-scan:[[:space:]]+[^,]+(,[[:space:]]*[^,]+){2,}' || true)
+    E_COUNT=$(printf '%s\n' "$AUDIT" | grep -cE '^[[:space:]]*(commit:[[:space:]]+[0-9a-f]{7,40}|```(edit|grep|restate)|blocker:)' || true)
+
+    if [ "$V_COUNT" = "0" ] && [ "$S_COUNT" = "0" ]; then
+      block "Rule-compliance self-audit is empty. Provide either a 'clean-scan: <source1>, <source2>, <source3>' line (minimum three rule sources) or one or more 'Violation:' blocks with cited corrections per the grammar in Step 5."
+    fi
+
+    if [ "$V_COUNT" -gt 0 ] && [ "$E_COUNT" -lt "$V_COUNT" ]; then
+      block "Rule-compliance self-audit: found $V_COUNT 'Violation:' markers but only $E_COUNT correction markers. Each violation needs one of: 'commit: <hash>', an edit fence, a grep fence, a restate fence, or 'blocker:' with input: and command: lines. Listing without correction is not accepted."
+    fi
+
+    # Verify any claimed commit hashes exist (in either $PWD or ~/.claude).
+    BAD_COMMITS=""
+    for H in $(printf '%s\n' "$AUDIT" | grep -oE '^[[:space:]]*commit:[[:space:]]+[0-9a-f]{7,40}' | awk '{print $NF}'); do
+      git cat-file -e "${H}^{commit}" 2>/dev/null || \
+        git -C "$HOME/.claude" cat-file -e "${H}^{commit}" 2>/dev/null || \
+        BAD_COMMITS="$BAD_COMMITS $H"
+    done
+    if [ -n "$BAD_COMMITS" ]; then
+      block "Rule-compliance self-audit cites commits unreachable in the current repo or ~/.claude:$BAD_COMMITS"
+    fi
   fi
 
   SUMMARY="$PROOF_DIR/summary-to-print.md"

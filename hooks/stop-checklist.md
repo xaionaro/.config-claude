@@ -55,16 +55,16 @@ Before stopping, verify ALL of the following. If any check fails → continue wo
 ## Rule-compliance self-audit
 
 <!-- Keep in sync with stop-verification.md Step 5. -->
-<!-- Kept as prose/bullets by design — sub-steps invite rubber-stamping. -->
+<!-- Full verification parses this grammar mechanically; the fast-exit path below is the short form. -->
 
-- You violated at least one system instruction this session. Find them and correct them in this session.
-- Audit subject is the written rule, not any user reaction. An uncodified session-objection is not itself a rule; once codified into CLAUDE.md, a skill, a project instruction, or memory, it is.
-- Start from the rule sources (CLAUDE.md, skill rules, project instructions, memories), not from session narrative. For each rule, search the session for conduct inconsistent with it.
-- Prioritize violations the user did not flag — those carry the signal of incomplete self-correction.
-- A correction is an in-session amendment to the rule source, the code, the artifact the violation produced, or a current-turn restatement that supersedes the violating conduct, such that a re-read of the current state shows the violation no longer holds. Prefer the strongest feasible fix (Eliminate > Facilitate > Detect > Document).
-- For each violation: quote what you did, name the rule by content, apply the correction, and cite the evidence (Edit confirmation, commit hash, grep of the amended content).
-- If a violation requires input only the user or a future session can supply, record a blocker naming the specific input and the exact command or edit that would apply the correction. A blocker lacking either a named required-input or the exact remediation command is an open violation.
-- After correcting, re-scan for new violations the corrections introduced; iterate until a scan finds none.
+The audit subject is the written rule (CLAUDE.md, skill rules, project instructions, memories), not user reactions. Prioritize violations the user did not flag.
+
+Write one of:
+
+- **Form A** — no violations: `clean-scan: CLAUDE.md, <skill>, <memory>` (minimum three rule sources actually scanned).
+- **Form B** — one or more `Violation:` blocks, each carrying a correction marker below it: `commit: <hash>`, an `` ```edit `` fence, an `` ```grep `` fence, an `` ```restate `` fence, or a `blocker:` with `input:` and `command:` lines. Listing without correction is not accepted. Fake commit hashes fail `git cat-file`.
+
+Prefer the strongest feasible fix (Eliminate > Facilitate > Detect > Document). Iterate until a scan finds none.
 
 ## Testing (if code was touched this session)
 
