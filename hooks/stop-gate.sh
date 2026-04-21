@@ -170,9 +170,17 @@ if [ -f "$PROOF" ]; then
     # --- freshness oracle --------------------------------------------------
     # Prevents carrying an audit verbatim across stop cycles. Persists outside
     # $PROOF_DIR so state survives the STOP_ACTIVE=true cleanup at line 179.
+    # Reject session ids containing path-traversal characters before using as filename.
+    case "$SESSION_ID" in
+      *[!A-Za-z0-9_-]*|"") SESSION_ID_SAFE="" ;;
+      *) SESSION_ID_SAFE="$SESSION_ID" ;;
+    esac
+    if [ -z "$SESSION_ID_SAFE" ]; then
+      : # skip freshness oracle when session id is unsafe
+    else
     HISTORY_DIR="$HOME/.cache/claude-proof/history"
     mkdir -p "$HISTORY_DIR"
-    HISTORY_FILE="$HISTORY_DIR/${SESSION_ID}.log"
+    HISTORY_FILE="$HISTORY_DIR/${SESSION_ID_SAFE}.log"
 
     # Fingerprint the audit section bytes.
     AUDIT_SECTION=$(awk '
@@ -197,31 +205,47 @@ if [ -f "$PROOF" ]; then
         if [ "$WORKDIR_DIRTY" = "1" ]; then
           block "Rule-compliance self-audit is byte-identical to the prior stop, but the working tree has uncommitted changes. Re-scan against the current state."
         fi
-        # Unchanged repo + identical audit: require a re-scan gesture.
-        if ! grep -qiE 'rescanned:|re-scanned:|scanned-at:' "$PROOF"; then
-          block "Rule-compliance self-audit is byte-identical to the prior stop. Repo has not moved, so a repeat finding is acceptable, but record the re-scan as a line like: 'rescanned: <source1>, <source2>, ... — <UTC timestamp>'."
+        # Unchanged repo + identical audit: require a re-scan gesture naming
+        # ≥3 sources (same bar as clean-scan), with CLAUDE.md among them.
+        # Check only within the audit section (avoid rescan: lines elsewhere bypassing the gate).
+        RESCAN_LINE=$(printf %s "$AUDIT_SECTION" | grep -iE '^[[:space:]]*rescanned:[[:space:]]+' | head -n1)
+        RESCAN_OK=0
+        if [ -n "$RESCAN_LINE" ]; then
+          RESCAN_OK=$(printf %s "$RESCAN_LINE" | awk '
+            {
+              sub(/^[[:space:]]*[rR]escanned:[[:space:]]+/, "")
+              n=split($0, p, ","); ne=0; has_claude=0
+              for (i=1; i<=n; i++) { g=p[i]; gsub(/^[[:space:]]+|[[:space:]]+$/, "", g); if (length(g) > 0) ne++; if (g ~ /CLAUDE\.md/) has_claude=1 }
+              print (ne >= 3 && has_claude) ? 1 : 0
+            }')
+        fi
+        if [ "$RESCAN_OK" != "1" ]; then
+          block "Rule-compliance self-audit is byte-identical to the prior stop. Repo unchanged, so a repeat finding is acceptable, but include a line inside the audit section: 'rescanned: CLAUDE.md, <source2>, <source3>, ... — <UTC timestamp>' naming at least three sources actually re-read."
         fi
       fi
 
       # When HEAD advanced, cited commits must include one reachable from the
-      # PREV_HEAD → HEAD range. Applies only if audit cites any commits.
+      # PREV_HEAD → HEAD range. Check only within the audit section.
       if [ -n "$CUR_HEAD" ] && [ -n "$PREV_HEAD" ] && [ "$CUR_HEAD" != "$PREV_HEAD" ]; then
-        if grep -qE '^[[:space:]]*commit:[[:space:]]+[0-9a-f]{7,40}' "$PROOF"; then
+        if printf %s "$AUDIT_SECTION" | grep -qE '^[[:space:]]*commit:[[:space:]]+[0-9a-f]{7,40}'; then
           RANGE_OK=0
-          for H in $(grep -oE '^[[:space:]]*commit:[[:space:]]+[0-9a-f]{7,40}' "$PROOF" | awk '{print $NF}'); do
+          for H in $(printf %s "$AUDIT_SECTION" | grep -oE '^[[:space:]]*commit:[[:space:]]+[0-9a-f]{7,40}' | awk '{print $NF}'); do
             if [ "$H" != "$PREV_HEAD" ] && git merge-base --is-ancestor "$PREV_HEAD" "$H" 2>/dev/null; then
               RANGE_OK=1; break
             fi
           done
           if [ "$RANGE_OK" = "0" ]; then
-            block "Rule-compliance self-audit cites only pre-existing commits. HEAD advanced since the previous stop — cite at least one commit from the new range, or explain why new work produced no violations."
+            block "Rule-compliance self-audit cites only pre-existing commits. HEAD advanced since the previous stop — cite at least one commit from the new range inside the audit section, or explain why new work produced no violations."
           fi
         fi
       fi
     fi
 
     # Record audit fingerprint + HEAD for the next stop cycle.
-    printf '%s|%s|%s\n' "$AUDIT_SHA" "$CUR_HEAD" "$(date -u +%s)" >> "$HISTORY_FILE"
+    # Overwrite (not append) so the log never grows beyond one line — only the
+    # last entry is ever read (tail -n1). Bounded by SESSION_ID cardinality.
+    printf '%s|%s|%s\n' "$AUDIT_SHA" "$CUR_HEAD" "$(date -u +%s)" > "$HISTORY_FILE"
+    fi
     # -----------------------------------------------------------------------
   fi
 
