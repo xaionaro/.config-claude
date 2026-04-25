@@ -46,8 +46,20 @@ STREAK_FILE="$STATE_DIR/streak"
 # User-acknowledged bypass: skip review until removed.
 [ -f "$BYPASS_MARKER" ] && exit 0
 
-RULES="$HOME/.claude/hooks/reviewer-rules.md"
-[ ! -f "$RULES" ] && exit 0
+RULES_WRAPPER="$HOME/.claude/hooks/reviewer-rules.md"
+INSTRUCTIONS="$HOME/.claude/CLAUDE.md"
+[ ! -f "$RULES_WRAPPER" ] && exit 0
+[ ! -f "$INSTRUCTIONS" ] && exit 0
+
+# Build the system message: wrapper preamble + user's CLAUDE.md as the
+# instructions the reviewer scores against.
+RULES=$(mktemp)
+{
+  cat "$RULES_WRAPPER"
+  echo
+  cat "$INSTRUCTIONS"
+} > "$RULES"
+trap 'rm -f "$RULES"' EXIT
 
 # Build user-message body: raw transcript turns (user prompts + assistant
 # text + tool-use names/inputs) + repo diff. Intentionally does NOT feed
