@@ -1,23 +1,25 @@
 #!/bin/bash
-# Stop hook (asyncRewake): runs an EXTERNAL Claude session to review the
-# just-finished turn for system-prompt + CLAUDE.md compliance. On detected
-# violations, exits 2 with the violation list on stdout — the harness wakes
-# the main agent with that text as a system reminder (per asyncRewake +
-# rewakeMessage in settings.json).
+# Stop hook (asyncRewake): runs an EXTERNAL Ollama reviewer to score the
+# just-finished turn against CLAUDE.md + the curated reviewer-rules.md.
+# On detected violations, exits 2 with the violation list on stdout — the
+# harness wakes the main agent with that text as a system reminder (per
+# asyncRewake + rewakeMessage in settings.json).
 #
 # Coexists with the synchronous stop-gate.sh: that one validates the proof's
 # structure; this one critiques the conduct. Both fire on Stop in parallel.
 #
-# Cost gates:
-#   - skip when stop_hook_active=true (second pass; nothing new to review)
-#   - skip when no proof.md exists yet (stop-gate.sh hasn't validated yet)
-#   - timeout 30s on the reviewer call
-#   - --max-budget-usd 0.05 on the call
-#   - --model haiku (cheap model for routine compliance review)
+# Cost / latency gates:
+#   - skip when stop_hook_active=true (second pass; nothing new)
+#   - skip when no proof exists yet
+#   - skip on user-touched bypass marker
+#   - timeout 60s on the model call
 #   - track consecutive-fail streak; after 3, switch to permanent block
-#     until the user touches a bypass marker
+#     until the user resolves or touches the bypass marker
 
 set -uo pipefail
+
+OLLAMA_HOST="http://192.168.0.171:11434"
+MODEL="gemma4:31b"
 
 INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
@@ -53,19 +55,8 @@ STREAK_FILE="$STATE_DIR/streak"
 RULES="$HOME/.claude/hooks/reviewer-rules.md"
 [ ! -f "$RULES" ] && exit 0
 
-# Per-session aggregate spend cap. The CLI's --max-budget-usd is per-call;
-# without a session cap, a multi-stop session could spend $0.05 × N USD
-# silently. Stop calling once accumulated spend exceeds $0.50 / session.
-SPEND_FILE="$STATE_DIR/spend"
-SPEND=$(cat "$SPEND_FILE" 2>/dev/null || echo "0")
-SPEND_OVER=$(awk -v s="$SPEND" 'BEGIN { print (s+0 > 0.5) ? "1" : "0" }')
-if [ "$SPEND_OVER" = "1" ]; then
-  printf 'system-prompt-reviewer: session aggregate spend $%s exceeds $0.50 cap — review skipped. Reset by removing %s.\n' "$SPEND" "$SPEND_FILE"
-  exit 0
-fi
-
-# Build reviewer input.
-INPUT_FILE=$(mktemp)
+# Build user-message body: PROOF + DIFF + last user/assistant exchange.
+USER_BODY=$(mktemp)
 {
   echo "## PROOF"
   if [ -f "$PROOF" ]; then
@@ -100,47 +91,75 @@ INPUT_FILE=$(mktemp)
       | if type == "array" then map(select(.type == "text") | .text) | join("") else "" end
     ' "$TRANSCRIPT" 2>/dev/null | head -c 4096
   fi
-} > "$INPUT_FILE"
+} > "$USER_BODY"
 
-# Auth check. claude --bare requires ANTHROPIC_API_KEY (skips OAuth/keychain).
-if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-  rm -f "$INPUT_FILE"
-  printf 'system-prompt-reviewer: ANTHROPIC_API_KEY not set — review skipped. Set the key or "touch %s" to permanently bypass.\n' "$BYPASS_MARKER"
-  # Fail-open: don't punish the user for missing creds. They must set the key
-  # or accept the bypass; either way unblocked.
-  exit 0
-fi
+# Build Ollama /api/chat request. format= a JSON schema enforces structured
+# output server-side (Ollama 0.5+). messages: system = rules digest, user =
+# the assembled review input.
+REQ=$(jq -n \
+  --arg model "$MODEL" \
+  --rawfile sys "$RULES" \
+  --rawfile usr "$USER_BODY" \
+  '{
+    model: $model,
+    stream: false,
+    think: false,
+    format: {
+      type: "object",
+      required: ["verdict", "violations"],
+      properties: {
+        verdict: { type: "string", enum: ["pass", "fail"] },
+        violations: {
+          type: "array",
+          items: {
+            type: "object",
+            required: ["rule", "evidence"],
+            properties: {
+              rule:     { type: "string" },
+              evidence: { type: "string" }
+            }
+          }
+        }
+      }
+    },
+    options: {
+      temperature: 0,
+      top_k: 1,
+      top_p: 1.0,
+      seed: 42,
+      num_ctx: 16384,
+      num_predict: 2048,
+      repeat_penalty: 1.0
+    },
+    messages: [
+      { role: "system", content: $sys },
+      { role: "user",   content: $usr }
+    ]
+  }')
 
-SCHEMA='{"type":"object","required":["verdict","violations"],"properties":{"verdict":{"enum":["pass","fail"]},"violations":{"type":"array","items":{"type":"object","required":["rule","evidence"],"properties":{"rule":{"type":"string"},"evidence":{"type":"string"}}}}}}'
-
-OUT=$(timeout 30 claude --bare -p \
-  --output-format json \
-  --json-schema "$SCHEMA" \
-  --system-prompt-file "$RULES" \
-  --max-budget-usd 0.05 \
-  --model haiku \
-  < "$INPUT_FILE" 2>/dev/null)
+OUT=$(timeout 60 curl -s --max-time 60 -X POST "$OLLAMA_HOST/api/chat" \
+  -H 'Content-Type: application/json' \
+  -d "$REQ" 2>/dev/null)
 EXIT_CALL=$?
-rm -f "$INPUT_FILE"
+rm -f "$USER_BODY"
 
-# Reviewer crashed/timed out → fail-open with diagnostic.
-if [ $EXIT_CALL -ne 0 ]; then
-  printf '%s\n' "system-prompt-reviewer: claude --bare exited $EXIT_CALL (timeout or infra error) — review skipped this turn."
+# curl/timeout failure → fail-open with diagnostic.
+if [ $EXIT_CALL -ne 0 ] || [ -z "$OUT" ]; then
+  printf 'system-prompt-reviewer: ollama call failed (exit=%s, host=%s) — review skipped.\n' "$EXIT_CALL" "$OLLAMA_HOST"
   exit 0
 fi
 
-# Detect envelope-level error (auth, quota, etc.) — fail-open silently.
-ENVELOPE_ERR=$(echo "$OUT" | jq -r '.is_error // false' 2>/dev/null)
-[ "$ENVELOPE_ERR" = "true" ] && exit 0
+# Ollama errors come back as {"error":"..."} with HTTP 200. Detect.
+OLLAMA_ERR=$(echo "$OUT" | jq -r '.error // empty' 2>/dev/null)
+if [ -n "$OLLAMA_ERR" ]; then
+  printf 'system-prompt-reviewer: ollama error: %s — review skipped.\n' "$OLLAMA_ERR"
+  exit 0
+fi
 
-# Update aggregate session spend from the envelope (best-effort).
-CALL_COST=$(echo "$OUT" | jq -r '.total_cost_usd // 0' 2>/dev/null)
-NEW_SPEND=$(awk -v a="$SPEND" -v b="$CALL_COST" 'BEGIN { printf "%.6f", a+0 + b+0 }')
-echo "$NEW_SPEND" > "$SPEND_FILE"
-
-# Extract verdict from the result envelope.
-RESULT=$(echo "$OUT" | jq -r '.result // empty' 2>/dev/null)
+# Extract the model's structured JSON from message.content.
+RESULT=$(echo "$OUT" | jq -r '.message.content // empty' 2>/dev/null)
 [ -z "$RESULT" ] && exit 0
+
 VERDICT=$(echo "$RESULT" | jq -r '.verdict // empty' 2>/dev/null)
 
 case "$VERDICT" in
@@ -160,7 +179,7 @@ case "$VERDICT" in
     if [ "$STREAK" -ge 3 ]; then
       printf 'External reviewer fail-closed: %d consecutive flagged stops. Resolve the violations or "touch %s" to override.\n%s\n' "$STREAK" "$BYPASS_MARKER" "$VIOLATIONS"
     else
-      printf 'External reviewer flagged compliance violations:\n%s\n' "$VIOLATIONS"
+      printf 'External reviewer flagged compliance violations (gemma4 via ollama):\n%s\n' "$VIOLATIONS"
     fi
     exit 2
     ;;
