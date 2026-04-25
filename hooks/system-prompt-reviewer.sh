@@ -203,10 +203,34 @@ RESULT=$(printf '%s' "$RAW" | sed -E '/^[[:space:]]*```[a-zA-Z]*[[:space:]]*$/d'
 
 VERDICT=$(echo "$RESULT" | jq -r '.verdict // empty' 2>/dev/null)
 
+# Persist the last result so stop-gate.sh can append it to the next stop's
+# summary-to-print.md. Markdown so it concatenates cleanly.
+LAST_RESULT="$STATE_DIR/last-result.md"
+NOW_HUMAN=$(date -u +'%Y-%m-%d %H:%M:%S UTC')
+write_last_result() {
+  local verdict=$1; local body=$2
+  {
+    echo
+    echo "---"
+    echo
+    echo "## External-reviewer result (previous turn)"
+    echo
+    echo "- Reviewed at: $NOW_HUMAN"
+    echo "- Elapsed: ${ELAPSED_CALL}s"
+    echo "- Model: $MODEL"
+    echo "- Verdict: $verdict"
+    if [ -n "$body" ]; then
+      echo
+      echo "$body"
+    fi
+  } > "$LAST_RESULT"
+}
+
 case "$VERDICT" in
   pass)
     log "verdict=pass elapsed=${ELAPSED_CALL}s — streak reset"
     rm -f "$STREAK_FILE"
+    write_last_result "pass" ""
     exit 0
     ;;
   fail)
@@ -218,6 +242,7 @@ case "$VERDICT" in
     if [ -z "$VIOLATIONS" ]; then
       VIOLATIONS="(reviewer returned fail without enumerating violations)"
     fi
+    write_last_result "fail (streak=$STREAK)" "$VIOLATIONS"
 
     if [ "$STREAK" -ge 3 ]; then
       printf 'External reviewer fail-closed: %d consecutive flagged stops. Resolve the violations or "touch %s" to override.\n%s\n' "$STREAK" "$BYPASS_MARKER" "$VIOLATIONS"

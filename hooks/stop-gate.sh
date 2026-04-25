@@ -251,6 +251,12 @@ if [ -f "$PROOF" ]; then
 
   SUMMARY="$PROOF_DIR/summary-to-print.md"
   cp "$PROOF" "$SUMMARY"
+  # Append the most recent reviewer result (from the previous turn) so the
+  # user sees the actual review with timestamp + elapsed in the summary.
+  REVIEWER_LAST="$HOME/.cache/claude-proof/reviewer/$SESSION_ID/last-result.md"
+  if [ -f "$REVIEWER_LAST" ]; then
+    cat "$REVIEWER_LAST" >> "$SUMMARY"
+  fi
   rm -f "$PROOF" "$PROOF_DIR/baseline_head"
   block "Checking stop criteria."
 fi
