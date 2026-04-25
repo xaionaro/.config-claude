@@ -19,7 +19,7 @@
 set -uo pipefail
 
 OLLAMA_HOST="http://192.168.0.171:11434"
-MODEL="gemma4:31b"
+MODEL="gemma4:31b-nvfp4"
 
 INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
