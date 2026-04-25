@@ -55,41 +55,57 @@ STREAK_FILE="$STATE_DIR/streak"
 RULES="$HOME/.claude/hooks/reviewer-rules.md"
 [ ! -f "$RULES" ] && exit 0
 
-# Build user-message body: PROOF + DIFF + last user/assistant exchange.
+# Build user-message body: raw transcript turns (user prompts + assistant
+# text + tool-use names/inputs) + repo diff. Intentionally does NOT feed
+# the agent's own proof.md — the reviewer scores the agent's *conduct*
+# from the raw transcript, not the agent's self-narrative which is the
+# unreliable thing we're trying to externalize.
 USER_BODY=$(mktemp)
 {
-  echo "## PROOF"
-  if [ -f "$PROOF" ]; then
-    cat "$PROOF"
-  else
-    cat "$SUMMARY"
-  fi
-  echo
   echo "## DIFF"
   git -C "$HOME/.claude" log --pretty=format:"%H %s" -5 2>/dev/null
   echo
   git -C "$HOME/.claude" diff HEAD~1..HEAD 2>/dev/null | head -c 4096
   echo
-  echo "## LAST_USER"
+  echo "## RECENT_TURNS"
   TRANSCRIPT=$(find "$HOME/.claude/projects" -name "${SESSION_ID}.jsonl" -type f 2>/dev/null | head -1)
   if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
+    # Last 20 entries from the transcript, formatted as role + text/tool calls
+    # so the reviewer sees exactly what happened, not the agent's summary.
+    # tool_use blocks reduce to the tool name + a short input snippet.
     jq -rs '
-      map(select(.type == "user"))
-      | last
-      | .message.content
-      | if type == "array" then
-          map(select(.type == "text") | .text) | join("")
-        elif type == "string" then .
-        else "" end
-    ' "$TRANSCRIPT" 2>/dev/null | head -c 2048
-    echo
-    echo "## LAST_ASSISTANT_TEXT"
-    jq -rs '
-      map(select(.type == "assistant"))
-      | last
-      | .message.content
-      | if type == "array" then map(select(.type == "text") | .text) | join("") else "" end
-    ' "$TRANSCRIPT" 2>/dev/null | head -c 4096
+      .[-20:]
+      | map(
+          if .type == "user" then
+            ( "USER: " +
+              (
+                if (.message.content | type) == "string" then .message.content
+                elif (.message.content | type) == "array" then
+                  ([.message.content[]
+                    | if .type == "text" then .text
+                      elif .type == "tool_result" then "[tool_result]"
+                      else "" end] | join(""))
+                else "" end
+              )
+            )
+          elif .type == "assistant" then
+            ( "ASSISTANT: " +
+              (.message.content
+               | if type == "array" then
+                   [.[]
+                    | if .type == "text" then .text
+                      elif .type == "tool_use" then
+                        "[tool_use=" + .name + " input=" + (.input | tostring | .[:200]) + "]"
+                      else "" end]
+                   | join(" ")
+                 elif type == "string" then .
+                 else "" end)
+            )
+          else "" end
+        )
+      | map(select(. != ""))
+      | join("\n\n---\n\n")
+    ' "$TRANSCRIPT" 2>/dev/null | head -c 12288
   fi
 } > "$USER_BODY"
 
@@ -137,7 +153,7 @@ REQ=$(jq -n \
     ]
   }')
 
-OUT=$(timeout 180 curl -s --max-time 180 -X POST "$OLLAMA_HOST/api/chat" \
+OUT=$(timeout 240 curl -s --max-time 240 -X POST "$OLLAMA_HOST/api/chat" \
   -H 'Content-Type: application/json' \
   -d "$REQ" 2>/dev/null)
 EXIT_CALL=$?
