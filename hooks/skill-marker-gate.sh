@@ -42,8 +42,10 @@ esac
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.path // .tool_input.target_file // empty')
 if [ -z "$FILE_PATH" ]; then
   # Fail-closed on schema mismatch for protected tools — never silently allow.
-  AUDIT="$HOME/.cache/claude-proof/$SESSION_ID/skills/.gate-schema-miss-${TOOL}.json"
-  mkdir -p "$(dirname "$AUDIT")"
+  # Audit lives outside $PROOF_DIR so it survives the stop-cycle wipe.
+  AUDIT_DIR="$HOME/.cache/claude-proof/audit/$SESSION_ID"
+  mkdir -p "$AUDIT_DIR"
+  AUDIT="$AUDIT_DIR/gate-schema-miss-${TOOL}-$(date +%s).json"
   echo "$INPUT" > "$AUDIT"
   jq -n --arg reason "skill-marker-gate: $TOOL invocation has no resolvable file_path (audit: $AUDIT). Update gate to handle this schema." '{
     hookSpecificOutput: {
@@ -55,7 +57,7 @@ if [ -z "$FILE_PATH" ]; then
   exit 0
 fi
 
-DIR="$HOME/.cache/claude-proof/$SESSION_ID/skills"
+DIR="$HOME/.cache/claude-proof/skills/$SESSION_ID"
 BASENAME="$(basename "$FILE_PATH")"
 
 REQUIRED=()

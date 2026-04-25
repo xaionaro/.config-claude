@@ -1,8 +1,9 @@
 #!/bin/bash
 # PostToolUse hook on Skill tool: records skill invocations to per-session marker dir.
-# Reuses ~/.cache/claude-proof/$SESSION_ID/skills/ to avoid creating a second leaking dir.
+# Markers live OUTSIDE $PROOF_DIR (which stop-gate.sh wipes on successful stop) so
+# they survive cross-stop within a session — parallel to the freshness-oracle log.
 
-set -euo pipefail
+set -uo pipefail
 
 INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
@@ -11,11 +12,11 @@ case "$SESSION_ID" in
   *[!A-Za-z0-9_-]*) exit 0 ;;
 esac
 
-# Skill tool input schema is not yet observed live in this codebase; try
-# multiple plausible key shapes and proceed if any are populated.
+# tool_input.skill is the verified key per the Skill tool schema in the system
+# prompt. Fallbacks retained for robustness against future schema changes.
 SKILL=$(echo "$INPUT" | jq -r '.tool_input.skill // .tool_input.name // .tool_input.skill_name // empty')
 
-DIR="$HOME/.cache/claude-proof/$SESSION_ID/skills"
+DIR="$HOME/.cache/claude-proof/skills/$SESSION_ID"
 mkdir -p "$DIR"
 
 # Audit: dump the first PostToolUse-on-Skill payload so the schema can be
