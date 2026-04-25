@@ -21,17 +21,27 @@ set -uo pipefail
 OLLAMA_HOST="http://192.168.0.171:11434"
 MODEL="gemma4:31b-nvfp4"
 
+# Invocation log: append one line per call regardless of outcome so the user
+# can tell whether the hook fired and which branch it took. Lives outside
+# $PROOF_DIR so it survives stop-cycle wipe.
+LOG_DIR="$HOME/.cache/claude-proof/reviewer"
+mkdir -p "$LOG_DIR"
+LOG="$LOG_DIR/invocations.log"
+log() { printf '%s pid=%d %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$" "$*" >> "$LOG"; }
+
 INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 STOP_ACTIVE=$(echo "$INPUT" | jq -r '.stop_hook_active // empty')
 
-[ -z "$SESSION_ID" ] && exit 0
+log "enter session=${SESSION_ID:-EMPTY} stop_active=${STOP_ACTIVE:-EMPTY}"
+
+[ -z "$SESSION_ID" ] && { log "exit reason=empty-session"; exit 0; }
 case "$SESSION_ID" in
-  *[!A-Za-z0-9_-]*) exit 0 ;;
+  *[!A-Za-z0-9_-]*) log "exit reason=unsafe-session-id"; exit 0 ;;
 esac
 
 # Skip on second-pass stops; nothing new to review since first-pass.
-[ "$STOP_ACTIVE" = "true" ] && exit 0
+[ "$STOP_ACTIVE" = "true" ] && { log "exit reason=stop-active"; exit 0; }
 
 # Reviewer reads the transcript directly (per the rule-source-not-narrative
 # redesign), so it does not need proof.md / summary-to-print.md to exist.
@@ -44,12 +54,12 @@ BYPASS_MARKER="$STATE_DIR/bypass"
 STREAK_FILE="$STATE_DIR/streak"
 
 # User-acknowledged bypass: skip review until removed.
-[ -f "$BYPASS_MARKER" ] && exit 0
+[ -f "$BYPASS_MARKER" ] && { log "exit reason=bypass-marker"; exit 0; }
 
 RULES_WRAPPER="$HOME/.claude/hooks/reviewer-rules.md"
 INSTRUCTIONS="$HOME/.claude/CLAUDE.md"
-[ ! -f "$RULES_WRAPPER" ] && exit 0
-[ ! -f "$INSTRUCTIONS" ] && exit 0
+[ ! -f "$RULES_WRAPPER" ] && { log "exit reason=missing-wrapper"; exit 0; }
+[ ! -f "$INSTRUCTIONS" ] && { log "exit reason=missing-claude-md"; exit 0; }
 
 # Build the system message: wrapper preamble + user's CLAUDE.md as the
 # instructions the reviewer scores against.
@@ -159,14 +169,18 @@ REQ=$(jq -n \
     ]
   }')
 
+log "calling-ollama model=$MODEL host=$OLLAMA_HOST"
+START_CALL=$(date +%s)
 OUT=$(timeout 240 curl -s --max-time 240 -X POST "$OLLAMA_HOST/api/chat" \
   -H 'Content-Type: application/json' \
   -d "$REQ" 2>/dev/null)
 EXIT_CALL=$?
+ELAPSED_CALL=$(( $(date +%s) - START_CALL ))
 rm -f "$USER_BODY"
 
 # curl/timeout failure → fail-open with diagnostic.
 if [ $EXIT_CALL -ne 0 ] || [ -z "$OUT" ]; then
+  log "exit reason=ollama-call-failed exit=$EXIT_CALL elapsed=${ELAPSED_CALL}s"
   printf 'system-prompt-reviewer: ollama call failed (exit=%s, host=%s) — review skipped.\n' "$EXIT_CALL" "$OLLAMA_HOST"
   exit 0
 fi
@@ -174,13 +188,14 @@ fi
 # Ollama errors come back as {"error":"..."} with HTTP 200. Detect.
 OLLAMA_ERR=$(echo "$OUT" | jq -r '.error // empty' 2>/dev/null)
 if [ -n "$OLLAMA_ERR" ]; then
+  log "exit reason=ollama-error err=\"$OLLAMA_ERR\" elapsed=${ELAPSED_CALL}s"
   printf 'system-prompt-reviewer: ollama error: %s — review skipped.\n' "$OLLAMA_ERR"
   exit 0
 fi
 
 # Extract the model's structured JSON from message.content.
 RAW=$(echo "$OUT" | jq -r '.message.content // empty' 2>/dev/null)
-[ -z "$RAW" ] && exit 0
+[ -z "$RAW" ] && { log "exit reason=empty-message-content elapsed=${ELAPSED_CALL}s"; exit 0; }
 
 # Strip optional markdown code fences that some models (gemma4) emit even
 # when Ollama's format-schema is supplied. Accept ``` or ```json fences.
@@ -190,12 +205,14 @@ VERDICT=$(echo "$RESULT" | jq -r '.verdict // empty' 2>/dev/null)
 
 case "$VERDICT" in
   pass)
+    log "verdict=pass elapsed=${ELAPSED_CALL}s — streak reset"
     rm -f "$STREAK_FILE"
     exit 0
     ;;
   fail)
     STREAK=$(( $(cat "$STREAK_FILE" 2>/dev/null || echo 0) + 1 ))
     echo "$STREAK" > "$STREAK_FILE"
+    log "verdict=fail streak=$STREAK elapsed=${ELAPSED_CALL}s"
 
     VIOLATIONS=$(printf '%s' "$RESULT" | jq -r '.violations[] | "- \(.rule)\n  evidence: \(.evidence)"' 2>/dev/null)
     if [ -z "$VIOLATIONS" ]; then
@@ -211,6 +228,7 @@ case "$VERDICT" in
     ;;
   *)
     # Malformed verdict — fail-open with diagnostic.
+    log "exit reason=malformed-verdict raw=\"$(printf '%s' "$RAW" | head -c 200)\""
     exit 0
     ;;
 esac
