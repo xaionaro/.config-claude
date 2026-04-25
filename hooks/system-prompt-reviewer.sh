@@ -137,7 +137,7 @@ REQ=$(jq -n \
     ]
   }')
 
-OUT=$(timeout 60 curl -s --max-time 60 -X POST "$OLLAMA_HOST/api/chat" \
+OUT=$(timeout 180 curl -s --max-time 180 -X POST "$OLLAMA_HOST/api/chat" \
   -H 'Content-Type: application/json' \
   -d "$REQ" 2>/dev/null)
 EXIT_CALL=$?
@@ -157,8 +157,12 @@ if [ -n "$OLLAMA_ERR" ]; then
 fi
 
 # Extract the model's structured JSON from message.content.
-RESULT=$(echo "$OUT" | jq -r '.message.content // empty' 2>/dev/null)
-[ -z "$RESULT" ] && exit 0
+RAW=$(echo "$OUT" | jq -r '.message.content // empty' 2>/dev/null)
+[ -z "$RAW" ] && exit 0
+
+# Strip optional markdown code fences that some models (gemma4) emit even
+# when Ollama's format-schema is supplied. Accept ``` or ```json fences.
+RESULT=$(printf '%s' "$RAW" | sed -E '/^[[:space:]]*```[a-zA-Z]*[[:space:]]*$/d' | sed -E '/^[[:space:]]*```[[:space:]]*$/d')
 
 VERDICT=$(echo "$RESULT" | jq -r '.verdict // empty' 2>/dev/null)
 
@@ -171,7 +175,7 @@ case "$VERDICT" in
     STREAK=$(( $(cat "$STREAK_FILE" 2>/dev/null || echo 0) + 1 ))
     echo "$STREAK" > "$STREAK_FILE"
 
-    VIOLATIONS=$(echo "$RESULT" | jq -r '.violations[] | "- \(.rule)\n  evidence: \(.evidence)"' 2>/dev/null)
+    VIOLATIONS=$(printf '%s' "$RESULT" | jq -r '.violations[] | "- \(.rule)\n  evidence: \(.evidence)"' 2>/dev/null)
     if [ -z "$VIOLATIONS" ]; then
       VIOLATIONS="(reviewer returned fail without enumerating violations)"
     fi
