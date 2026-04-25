@@ -30,6 +30,7 @@ rm -f "$PROOF_DIR/skip_stop"
 # pruning is safe — current session always has fresh mtime.
 ROOT="$HOME/.cache/claude-proof"
 find "$ROOT" -mindepth 1 -maxdepth 1 -type d -mtime +30 -exec rm -rf {} + 2>/dev/null || true
-find "$ROOT/history" -mindepth 1 -maxdepth 1 -type f -mtime +30 -delete 2>/dev/null || true
-find "$ROOT/skills"  -mindepth 1 -maxdepth 1 -type d -mtime +30 -exec rm -rf {} + 2>/dev/null || true
-find "$ROOT/audit"   -mindepth 1 -maxdepth 1 -type d -mtime +30 -exec rm -rf {} + 2>/dev/null || true
+find "$ROOT/history"  -mindepth 1 -maxdepth 1 -type f -mtime +30 -delete 2>/dev/null || true
+find "$ROOT/skills"   -mindepth 1 -maxdepth 1 -type d -mtime +30 -exec rm -rf {} + 2>/dev/null || true
+find "$ROOT/audit"    -mindepth 1 -maxdepth 1 -type d -mtime +30 -exec rm -rf {} + 2>/dev/null || true
+find "$ROOT/reviewer" -mindepth 1 -maxdepth 1 -type d -mtime +30 -exec rm -rf {} + 2>/dev/null || true

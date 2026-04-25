@@ -53,6 +53,17 @@ STREAK_FILE="$STATE_DIR/streak"
 RULES="$HOME/.claude/hooks/reviewer-rules.md"
 [ ! -f "$RULES" ] && exit 0
 
+# Per-session aggregate spend cap. The CLI's --max-budget-usd is per-call;
+# without a session cap, a multi-stop session could spend $0.05 × N USD
+# silently. Stop calling once accumulated spend exceeds $0.50 / session.
+SPEND_FILE="$STATE_DIR/spend"
+SPEND=$(cat "$SPEND_FILE" 2>/dev/null || echo "0")
+SPEND_OVER=$(awk -v s="$SPEND" 'BEGIN { print (s+0 > 0.5) ? "1" : "0" }')
+if [ "$SPEND_OVER" = "1" ]; then
+  printf 'system-prompt-reviewer: session aggregate spend $%s exceeds $0.50 cap — review skipped. Reset by removing %s.\n' "$SPEND" "$SPEND_FILE"
+  exit 0
+fi
+
 # Build reviewer input.
 INPUT_FILE=$(mktemp)
 {
@@ -66,15 +77,19 @@ INPUT_FILE=$(mktemp)
   echo "## DIFF"
   git -C "$HOME/.claude" log --pretty=format:"%H %s" -5 2>/dev/null
   echo
-  git diff HEAD~1..HEAD 2>/dev/null | head -c 4096
+  git -C "$HOME/.claude" diff HEAD~1..HEAD 2>/dev/null | head -c 4096
   echo
   echo "## LAST_USER"
   TRANSCRIPT=$(find "$HOME/.claude/projects" -name "${SESSION_ID}.jsonl" -type f 2>/dev/null | head -1)
   if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
     jq -rs '
-      map(select(.type == "user" and (.message.content | type == "string")))
+      map(select(.type == "user"))
       | last
-      | .message.content // ""
+      | .message.content
+      | if type == "array" then
+          map(select(.type == "text") | .text) | join("")
+        elif type == "string" then .
+        else "" end
     ' "$TRANSCRIPT" 2>/dev/null | head -c 2048
     echo
     echo "## LAST_ASSISTANT_TEXT"
@@ -113,6 +128,15 @@ if [ $EXIT_CALL -ne 0 ]; then
   printf '%s\n' "system-prompt-reviewer: claude --bare exited $EXIT_CALL (timeout or infra error) — review skipped this turn."
   exit 0
 fi
+
+# Detect envelope-level error (auth, quota, etc.) — fail-open silently.
+ENVELOPE_ERR=$(echo "$OUT" | jq -r '.is_error // false' 2>/dev/null)
+[ "$ENVELOPE_ERR" = "true" ] && exit 0
+
+# Update aggregate session spend from the envelope (best-effort).
+CALL_COST=$(echo "$OUT" | jq -r '.total_cost_usd // 0' 2>/dev/null)
+NEW_SPEND=$(awk -v a="$SPEND" -v b="$CALL_COST" 'BEGIN { printf "%.6f", a+0 + b+0 }')
+echo "$NEW_SPEND" > "$SPEND_FILE"
 
 # Extract verdict from the result envelope.
 RESULT=$(echo "$OUT" | jq -r '.result // empty' 2>/dev/null)
