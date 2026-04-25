@@ -33,15 +33,9 @@ esac
 # Skip on second-pass stops; nothing new to review since first-pass.
 [ "$STOP_ACTIVE" = "true" ] && exit 0
 
-PROOF_DIR="$HOME/.cache/claude-proof/$SESSION_ID"
-PROOF="$PROOF_DIR/proof.md"
-SUMMARY="$PROOF_DIR/summary-to-print.md"
-
-# Skip if no proof exists. stop-gate.sh hasn't run validation yet, or there
-# was no work to validate (read-only turn).
-if [ ! -f "$PROOF" ] && [ ! -f "$SUMMARY" ]; then
-  exit 0
-fi
+# Reviewer reads the transcript directly (per the rule-source-not-narrative
+# redesign), so it does not need proof.md / summary-to-print.md to exist.
+# The transcript JSONL is always present for any session that ever ran.
 
 # State outside $PROOF_DIR so it survives stop-cycle wipe.
 STATE_DIR="$HOME/.cache/claude-proof/reviewer/$SESSION_ID"
