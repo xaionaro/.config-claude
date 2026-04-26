@@ -217,7 +217,7 @@ write_last_result() {
     echo
     echo "---"
     echo
-    echo "## External-reviewer result (previous turn)"
+    echo "## External-reviewer result"
     echo
     echo "- Reviewed at: $NOW_HUMAN"
     echo "- Elapsed: ${ELAPSED_CALL}s"

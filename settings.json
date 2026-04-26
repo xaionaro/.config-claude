@@ -80,10 +80,6 @@
           {
             "type": "command",
             "command": "$HOME/.claude/hooks/stop-gate.sh"
-          },
-          {
-            "type": "command",
-            "command": "$HOME/.claude/hooks/system-prompt-reviewer.sh"
           }
         ]
       }

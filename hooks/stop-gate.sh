@@ -62,6 +62,49 @@ block() {
   exit 0
 }
 
+# --- Reviewer-backed gate ----------------------------------------------
+# When Ollama is reachable, the external reviewer is the gate. The current
+# turn is judged by an external LLM against CLAUDE.md; on verdict=fail the
+# reviewer's own block JSON is forwarded so the agent must correct, on
+# verdict=pass the result is shown to the user and the stop is allowed.
+# When Ollama is unreachable, we fall through to the proof.md verification
+# protocol below.
+OLLAMA_HOST="http://192.168.0.171:11434"
+REVIEWER_BYPASS="$HOME/.cache/claude-proof/reviewer/$SESSION_ID/bypass"
+if [ ! -f "$REVIEWER_BYPASS" ] && \
+   timeout 3 curl -sf "$OLLAMA_HOST/api/tags" > /dev/null 2>&1; then
+  # Second-pass stop: agent already printed the result, allow the stop.
+  if [ "$STOP_ACTIVE" = "true" ]; then
+    rm -rf "$PROOF_DIR" 2>/dev/null || true
+    exit 0
+  fi
+
+  # Run reviewer synchronously, feeding it the exact stdin we received.
+  REVIEWER_OUT=$(printf '%s' "$INPUT" | "$HOOK_DIR/system-prompt-reviewer.sh" 2>/dev/null || true)
+
+  # verdict=fail → reviewer emits its own decision:block JSON. Forward it
+  # so Claude Code blocks and the agent must correct the violations.
+  if echo "$REVIEWER_OUT" | jq -e '.decision == "block"' > /dev/null 2>&1; then
+    echo "$REVIEWER_OUT"
+    exit 0
+  fi
+
+  # verdict=pass → show the reviewer's result to the user (with timestamp,
+  # elapsed, model) and block once so the agent prints it. The second
+  # stop attempt (handled above) then releases.
+  REVIEWER_LAST="$HOME/.cache/claude-proof/reviewer/$SESSION_ID/last-result.md"
+  if [ -f "$REVIEWER_LAST" ]; then
+    mkdir -p "$PROOF_DIR"
+    cp "$REVIEWER_LAST" "$PROOF_DIR/summary-to-print.md"
+    block "Checking stop criteria."
+  fi
+
+  # Reviewer fell open without writing last-result.md (rare: ollama errored
+  # mid-call). Allow the stop rather than wedge the agent.
+  exit 0
+fi
+# -----------------------------------------------------------------------
+
 # 1. Proof exists → validate content, save summary for Claude to print, then cleanup
 if [ -f "$PROOF" ]; then
   # Skip validation for fast-exit proofs (trivial changes, mid-conversation, etc.)
