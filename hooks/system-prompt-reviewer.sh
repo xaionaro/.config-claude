@@ -278,11 +278,24 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
   echo "## DIFF"
   git -C "$HOME/.claude" log --pretty=format:"%H %s" -5 2>/dev/null
   echo
+  # Diff base = HEAD recorded by the UserPromptSubmit hook for this
+  # session, so the reviewer sees ALL commits made in the current turn
+  # (not just HEAD~1..HEAD). Falls back to HEAD~1 when the prompt-head
+  # file is missing (first prompt of a session, or pre-hook session) or
+  # when the recorded SHA is no longer reachable (force-push, rebase).
+  PROMPT_HEAD_FILE="$STATE_DIR/prompt_head"
+  DIFF_BASE="HEAD~1"
+  if [ -s "$PROMPT_HEAD_FILE" ]; then
+    PH=$(cat "$PROMPT_HEAD_FILE" 2>/dev/null)
+    if [ -n "$PH" ] && git -C "$HOME/.claude" cat-file -e "${PH}^{commit}" 2>/dev/null; then
+      DIFF_BASE="$PH"
+    fi
+  fi
   # Bound diff bytes: a huge diff (large refactor, generated files) blows
   # past Ollama's num_ctx and causes timeouts. Probe size first; if over
   # threshold, omit the diff body entirely — commit titles above are
   # enough context, and a mid-line truncation is misleading.
-  DIFF_RAW=$(git -C "$HOME/.claude" diff HEAD~1..HEAD 2>/dev/null)
+  DIFF_RAW=$(git -C "$HOME/.claude" diff "$DIFF_BASE..HEAD" 2>/dev/null)
   DIFF_BYTES=$(printf %s "$DIFF_RAW" | wc -c | awk '{print $1}')
   DIFF_LIMIT=4096
   if [ "$DIFF_BYTES" -gt "$DIFF_LIMIT" ]; then
