@@ -306,7 +306,29 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
         + $history
         + "\n\n## CURRENT_TURN (the only turn under review now — all activity since the last USER message)\n\n"
         + $current
-    ' "$TRANSCRIPT" 2>/dev/null | tail -c 120000
+    ' "$TRANSCRIPT" 2>/dev/null \
+    | tail -c 120000 \
+    | awk -v hdr='## USER_HISTORY (USER messages from earlier turns; the agent'"'"'s actions in those turns were already audited and are intentionally not shown)' '
+        # Trim at entry boundary: if tail-c cut mid-entry, lines before the
+        # first complete <entry> tag are from a partial entry and must be
+        # discarded. Track whether we saw the heading first; if not, it was
+        # truncated away and must be re-injected before the entries.
+        !found {
+          if (/^## USER_HISTORY/) { saw_heading=1; print; next }
+          if (/^<entry>/) {
+            found=1
+            if (!saw_heading) {
+              print hdr; print ""
+              print "(earlier USER_HISTORY entries omitted — body exceeded 120 KB limit)"
+              print ""
+            }
+            print; next
+          }
+          if (saw_heading) print  # blank lines between heading and entries
+          next
+        }
+        { print }
+      '
   fi
   echo
   echo "## DIFF"
