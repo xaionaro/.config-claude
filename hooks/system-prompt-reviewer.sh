@@ -241,11 +241,21 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
            elif type == "string" then .[:1500]
            else "" end) as $body
           | if ($body | length) == 0 then null else "ASSISTANT: " + $body end;
+        # Wrap each rendered entry in <entry>…</entry>. Escape both
+        # </entry> AND <entry> in user content via split/join (literal
+        # semantics, not regex — immune to future tag-rename mishaps).
+        # The reviewer-controlled boundary stays unambiguous.
+        def wrap_entries:
+          map("<entry>"
+              + (split("</entry>") | join("</_entry>")
+                 | split("<entry>")  | join("<_entry>"))
+              + "</entry>")
+          | join("\n");
         ($all | to_entries
          | map(select(.key >= $cutoff and .key < $lts))
          | map(if is_real_user(.value) then render_user_text(.value) else null end)
          | map(select(. != null))
-         | join("\n\n---\n\n")) as $history
+         | wrap_entries) as $history
       | ($all | to_entries
          | map(select(.key >= $lts))
          | map(
@@ -257,7 +267,7 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
                render_assistant(.value)
              else null end)
          | map(select(. != null))
-         | join("\n\n---\n\n")) as $current
+         | wrap_entries) as $current
       | "## USER_HISTORY (USER messages from earlier turns; the agent'"'"'s actions in those turns were already audited and are intentionally not shown)\n\n"
         + $history
         + "\n\n## CURRENT_TURN (the only turn under review now — all activity since the last USER message)\n\n"
