@@ -60,6 +60,15 @@
             "command": "$HOME/.claude/hooks/validate-bash.sh"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/edit-bash-pre-reviewer.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [

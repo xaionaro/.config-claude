@@ -21,6 +21,13 @@ case "$SESSION_ID" in
     REVIEWER_DIR="$HOME/.cache/claude-proof/reviewer/$SESSION_ID"
     mkdir -p "$REVIEWER_DIR"
     git -C "$HOME/.claude" rev-parse HEAD >"$REVIEWER_DIR/prompt_head" 2>/dev/null || true
+
+    # Bypass markers (stop-reviewer and pre-reviewer) are ephemeral —
+    # they only apply to the turn in which the user touches them. Clear
+    # on every new user prompt so a stale bypass can't keep silencing
+    # gates indefinitely.
+    rm -f "$REVIEWER_DIR/bypass" 2>/dev/null
+    rm -f "$HOME/.cache/claude-proof/pre-reviewer/$SESSION_ID/bypass" 2>/dev/null
     ;;
 esac
 
