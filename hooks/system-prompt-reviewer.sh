@@ -105,37 +105,51 @@ USER_BODY=$(mktemp)
     # Last 20 entries from the transcript, formatted as role + text/tool calls
     # so the reviewer sees exactly what happened, not the agent's summary.
     # tool_use blocks reduce to the tool name + a short input snippet.
+    # Build labelled lines. Three roles instead of the API's two:
+    #   USER:        — actual human-typed text
+    #   TOOL_RESULT: — auto-generated tool output (the API wraps these in
+    #                  user messages too, but the *human* didn't type them
+    #                  and the reviewer must not treat them as user input)
+    #   ASSISTANT:   — model output (text + tool_use markers)
+    # Skip any entry whose body collapses to empty (e.g., thinking-only
+    # assistant turns); drop the entry entirely so `---` separators stay
+    # clean.
     jq -rs '
       .[-20:]
       | map(
           if .type == "user" then
-            ( "USER: " +
-              (
-                if (.message.content | type) == "string" then .message.content
-                elif (.message.content | type) == "array" then
-                  ([.message.content[]
-                    | if .type == "text" then .text
-                      elif .type == "tool_result" then "[tool_result]"
-                      else "" end] | join(""))
+            (.message.content) as $c
+            | (
+                if ($c | type) == "string" then ($c | tostring)
+                elif ($c | type) == "array" then
+                  ([$c[] | select(.type == "text") | .text] | join(""))
                 else "" end
-              )
-            )
+              ) as $text
+            | (
+                if ($c | type) == "array" then
+                  [$c[] | select(.type == "tool_result")] | length
+                else 0 end
+              ) as $tr_count
+            | if ($text | length) > 0 then
+                "USER: " + $text
+              elif $tr_count > 0 then
+                "TOOL_RESULT: [" + ($tr_count | tostring) + " result(s)]"
+              else null end
           elif .type == "assistant" then
-            ( "ASSISTANT: " +
-              (.message.content
-               | if type == "array" then
-                   [.[]
-                    | if .type == "text" then .text
-                      elif .type == "tool_use" then
-                        "[tool_use=" + .name + " input=" + (.input | tostring | .[:200]) + "]"
-                      else "" end]
-                   | join(" ")
-                 elif type == "string" then .
-                 else "" end)
-            )
-          else "" end
+            (.message.content
+             | if type == "array" then
+                 [.[]
+                  | if .type == "text" then .text
+                    elif .type == "tool_use" then
+                      "[tool_use=" + .name + " input=" + (.input | tostring | .[:200]) + "]"
+                    else "" end]
+                 | join(" ")
+               elif type == "string" then .
+               else "" end) as $body
+            | if ($body | length) == 0 then null else "ASSISTANT: " + $body end
+          else null end
         )
-      | map(select(. != ""))
+      | map(select(. != null))
       | join("\n\n---\n\n")
     ' "$TRANSCRIPT" 2>/dev/null | head -c 12288
   fi
