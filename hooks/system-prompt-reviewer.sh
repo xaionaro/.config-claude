@@ -496,8 +496,19 @@ case "$REVIEWER_BACKEND" in
       printf 'system-prompt-reviewer: claude --bare error: %s — review skipped.\n' "$ERR_MSG"
       exit 0
     fi
-    RAW=$(echo "$OUT" | jq -r '.result // empty' 2>/dev/null)
-    [ -z "$RAW" ] && { log "exit reason=empty-claude-result elapsed=${ELAPSED_CALL}s"; exit 0; }
+    # When --json-schema is used, the schema-conformant payload lands in
+    # .structured_output (a JSON object), NOT .result (which is the
+    # plain-text response and is empty in that case). Re-encode it as a
+    # JSON string so the downstream verdict parser (which expects a JSON
+    # blob it can parse) treats both backends the same.
+    RAW=$(echo "$OUT" | jq -r '
+      if (.structured_output | type) == "object" then (.structured_output | tojson)
+      else (.result // "") end
+    ' 2>/dev/null)
+    if [ -z "$RAW" ] || [ "$RAW" = "null" ]; then
+      log "exit reason=empty-claude-result elapsed=${ELAPSED_CALL}s"
+      exit 0
+    fi
     ;;
 esac
 
