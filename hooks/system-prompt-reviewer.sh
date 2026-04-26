@@ -38,6 +38,12 @@ if ! parse_reviewer_env; then
   printf 'system-prompt-reviewer: invalid CLAUDE_STOP_REVIEWER — review skipped.\n'
   exit 0
 fi
+# CLAUDE_STOP_REVIEWER unset → no LLM reviewer; just exit so stop-gate
+# falls back to the proof.md self-check protocol.
+if [ -z "$REVIEWER_BACKEND" ]; then
+  log "exit reason=no-backend (CLAUDE_STOP_REVIEWER unset)"
+  exit 0
+fi
 OLLAMA_HOST="$REVIEWER_OLLAMA_HOST"
 MODEL="${REVIEWER_OLLAMA_MODEL:-claude-bare}"
 
@@ -376,9 +382,9 @@ case "$REVIEWER_BACKEND" in
         think: false,
         format: $schema,
         options: {
-          temperature: 0,
-          top_k: 1,
-          top_p: 1.0,
+          temperature: 0.3,
+          top_k: 40,
+          top_p: 0.9,
           seed: 42,
           num_ctx: 32768,
           num_predict: 2048,

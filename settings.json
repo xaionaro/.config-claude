@@ -10,6 +10,7 @@
   "permissions": {
     "defaultMode": "bypassPermissions"
   },
+  "apiKeyHelper": "$HOME/.claude/bin/api-key-helper.sh",
   "hooks": {
     "SessionStart": [
       {

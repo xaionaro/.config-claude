@@ -8,8 +8,9 @@
 #   REVIEWER_OLLAMA_MODEL   — only for ollama backend
 #
 # Format:
-#   unset / empty → defaults to ollama at hardcoded host + model
-#   "claude"      → bare claude with apiKeyHelper (must be configured in settings.json)
+#   unset / empty → no LLM reviewer; stop-gate falls back to the proof.md
+#                   self-check protocol. The LLM reviewer is opt-in.
+#   "claude"      → bare claude with apiKeyHelper (configured in settings.json)
 #   "ollama:<URL>:<MODEL>"
 #                 → URL is matched against `scheme://host[:port]`; everything
 #                   after that is the model (which may itself contain ":",
@@ -22,18 +23,16 @@
 #   - paths:       scheme://host/v1
 #   - IPv6 hosts:  scheme://[::1]:port
 #
-# Returns 0 on success, 1 on parse failure (malformed env var).
-
-REVIEWER_DEFAULT_OLLAMA_HOST="http://192.168.0.171:11434"
-REVIEWER_DEFAULT_OLLAMA_MODEL="qwen3.5:9b-mxfp8"
+# Returns 0 on success (including the empty-env case — REVIEWER_BACKEND
+# is "" then), 1 on parse failure (malformed non-empty env var).
 
 parse_reviewer_env() {
   local raw="${CLAUDE_STOP_REVIEWER:-}"
 
   if [ -z "$raw" ]; then
-    REVIEWER_BACKEND="ollama"
-    REVIEWER_OLLAMA_HOST="$REVIEWER_DEFAULT_OLLAMA_HOST"
-    REVIEWER_OLLAMA_MODEL="$REVIEWER_DEFAULT_OLLAMA_MODEL"
+    REVIEWER_BACKEND=""
+    REVIEWER_OLLAMA_HOST=""
+    REVIEWER_OLLAMA_MODEL=""
     return 0
   fi
 
