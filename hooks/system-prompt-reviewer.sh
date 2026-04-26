@@ -85,7 +85,19 @@ USER_BODY=$(mktemp)
   echo "## DIFF"
   git -C "$HOME/.claude" log --pretty=format:"%H %s" -5 2>/dev/null
   echo
-  git -C "$HOME/.claude" diff HEAD~1..HEAD 2>/dev/null | head -c 4096
+  # Bound diff bytes: a huge diff (large refactor, generated files) blows
+  # past Ollama's num_ctx and causes timeouts. Probe size first; if over
+  # threshold, omit the diff body entirely — commit titles above are
+  # enough context, and a mid-line truncation is misleading.
+  DIFF_RAW=$(git -C "$HOME/.claude" diff HEAD~1..HEAD 2>/dev/null)
+  DIFF_BYTES=$(printf %s "$DIFF_RAW" | wc -c | awk '{print $1}')
+  DIFF_LIMIT=4096
+  if [ "$DIFF_BYTES" -gt "$DIFF_LIMIT" ]; then
+    printf '(diff body omitted: %s bytes raw, exceeds %s-byte budget — see commit titles above)\n' \
+      "$DIFF_BYTES" "$DIFF_LIMIT"
+  else
+    printf '%s' "$DIFF_RAW"
+  fi
   echo
   echo "## RECENT_TURNS"
   TRANSCRIPT=$(find "$HOME/.claude/projects" -name "${SESSION_ID}.jsonl" -type f 2>/dev/null | head -1)
