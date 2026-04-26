@@ -527,6 +527,14 @@ write_last_result() {
   } > "$LAST_RESULT"
 }
 
+# Append to per-session history file for false-positive monitoring.
+# Fields: unix_epoch | elapsed | backend | model | verdict | violation_count
+HISTORY_FILE="$STATE_DIR/history.jsonl"
+VN=$(printf '%s' "$RESULT" | jq '.violations | length' 2>/dev/null || echo 0)
+printf '{"ts":%s,"elapsed":%s,"backend":"%s","model":"%s","verdict":"%s","violations":%s}\n' \
+  "$(date +%s)" "$ELAPSED_CALL" "$REVIEWER_BACKEND" "$MODEL" "${VERDICT:-malformed}" "$VN" \
+  >> "$HISTORY_FILE" 2>/dev/null || true
+
 case "$VERDICT" in
   pass)
     log "verdict=pass elapsed=${ELAPSED_CALL}s — streak reset"
