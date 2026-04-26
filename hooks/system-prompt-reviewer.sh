@@ -20,7 +20,7 @@
 set -uo pipefail
 
 OLLAMA_HOST="http://192.168.0.171:11434"
-MODEL="gemma4:31b-nvfp4"
+MODEL="qwen3.5:9b-mxfp8"
 
 # Invocation log: append one line per call regardless of outcome so the user
 # can tell whether the hook fired and which branch it took. Lives outside
@@ -298,7 +298,7 @@ case "$VERDICT" in
     # actually fix the violations (or the user must touch $BYPASS_MARKER) —
     # an asyncRewake-style nudge is too easy to ignore with acknowledgement
     # prose that doesn't fix anything.
-    REASON=$(printf 'External compliance reviewer (gemma4:31b-nvfp4 via ollama) flagged rule violations in your last turn. You must correct them before stopping.\n\nViolations:\n%s\n\nFix the violations in this turn (re-do the work correctly, do not just acknowledge). Streak=%d. To override: touch %s\n' "$VIOLATIONS" "$STREAK" "$BYPASS_MARKER")
+    REASON=$(printf 'External compliance reviewer (%s via ollama) flagged rule violations in your last turn. You must correct them before stopping.\n\nViolations:\n%s\n\nFix the violations in this turn (re-do the work correctly, do not just acknowledge). Streak=%d. To override: touch %s\n' "$MODEL" "$VIOLATIONS" "$STREAK" "$BYPASS_MARKER")
     jq -n --arg reason "$REASON" '{"decision": "block", "reason": $reason}'
     exit 0
     ;;
