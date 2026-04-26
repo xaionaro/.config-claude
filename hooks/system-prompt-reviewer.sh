@@ -1,20 +1,20 @@
 #!/bin/bash
-# Stop hook (asyncRewake): runs an EXTERNAL Ollama reviewer to score the
-# just-finished turn against CLAUDE.md + the curated reviewer-rules.md.
-# On detected violations, exits 2 with the violation list on stdout — the
-# harness wakes the main agent with that text as a system reminder (per
-# asyncRewake + rewakeMessage in settings.json).
+# Stop hook (synchronous block): runs an EXTERNAL Ollama reviewer to score
+# the just-finished turn against CLAUDE.md + the curated reviewer-rules.md.
+# On detected violations, prints {"decision":"block","reason":<violations>}
+# to stdout and exits 0 — Claude Code holds the stop and feeds the reason
+# back to the agent so it must actually correct the violations before the
+# turn can end. (Earlier asyncRewake design proved too easy to ignore.)
 #
-# Coexists with the synchronous stop-gate.sh: that one validates the proof's
-# structure; this one critiques the conduct. Both fire on Stop in parallel.
+# Coexists with stop-gate.sh: that one validates the proof's structure;
+# this one critiques the conduct. Both fire on Stop in parallel.
 #
 # Cost / latency gates:
 #   - skip when stop_hook_active=true (second pass; nothing new)
-#   - skip when no proof exists yet
 #   - skip on user-touched bypass marker
-#   - timeout 60s on the model call
-#   - track consecutive-fail streak; after 3, switch to permanent block
-#     until the user resolves or touches the bypass marker
+#   - timeout 240s on the model call
+#   - track consecutive-fail streak (informational; bypass marker is the
+#     escape hatch when the reviewer is wrong)
 
 set -uo pipefail
 
