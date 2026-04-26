@@ -102,27 +102,38 @@ USER_BODY=$(mktemp)
   echo "## RECENT_TURNS"
   TRANSCRIPT=$(find "$HOME/.claude/projects" -name "${SESSION_ID}.jsonl" -type f 2>/dev/null | head -1)
   if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
-    # Last 20 entries from the transcript, formatted as role + text/tool calls
-    # so the reviewer sees exactly what happened, not the agent's summary.
-    # tool_use blocks reduce to the tool name + a short input snippet.
-    # Build labelled lines. Three roles instead of the API's two:
-    #   USER:        — actual human-typed text
-    #   TOOL_RESULT: — auto-generated tool output (the API wraps these in
-    #                  user messages too, but the *human* didn't type them
-    #                  and the reviewer must not treat them as user input)
-    #   ASSISTANT:   — model output (text + tool_use markers)
-    # Skip any entry whose body collapses to empty (e.g., thinking-only
-    # assistant turns); drop the entry entirely so `---` separators stay
-    # clean.
+    # Slice the transcript by *turn*, not by raw JSONL entry. A turn boundary
+    # is a user message that contains text (the human typed something);
+    # tool_use/tool_result entries between turns belong to the assistant's
+    # work within the current turn. Take the last 100 turns (or all of them
+    # when fewer exist).
+    #
+    # Three role labels:
+    #   USER:        — human-typed text (truncated per-block to 1000 chars)
+    #   TOOL_RESULT: — auto-generated tool outputs ([N result(s)] marker only)
+    #   ASSISTANT:   — model output, text truncated to 500 chars per block,
+    #                  tool_use shown as [tool_use=<name> input=<200-char>].
+    # Drop entries whose body collapses to empty (thinking-only turns).
+    # Final body capped via `tail -c 40000` so over-budget transcripts lose
+    # their *oldest* entries first; the reviewer always keeps the most
+    # recent context.
     jq -rs '
-      .[-20:]
+      . as $all
+      | [ $all | to_entries[]
+            | select(.value.type == "user"
+                     and ((.value.message.content // [] | type) == "array")
+                     and (.value.message.content | map(select(.type == "text")) | length > 0))
+            | .key
+        ] as $starts
+      | (if ($starts | length) > 100 then $starts[-100] else ($starts[0] // 0) end) as $cutoff
+      | $all[$cutoff:]
       | map(
           if .type == "user" then
             (.message.content) as $c
             | (
-                if ($c | type) == "string" then ($c | tostring)
+                if ($c | type) == "string" then ($c | tostring)[:1000]
                 elif ($c | type) == "array" then
-                  ([$c[] | select(.type == "text") | .text] | join(""))
+                  ([$c[] | select(.type == "text") | .text[:1000]] | join(""))
                 else "" end
               ) as $text
             | (
@@ -139,19 +150,19 @@ USER_BODY=$(mktemp)
             (.message.content
              | if type == "array" then
                  [.[]
-                  | if .type == "text" then .text
+                  | if .type == "text" then .text[:500]
                     elif .type == "tool_use" then
                       "[tool_use=" + .name + " input=" + (.input | tostring | .[:200]) + "]"
                     else "" end]
                  | join(" ")
-               elif type == "string" then .
+               elif type == "string" then .[:500]
                else "" end) as $body
             | if ($body | length) == 0 then null else "ASSISTANT: " + $body end
           else null end
         )
       | map(select(. != null))
       | join("\n\n---\n\n")
-    ' "$TRANSCRIPT" 2>/dev/null | head -c 12288
+    ' "$TRANSCRIPT" 2>/dev/null | tail -c 40000
   fi
 } > "$USER_BODY"
 

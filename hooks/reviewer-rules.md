@@ -16,8 +16,10 @@ under `# INSTRUCTIONS` below.
 # Inputs
 
 - `## DIFF` — `git log` of `~/.claude` + diff body (omitted if too large).
-- `## RECENT_TURNS` — last ~20 transcript entries as `USER:`/`ASSISTANT:`
-  separated by `---`; tool calls render as `[tool_use=<name> input=…]`.
+- `## RECENT_TURNS` — last ~100 transcript entries as
+  `USER:`/`TOOL_RESULT:`/`ASSISTANT:` separated by `---`; assistant tool
+  calls render as `[tool_use=<name> input=…]`, tool outputs render as
+  `[N result(s)]` with the body intentionally omitted.
 
 # Output (JSON-schema constrained)
 
