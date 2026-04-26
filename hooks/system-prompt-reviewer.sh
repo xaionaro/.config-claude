@@ -65,67 +65,120 @@ INSTRUCTIONS="$HOME/.claude/CLAUDE.md"
 [ ! -f "$RULES_WRAPPER" ] && { log "exit reason=missing-wrapper"; exit 0; }
 [ ! -f "$INSTRUCTIONS" ] && { log "exit reason=missing-claude-md"; exit 0; }
 
-# Build the system message: wrapper preamble + user's CLAUDE.md as the
-# instructions the reviewer scores against.
+# Build the system message. The agent must obey *all* of these rule
+# sources, so the reviewer scores against all of them. Each is a single
+# source-of-truth file the agent is also supposed to follow:
+#   - reviewer-rules.md  : wrapper / framing for the reviewer LLM
+#   - CLAUDE.md          : user's global instructions (the master rules)
+#   - stop-checklist.md  : acceptance criteria for ending a turn — the
+#                          agent's last ASSISTANT text must show evidence
+#                          that each applicable item was met
+#   - MEMORY.md          : index of cross-session lessons-learned (full
+#                          feedback bodies live in sibling files but the
+#                          one-line summaries here name each rule)
 RULES=$(mktemp)
 {
   cat "$RULES_WRAPPER"
   echo
+  echo
+  echo "============================================================"
+  echo "# CLAUDE.md (user's global instructions)"
+  echo "============================================================"
+  echo
   cat "$INSTRUCTIONS"
+  echo
+  if [ -f "$HOME/.claude/hooks/stop-checklist.md" ]; then
+    echo
+    echo "============================================================"
+    echo "# stop-checklist.md (acceptance criteria for ending a turn)"
+    echo "============================================================"
+    echo
+    cat "$HOME/.claude/hooks/stop-checklist.md"
+    echo
+  fi
+  MEMORY_INDEX="$HOME/.claude/projects/-home-streaming--claude/memory/MEMORY.md"
+  if [ -f "$MEMORY_INDEX" ]; then
+    echo
+    echo "============================================================"
+    echo "# MEMORY.md (cross-session lessons-learned, one-line summaries)"
+    echo "============================================================"
+    echo
+    cat "$MEMORY_INDEX"
+    echo
+  fi
 } > "$RULES"
 trap 'rm -f "$RULES"' EXIT
 
-# Build user-message body: raw transcript turns (user prompts + assistant
-# text + tool-use names/inputs) + repo diff. Intentionally does NOT feed
-# the agent's own proof.md — the reviewer scores the agent's *conduct*
-# from the raw transcript, not the agent's self-narrative which is the
-# unreliable thing we're trying to externalize.
+# Build user-message body. Order is RECENT_TURNS first, DIFF last — DIFF
+# changes per commit (every turn or two) and would invalidate the KV
+# cache for everything after it if it sat at the front; placing it last
+# keeps the long, slow-changing RECENT_TURNS prefix cacheable across
+# consecutive reviewer calls. Reviewer reads raw transcript turns, NOT
+# the agent's proof.md (the unreliable narrative we're externalizing).
 USER_BODY=$(mktemp)
-{
-  echo "## DIFF"
-  git -C "$HOME/.claude" log --pretty=format:"%H %s" -5 2>/dev/null
-  echo
-  # Bound diff bytes: a huge diff (large refactor, generated files) blows
-  # past Ollama's num_ctx and causes timeouts. Probe size first; if over
-  # threshold, omit the diff body entirely — commit titles above are
-  # enough context, and a mid-line truncation is misleading.
-  DIFF_RAW=$(git -C "$HOME/.claude" diff HEAD~1..HEAD 2>/dev/null)
-  DIFF_BYTES=$(printf %s "$DIFF_RAW" | wc -c | awk '{print $1}')
-  DIFF_LIMIT=4096
-  if [ "$DIFF_BYTES" -gt "$DIFF_LIMIT" ]; then
-    printf '(diff body omitted: %s bytes raw, exceeds %s-byte budget — see commit titles above)\n' \
-      "$DIFF_BYTES" "$DIFF_LIMIT"
-  else
-    printf '%s' "$DIFF_RAW"
+
+# --- Anchor (hysteresis) for KV-cache stability ------------------------
+# Slice start is anchored at a chosen turn-start entry-index, persisted
+# per session. The slice grows from that anchor as new turns arrive.
+# When the slice exceeds 150 turn-starts, we rebase the anchor forward
+# to the last 100 — so the prefix is stable for ~50 calls between rebases
+# and Ollama can reuse the KV cache.
+TRANSCRIPT=$(find "$HOME/.claude/projects" -name "${SESSION_ID}.jsonl" -type f 2>/dev/null | head -1)
+ANCHOR_FILE="$STATE_DIR/anchor"
+ANCHOR_IDX=""
+if [ -f "$ANCHOR_FILE" ]; then
+  ANCHOR_IDX=$(cat "$ANCHOR_FILE" 2>/dev/null || echo "")
+  case "$ANCHOR_IDX" in *[!0-9]*) ANCHOR_IDX="" ;; esac
+fi
+if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
+  TS_LIST=$(jq -s '
+    [ to_entries[]
+      | select(.value.type == "user"
+               and ((.value.message.content // [] | type) == "array")
+               and (.value.message.content | map(select(.type == "text")) | length > 0))
+      | .key
+    ]
+  ' "$TRANSCRIPT" 2>/dev/null || echo "[]")
+  TS_COUNT=$(printf '%s' "$TS_LIST" | jq 'length')
+  # Validate anchor still points to one of the current turn-starts.
+  ANCHOR_VALID=0
+  if [ -n "$ANCHOR_IDX" ]; then
+    ANCHOR_VALID=$(printf '%s' "$TS_LIST" | jq --argjson a "$ANCHOR_IDX" 'index($a) != null | if . then 1 else 0 end')
   fi
-  echo
+  if [ "$ANCHOR_VALID" != "1" ]; then
+    # Initialize: last 100 turn-starts (or all when fewer).
+    if [ "$TS_COUNT" -le 100 ]; then
+      ANCHOR_IDX=$(printf '%s' "$TS_LIST" | jq '.[0] // 0')
+    else
+      ANCHOR_IDX=$(printf '%s' "$TS_LIST" | jq '.[-100]')
+    fi
+  else
+    ANCHOR_POS=$(printf '%s' "$TS_LIST" | jq --argjson a "$ANCHOR_IDX" 'index($a)')
+    SLICE_TURNS=$(( TS_COUNT - ANCHOR_POS ))
+    if [ "$SLICE_TURNS" -gt 150 ]; then
+      # Rebase: drop oldest 50 turns, slice resumes at last-100.
+      ANCHOR_IDX=$(printf '%s' "$TS_LIST" | jq '.[-100]')
+    fi
+  fi
+  echo "$ANCHOR_IDX" > "$ANCHOR_FILE"
+fi
+ANCHOR_IDX=${ANCHOR_IDX:-0}
+
+{
   echo "## RECENT_TURNS"
-  TRANSCRIPT=$(find "$HOME/.claude/projects" -name "${SESSION_ID}.jsonl" -type f 2>/dev/null | head -1)
   if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
-    # Slice the transcript by *turn*, not by raw JSONL entry. A turn boundary
-    # is a user message that contains text (the human typed something);
-    # tool_use/tool_result entries between turns belong to the assistant's
-    # work within the current turn. Take the last 100 turns (or all of them
-    # when fewer exist).
-    #
     # Three role labels:
     #   USER:        — human-typed text (truncated per-block to 1000 chars)
     #   TOOL_RESULT: — auto-generated tool outputs ([N result(s)] marker only)
     #   ASSISTANT:   — model output, text truncated to 500 chars per block,
     #                  tool_use shown as [tool_use=<name> input=<200-char>].
     # Drop entries whose body collapses to empty (thinking-only turns).
-    # Final body capped via `tail -c 40000` so over-budget transcripts lose
-    # their *oldest* entries first; the reviewer always keeps the most
-    # recent context.
-    jq -rs '
+    # Final body capped via `tail -c 80000` (~20K tokens). qwen3.5:9b's
+    # context is 262144 but cold prefill of >100KB exceeds the 240s curl
+    # timeout, so 80KB is the practical ceiling. Beyond that, anchor
+    # rebases keep the body under the cap.
+    jq -rs --argjson cutoff "$ANCHOR_IDX" '
       . as $all
-      | [ $all | to_entries[]
-            | select(.value.type == "user"
-                     and ((.value.message.content // [] | type) == "array")
-                     and (.value.message.content | map(select(.type == "text")) | length > 0))
-            | .key
-        ] as $starts
-      | (if ($starts | length) > 100 then $starts[-100] else ($starts[0] // 0) end) as $cutoff
       | $all[$cutoff:]
       | map(
           if .type == "user" then
@@ -162,8 +215,26 @@ USER_BODY=$(mktemp)
         )
       | map(select(. != null))
       | join("\n\n---\n\n")
-    ' "$TRANSCRIPT" 2>/dev/null | tail -c 40000
+    ' "$TRANSCRIPT" 2>/dev/null | tail -c 80000
   fi
+  echo
+  echo "## DIFF"
+  git -C "$HOME/.claude" log --pretty=format:"%H %s" -5 2>/dev/null
+  echo
+  # Bound diff bytes: a huge diff (large refactor, generated files) blows
+  # past Ollama's num_ctx and causes timeouts. Probe size first; if over
+  # threshold, omit the diff body entirely — commit titles above are
+  # enough context, and a mid-line truncation is misleading.
+  DIFF_RAW=$(git -C "$HOME/.claude" diff HEAD~1..HEAD 2>/dev/null)
+  DIFF_BYTES=$(printf %s "$DIFF_RAW" | wc -c | awk '{print $1}')
+  DIFF_LIMIT=4096
+  if [ "$DIFF_BYTES" -gt "$DIFF_LIMIT" ]; then
+    printf '(diff body omitted: %s bytes raw, exceeds %s-byte budget — see commit titles above)\n' \
+      "$DIFF_BYTES" "$DIFF_LIMIT"
+  else
+    printf '%s' "$DIFF_RAW"
+  fi
+  echo
 } > "$USER_BODY"
 
 # Build Ollama /api/chat request. format= a JSON schema enforces structured
@@ -200,7 +271,7 @@ REQ=$(jq -n \
       top_k: 1,
       top_p: 1.0,
       seed: 42,
-      num_ctx: 16384,
+      num_ctx: 32768,
       num_predict: 2048,
       repeat_penalty: 1.0
     },
@@ -221,9 +292,14 @@ ls -1t "$DUMP_DIR"/*.json 2>/dev/null | tail -n +21 | xargs -r rm -f --
 
 log "calling-ollama model=$MODEL host=$OLLAMA_HOST dump=$DUMP_PATH"
 START_CALL=$(date +%s)
+# Pass the body via --data-binary @file rather than -d "$REQ". With large
+# prompts (post-anchor change can hit ~200KB), shoving the body through
+# argv triggers fork-exec failures (E2BIG / exit 126) on some kernels
+# even when ARG_MAX nominally allows it. Reading from $DUMP_PATH avoids
+# the argv path entirely.
 OUT=$(timeout 240 curl -s --max-time 240 -X POST "$OLLAMA_HOST/api/chat" \
   -H 'Content-Type: application/json' \
-  -d "$REQ" 2>/dev/null)
+  --data-binary "@$DUMP_PATH" 2>/dev/null)
 EXIT_CALL=$?
 ELAPSED_CALL=$(( $(date +%s) - START_CALL ))
 rm -f "$USER_BODY"
