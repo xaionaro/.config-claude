@@ -312,10 +312,12 @@ if [ -f "$PROOF" ]; then
 
   SUMMARY="$PROOF_DIR/summary-to-print.md"
   cp "$PROOF" "$SUMMARY"
-  # Append the most recent reviewer result (from the previous turn) so the
-  # user sees the actual review with timestamp + elapsed in the summary.
+  # Only append the reviewer result when an LLM backend is configured
+  # (REVIEWER_BACKEND non-empty). When CLAUDE_STOP_REVIEWER is unset,
+  # the reviewer hook never ran this turn, so last-result.md is from a
+  # prior turn and would display a misleading stale timestamp.
   REVIEWER_LAST="$HOME/.cache/claude-proof/reviewer/$SESSION_ID/last-result.md"
-  if [ -f "$REVIEWER_LAST" ]; then
+  if [ -n "${REVIEWER_BACKEND:-}" ] && [ -f "$REVIEWER_LAST" ]; then
     cat "$REVIEWER_LAST" >> "$SUMMARY"
   fi
   rm -f "$PROOF" "$PROOF_DIR/baseline_head"
