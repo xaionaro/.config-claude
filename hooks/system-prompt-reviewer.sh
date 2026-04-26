@@ -19,16 +19,27 @@
 
 set -uo pipefail
 
-OLLAMA_HOST="http://192.168.0.171:11434"
-MODEL="qwen3.5:9b-mxfp8"
-
-# Invocation log: append one line per call regardless of outcome so the user
-# can tell whether the hook fired and which branch it took. Lives outside
-# $PROOF_DIR so it survives stop-cycle wipe.
+# Invocation log set up FIRST so even early-exit failures (malformed env,
+# missing config) get a record. Lives outside $PROOF_DIR so it survives
+# the stop-cycle wipe.
 LOG_DIR="$HOME/.cache/claude-proof/reviewer"
 mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/invocations.log"
 log() { printf '%s pid=%d %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$" "$*" >> "$LOG"; }
+
+# Backend selection via CLAUDE_STOP_REVIEWER (parsed by shared helper).
+# After parse: $REVIEWER_BACKEND in {ollama, claude}, plus the ollama
+# host/model when applicable. See reviewer-backend.sh for format.
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=reviewer-backend.sh
+. "$HOOK_DIR/reviewer-backend.sh"
+if ! parse_reviewer_env; then
+  log "exit reason=malformed-env CLAUDE_STOP_REVIEWER='${CLAUDE_STOP_REVIEWER:-}'"
+  printf 'system-prompt-reviewer: invalid CLAUDE_STOP_REVIEWER — review skipped.\n'
+  exit 0
+fi
+OLLAMA_HOST="$REVIEWER_OLLAMA_HOST"
+MODEL="${REVIEWER_OLLAMA_MODEL:-claude-bare}"
 
 INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
@@ -324,91 +335,140 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
   echo
 } > "$USER_BODY"
 
-# Build Ollama /api/chat request. format= a JSON schema enforces structured
-# output server-side (Ollama 0.5+). messages: system = rules digest, user =
-# the assembled review input.
-REQ=$(jq -n \
-  --arg model "$MODEL" \
-  --rawfile sys "$RULES" \
-  --rawfile usr "$USER_BODY" \
-  '{
-    model: $model,
-    stream: false,
-    think: false,
-    format: {
-      type: "object",
-      required: ["verdict", "violations"],
-      properties: {
-        verdict: { type: "string", enum: ["pass", "fail"] },
-        violations: {
-          type: "array",
-          items: {
-            type: "object",
-            required: ["rule", "evidence"],
-            properties: {
-              rule:     { type: "string" },
-              evidence: { type: "string" }
-            }
-          }
+# JSON schema enforced on both backends: Ollama via /api/chat `format`,
+# claude via --json-schema. Same shape so verdict parsing is uniform.
+SCHEMA='{
+  "type": "object",
+  "required": ["verdict", "violations"],
+  "properties": {
+    "verdict": { "type": "string", "enum": ["pass", "fail"] },
+    "violations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["rule", "evidence"],
+        "properties": {
+          "rule":     { "type": "string" },
+          "evidence": { "type": "string" }
         }
       }
-    },
-    options: {
-      temperature: 0,
-      top_k: 1,
-      top_p: 1.0,
-      seed: 42,
-      num_ctx: 32768,
-      num_predict: 2048,
-      repeat_penalty: 1.0
-    },
-    messages: [
-      { role: "system", content: $sys },
-      { role: "user",   content: $usr }
-    ]
-  }')
+    }
+  }
+}'
 
-# Archive the request body so the user can inspect what was sent without
-# having to reconstruct it. Keep last 20 dumps per session.
+# Archive what was sent so the user can inspect later. Same path for both
+# backends; the dump file's `model` and `_backend` fields disambiguate.
 DUMP_DIR="$HOME/.cache/claude-proof/reviewer-dumps/$SESSION_ID"
 mkdir -p "$DUMP_DIR"
 DUMP_PATH="$DUMP_DIR/$(date -u +%Y%m%dT%H%M%SZ).json"
-printf '%s' "$REQ" > "$DUMP_PATH"
-# Bounded retention: keep only the 20 newest dumps per session.
-ls -1t "$DUMP_DIR"/*.json 2>/dev/null | tail -n +21 | xargs -r rm -f --
 
-log "calling-ollama model=$MODEL host=$OLLAMA_HOST dump=$DUMP_PATH"
-START_CALL=$(date +%s)
-# Pass the body via --data-binary @file rather than -d "$REQ". With large
-# prompts (post-anchor change can hit ~200KB), shoving the body through
-# argv triggers fork-exec failures (E2BIG / exit 126) on some kernels
-# even when ARG_MAX nominally allows it. Reading from $DUMP_PATH avoids
-# the argv path entirely.
-OUT=$(timeout 240 curl -s --max-time 240 -X POST "$OLLAMA_HOST/api/chat" \
-  -H 'Content-Type: application/json' \
-  --data-binary "@$DUMP_PATH" 2>/dev/null)
-EXIT_CALL=$?
-ELAPSED_CALL=$(( $(date +%s) - START_CALL ))
-rm -f "$USER_BODY"
+case "$REVIEWER_BACKEND" in
+  ollama)
+    REQ=$(jq -n \
+      --arg model "$MODEL" \
+      --rawfile sys "$RULES" \
+      --rawfile usr "$USER_BODY" \
+      --argjson schema "$SCHEMA" \
+      '{
+        _backend: "ollama",
+        model: $model,
+        stream: false,
+        think: false,
+        format: $schema,
+        options: {
+          temperature: 0,
+          top_k: 1,
+          top_p: 1.0,
+          seed: 42,
+          num_ctx: 32768,
+          num_predict: 2048,
+          repeat_penalty: 1.0
+        },
+        messages: [
+          { role: "system", content: $sys },
+          { role: "user",   content: $usr }
+        ]
+      }')
+    printf '%s' "$REQ" > "$DUMP_PATH"
+    ls -1t "$DUMP_DIR"/*.json 2>/dev/null | tail -n +21 | xargs -r rm -f --
+    log "calling-ollama model=$MODEL host=$OLLAMA_HOST dump=$DUMP_PATH"
+    START_CALL=$(date +%s)
+    OUT=$(timeout 240 curl -s --max-time 240 -X POST "$OLLAMA_HOST/api/chat" \
+      -H 'Content-Type: application/json' \
+      --data-binary "@$DUMP_PATH" 2>/dev/null)
+    EXIT_CALL=$?
+    ELAPSED_CALL=$(( $(date +%s) - START_CALL ))
+    rm -f "$USER_BODY"
+    if [ $EXIT_CALL -ne 0 ] || [ -z "$OUT" ]; then
+      log "exit reason=ollama-call-failed exit=$EXIT_CALL elapsed=${ELAPSED_CALL}s"
+      printf 'system-prompt-reviewer: ollama call failed (exit=%s, host=%s) — review skipped.\n' "$EXIT_CALL" "$OLLAMA_HOST"
+      exit 0
+    fi
+    OLLAMA_ERR=$(echo "$OUT" | jq -r '.error // empty' 2>/dev/null)
+    if [ -n "$OLLAMA_ERR" ]; then
+      log "exit reason=ollama-error err=\"$OLLAMA_ERR\" elapsed=${ELAPSED_CALL}s"
+      printf 'system-prompt-reviewer: ollama error: %s — review skipped.\n' "$OLLAMA_ERR"
+      exit 0
+    fi
+    RAW=$(echo "$OUT" | jq -r '.message.content // empty' 2>/dev/null)
+    [ -z "$RAW" ] && { log "exit reason=empty-message-content elapsed=${ELAPSED_CALL}s"; exit 0; }
+    ;;
 
-# curl/timeout failure → fail-open with diagnostic.
-if [ $EXIT_CALL -ne 0 ] || [ -z "$OUT" ]; then
-  log "exit reason=ollama-call-failed exit=$EXIT_CALL elapsed=${ELAPSED_CALL}s"
-  printf 'system-prompt-reviewer: ollama call failed (exit=%s, host=%s) — review skipped.\n' "$EXIT_CALL" "$OLLAMA_HOST"
-  exit 0
-fi
-
-# Ollama errors come back as {"error":"..."} with HTTP 200. Detect.
-OLLAMA_ERR=$(echo "$OUT" | jq -r '.error // empty' 2>/dev/null)
-if [ -n "$OLLAMA_ERR" ]; then
-  log "exit reason=ollama-error err=\"$OLLAMA_ERR\" elapsed=${ELAPSED_CALL}s"
-  printf 'system-prompt-reviewer: ollama error: %s — review skipped.\n' "$OLLAMA_ERR"
-  exit 0
-fi
-
-# Extract the model's structured JSON from message.content.
-RAW=$(echo "$OUT" | jq -r '.message.content // empty' 2>/dev/null)
-[ -z "$RAW" ] && { log "exit reason=empty-message-content elapsed=${ELAPSED_CALL}s"; exit 0; }
+  claude)
+    # claude --bare reads system prompt + user body via dedicated flags,
+    # not as JSON-API messages. Archive a representation of the inputs in
+    # the same shape so the dump remains comparable across backends.
+    REQ=$(jq -n \
+      --arg model "claude-bare" \
+      --rawfile sys "$RULES" \
+      --rawfile usr "$USER_BODY" \
+      --argjson schema "$SCHEMA" \
+      '{
+        _backend: "claude",
+        model: $model,
+        format: $schema,
+        messages: [
+          { role: "system", content: $sys },
+          { role: "user",   content: $usr }
+        ]
+      }')
+    printf '%s' "$REQ" > "$DUMP_PATH"
+    ls -1t "$DUMP_DIR"/*.json 2>/dev/null | tail -n +21 | xargs -r rm -f --
+    log "calling-claude --bare dump=$DUMP_PATH"
+    START_CALL=$(date +%s)
+    # --bare: skip hooks/plugin sync/auto-memory; auth strictly via
+    # --settings's apiKeyHelper (OAuth not read by --bare). User must
+    # configure apiKeyHelper in ~/.claude/settings.json for this to work.
+    # --json-schema enforces the same {verdict, violations} shape Ollama uses.
+    # User body is fed via stdin to avoid argv overflow on large transcripts.
+    OUT=$(timeout 240 claude --bare --print \
+      --output-format json --input-format text \
+      --settings "$HOME/.claude/settings.json" \
+      --append-system-prompt "$(cat "$RULES")" \
+      --json-schema "$SCHEMA" \
+      --allow-dangerously-skip-permissions \
+      < "$USER_BODY" 2>/dev/null)
+    EXIT_CALL=$?
+    ELAPSED_CALL=$(( $(date +%s) - START_CALL ))
+    rm -f "$USER_BODY"
+    if [ $EXIT_CALL -ne 0 ] || [ -z "$OUT" ]; then
+      log "exit reason=claude-call-failed exit=$EXIT_CALL elapsed=${ELAPSED_CALL}s"
+      printf 'system-prompt-reviewer: claude --bare failed (exit=%s) — review skipped.\n' "$EXIT_CALL"
+      exit 0
+    fi
+    # claude --output-format=json wraps the response: {type, result, ...}
+    # On error (no API key, etc.), is_error=true and result is a human msg.
+    IS_ERROR=$(echo "$OUT" | jq -r '.is_error // false' 2>/dev/null)
+    if [ "$IS_ERROR" = "true" ]; then
+      ERR_MSG=$(echo "$OUT" | jq -r '.result // empty' 2>/dev/null)
+      log "exit reason=claude-api-error err=\"$ERR_MSG\" elapsed=${ELAPSED_CALL}s"
+      printf 'system-prompt-reviewer: claude --bare error: %s — review skipped.\n' "$ERR_MSG"
+      exit 0
+    fi
+    RAW=$(echo "$OUT" | jq -r '.result // empty' 2>/dev/null)
+    [ -z "$RAW" ] && { log "exit reason=empty-claude-result elapsed=${ELAPSED_CALL}s"; exit 0; }
+    ;;
+esac
 
 # Strip optional markdown code fences that some models (gemma4) emit even
 # when Ollama's format-schema is supplied. Accept ``` or ```json fences.
@@ -461,7 +521,7 @@ case "$VERDICT" in
     # actually fix the violations (or the user must touch $BYPASS_MARKER) —
     # an asyncRewake-style nudge is too easy to ignore with acknowledgement
     # prose that doesn't fix anything.
-    REASON=$(printf 'External compliance reviewer (%s via ollama) flagged rule violations in your last turn. You must correct them before stopping.\n\nViolations:\n%s\n\nFix the violations in this turn (re-do the work correctly, do not just acknowledge). Streak=%d. To override: touch %s\n' "$MODEL" "$VIOLATIONS" "$STREAK" "$BYPASS_MARKER")
+    REASON=$(printf 'External compliance reviewer (%s via %s) flagged rule violations in your last turn. You must correct them before stopping.\n\nViolations:\n%s\n\nFix the violations in this turn (re-do the work correctly, do not just acknowledge). Streak=%d. To override: touch %s\n' "$MODEL" "$REVIEWER_BACKEND" "$VIOLATIONS" "$STREAK" "$BYPASS_MARKER")
     jq -n --arg reason "$REASON" '{"decision": "block", "reason": $reason}'
     exit 0
     ;;

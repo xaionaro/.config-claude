@@ -63,16 +63,34 @@ block() {
 }
 
 # --- Reviewer-backed gate ----------------------------------------------
-# When Ollama is reachable, the external reviewer is the gate. The current
-# turn is judged by an external LLM against CLAUDE.md; on verdict=fail the
-# reviewer's own block JSON is forwarded so the agent must correct, on
-# verdict=pass the result is shown to the user and the stop is allowed.
-# When Ollama is unreachable, we fall through to the proof.md verification
-# protocol below.
-OLLAMA_HOST="http://192.168.0.171:11434"
+# When the reviewer backend is reachable, it is THE gate. On verdict=fail
+# the reviewer's own block JSON is forwarded so the agent must correct.
+# On verdict=pass the result is shown to the user and the stop is allowed.
+# When the backend is unreachable (Ollama down, or claude unconfigured),
+# we fall through to the proof.md verification protocol below.
+#
+# Backend selection is via CLAUDE_STOP_REVIEWER (parsed by shared helper).
+. "$HOOK_DIR/reviewer-backend.sh"
+parse_reviewer_env || REVIEWER_BACKEND=""
+
 REVIEWER_BYPASS="$HOME/.cache/claude-proof/reviewer/$SESSION_ID/bypass"
-if [ ! -f "$REVIEWER_BYPASS" ] && \
-   timeout 3 curl -sf "$OLLAMA_HOST/api/tags" > /dev/null 2>&1; then
+
+# Reachability probe: ollama needs an HTTP probe; claude is always
+# considered "reachable" — the reviewer hook itself reports
+# auth/connectivity failures and falls open with a diagnostic.
+REVIEWER_REACHABLE=0
+case "$REVIEWER_BACKEND" in
+  ollama)
+    if timeout 3 curl -sf "$REVIEWER_OLLAMA_HOST/api/tags" >/dev/null 2>&1; then
+      REVIEWER_REACHABLE=1
+    fi
+    ;;
+  claude)
+    REVIEWER_REACHABLE=1
+    ;;
+esac
+
+if [ ! -f "$REVIEWER_BYPASS" ] && [ "$REVIEWER_REACHABLE" = "1" ]; then
   # Second-pass stop: agent already printed the result, allow the stop.
   if [ "$STOP_ACTIVE" = "true" ]; then
     rm -rf "$PROOF_DIR" 2>/dev/null || true
