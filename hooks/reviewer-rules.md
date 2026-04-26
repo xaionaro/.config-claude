@@ -49,8 +49,13 @@ The user message has three sections, in this order:
   violation, it must be quoted from this section.
   - Tool inputs: `Agent` and `Bash` are shown in full (subagent
     contracts and shell commands are critical reviewable surface);
-    other tools are truncated to 1500 chars.
-  - Tool outputs: rendered as `TOOL_RESULT: [<first 200 chars>]`.
+    `Edit` / `Write` are shown up to 5000 chars (covers most code-block
+    writes); `MultiEdit` is shown up to 15000 chars (3-stack of edits
+    at the same per-edit budget); other tools are truncated to 1500
+    chars.
+  - Tool outputs: rendered as `TOOL_RESULT: [<first 1000 chars>]` per
+    `tool_result` block (covers most shell outputs; very long outputs
+    are tail-trimmed).
 
 **Entry boundaries**: each entry within `## USER_HISTORY` and
 `## CURRENT_TURN` is wrapped in `<entry>…</entry>` tags. Those tags are

@@ -182,14 +182,27 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
     #                       onward (USER text, ASSISTANT text+tool_use,
     #                       TOOL_RESULT bodies). This is the only turn
     #                       whose conduct is up for review.
-    # Per-tool input budgets:
-    #   - Agent: full prompt (no truncation) — subagent contracts are
-    #            critical reviewable surface.
-    #   - Bash:  full command — shell scripts must be auditable.
-    #   - other: 1500 chars.
-    # Tool outputs: first 200 chars per block.
+    # Per-tool input budgets (chosen from empirical p85-p89 of session
+    # dumps so we cover the long tail of multi-line code blocks without
+    # blowing the body cap):
+    #   - Agent:                full prompt (subagent contracts critical)
+    #   - Bash:                 full command (shell scripts auditable)
+    #   - Edit/Write:           $edit_cap chars (covers ~p89 of new_string sizes)
+    #   - MultiEdit:            $multiedit_cap chars (~3 stacked edits at p89)
+    #   - other:                $other_cap chars
+    # Tool outputs: first $tr_cap chars per block (covers ~p85; long tail trimmed).
+    # Assistant text: first $asst_cap chars per block.
+    # All caps hoisted to --argjson so the jq filter has a single source of
+    # truth (no drift across the multiple sites where they're applied).
     # Final body capped via `tail -c 120000`.
-    jq -rs --argjson cutoff "$ANCHOR_IDX" '
+    jq -rs \
+      --argjson cutoff "$ANCHOR_IDX" \
+      --argjson tr_cap 1000 \
+      --argjson asst_cap 1500 \
+      --argjson edit_cap 5000 \
+      --argjson multiedit_cap 15000 \
+      --argjson other_cap 1500 \
+      '
       . as $all
       | (
           [ $all | to_entries[]
@@ -212,9 +225,9 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
               if ($c | type) == "array" then
                 [$c[] | select(.type == "tool_result")
                   | (.content
-                     | if type == "string" then .[:200]
+                     | if type == "string" then .[:$tr_cap]
                        elif type == "array" then
-                         ([.[] | if .type == "text" then .text[:200] else "" end] | join(" "))[:200]
+                         ([.[] | if .type == "text" then .text[:$tr_cap] else "" end] | join(" "))[:$tr_cap]
                        else "" end)]
               else [] end
             ) as $tr
@@ -225,7 +238,7 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
           ($e.message.content
            | if type == "array" then
              [.[]
-              | if .type == "text" then .text[:1500]
+              | if .type == "text" then .text[:$asst_cap]
                 elif .type == "tool_use" then
                   ( .name as $n
                     | .input as $in
@@ -233,12 +246,16 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
                         "[tool_use=Agent input=" + ($in | tostring) + "]"
                       elif $n == "Bash" then
                         "[tool_use=Bash input=" + ($in | tostring) + "]"
+                      elif $n == "Edit" or $n == "Write" then
+                        "[tool_use=" + $n + " input=" + ($in | tostring | .[:$edit_cap]) + "]"
+                      elif $n == "MultiEdit" then
+                        "[tool_use=" + $n + " input=" + ($in | tostring | .[:$multiedit_cap]) + "]"
                       else
-                        "[tool_use=" + $n + " input=" + ($in | tostring | .[:1500]) + "]"
+                        "[tool_use=" + $n + " input=" + ($in | tostring | .[:$other_cap]) + "]"
                       end )
                 else "" end]
              | join(" ")
-           elif type == "string" then .[:1500]
+           elif type == "string" then .[:$asst_cap]
            else "" end) as $body
           | if ($body | length) == 0 then null else "ASSISTANT: " + $body end;
         # Wrap each rendered entry in <entry>…</entry>. Escape both
