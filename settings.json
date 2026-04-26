@@ -83,10 +83,7 @@
           },
           {
             "type": "command",
-            "command": "$HOME/.claude/hooks/system-prompt-reviewer.sh",
-            "asyncRewake": true,
-            "rewakeMessage": "External compliance reviewer found rule violations in your last turn. Address them in this turn or touch the bypass marker.",
-            "rewakeSummary": "System-prompt review: violations found"
+            "command": "$HOME/.claude/hooks/system-prompt-reviewer.sh"
           }
         ]
       }

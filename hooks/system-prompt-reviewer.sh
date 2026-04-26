@@ -236,7 +236,7 @@ case "$VERDICT" in
   fail)
     STREAK=$(( $(cat "$STREAK_FILE" 2>/dev/null || echo 0) + 1 ))
     echo "$STREAK" > "$STREAK_FILE"
-    log "verdict=fail streak=$STREAK elapsed=${ELAPSED_CALL}s"
+    log "verdict=fail streak=$STREAK elapsed=${ELAPSED_CALL}s — blocking stop"
 
     VIOLATIONS=$(printf '%s' "$RESULT" | jq -r '.violations[] | "- \(.rule)\n  evidence: \(.evidence)"' 2>/dev/null)
     if [ -z "$VIOLATIONS" ]; then
@@ -244,12 +244,13 @@ case "$VERDICT" in
     fi
     write_last_result "fail (streak=$STREAK)" "$VIOLATIONS"
 
-    if [ "$STREAK" -ge 3 ]; then
-      printf 'External reviewer fail-closed: %d consecutive flagged stops. Resolve the violations or "touch %s" to override.\n%s\n' "$STREAK" "$BYPASS_MARKER" "$VIOLATIONS"
-    else
-      printf 'External reviewer flagged compliance violations (gemma4 via ollama):\n%s\n' "$VIOLATIONS"
-    fi
-    exit 2
+    # Synchronous block: hold the stop until verdict=pass. The agent must
+    # actually fix the violations (or the user must touch $BYPASS_MARKER) —
+    # an asyncRewake-style nudge is too easy to ignore with acknowledgement
+    # prose that doesn't fix anything.
+    REASON=$(printf 'External compliance reviewer (gemma4:31b-nvfp4 via ollama) flagged rule violations in your last turn. You must correct them before stopping.\n\nViolations:\n%s\n\nFix the violations in this turn (re-do the work correctly, do not just acknowledge). Streak=%d. To override: touch %s\n' "$VIOLATIONS" "$STREAK" "$BYPASS_MARKER")
+    jq -n --arg reason "$REASON" '{"decision": "block", "reason": $reason}'
+    exit 0
     ;;
   *)
     # Malformed verdict — fail-open with diagnostic.
