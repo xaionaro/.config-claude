@@ -185,7 +185,16 @@ REQ=$(jq -n \
     ]
   }')
 
-log "calling-ollama model=$MODEL host=$OLLAMA_HOST"
+# Archive the request body so the user can inspect what was sent without
+# having to reconstruct it. Keep last 20 dumps per session.
+DUMP_DIR="$HOME/.cache/claude-proof/reviewer-dumps/$SESSION_ID"
+mkdir -p "$DUMP_DIR"
+DUMP_PATH="$DUMP_DIR/$(date -u +%Y%m%dT%H%M%SZ).json"
+printf '%s' "$REQ" > "$DUMP_PATH"
+# Bounded retention: keep only the 20 newest dumps per session.
+ls -1t "$DUMP_DIR"/*.json 2>/dev/null | tail -n +21 | xargs -r rm -f --
+
+log "calling-ollama model=$MODEL host=$OLLAMA_HOST dump=$DUMP_PATH"
 START_CALL=$(date +%s)
 OUT=$(timeout 240 curl -s --max-time 240 -X POST "$OLLAMA_HOST/api/chat" \
   -H 'Content-Type: application/json' \
