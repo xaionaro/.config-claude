@@ -48,13 +48,17 @@ parse_reviewer_env() {
       # everything after the next ":". Cannot use last-colon split because
       # model names often contain colons (e.g. qwen3.5:9b-mxfp8).
       local rest="${raw#ollama:}"
-      if [[ "$rest" =~ ^([a-zA-Z][a-zA-Z0-9+.-]*://[^:/[:space:]]+(:[0-9]+)?):(.+)$ ]]; then
+      # Allow an optional trailing "/" between the URL and the model
+      # boundary ":" — a common copy-paste shape where the URL is given
+      # as `http://host:port/`. The slash is consumed but NOT included
+      # in the captured host (Ollama expects clean URL with no path).
+      if [[ "$rest" =~ ^([a-zA-Z][a-zA-Z0-9+.-]*://[^:/[:space:]]+(:[0-9]+)?)/?:(.+)$ ]]; then
         REVIEWER_OLLAMA_HOST="${BASH_REMATCH[1]}"
         REVIEWER_OLLAMA_MODEL="${BASH_REMATCH[3]}"
         REVIEWER_BACKEND="ollama"
         return 0
       fi
-      echo "reviewer-backend: malformed CLAUDE_STOP_REVIEWER='$raw' (expected 'ollama:scheme://host[:port]:MODEL')" >&2
+      echo "reviewer-backend: malformed CLAUDE_STOP_REVIEWER='$raw' (expected 'ollama:scheme://host[:port][/]:MODEL')" >&2
       return 1
       ;;
     *)

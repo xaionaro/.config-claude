@@ -465,13 +465,16 @@ case "$REVIEWER_BACKEND" in
     log "calling-claude --bare dump=$DUMP_PATH"
     START_CALL=$(date +%s)
     # --bare: skip hooks/plugin sync/auto-memory; auth strictly via
-    # --settings's apiKeyHelper (OAuth not read by --bare). User must
-    # configure apiKeyHelper in ~/.claude/settings.json for this to work.
+    # --settings's apiKeyHelper (OAuth not read by --bare). We pass an
+    # ISOLATED settings file (bin/bare-settings.json) containing only
+    # apiKeyHelper — putting apiKeyHelper in the main settings.json
+    # breaks normal sessions because OAuth-flow tries to use the
+    # helper's output as a static API key.
     # --json-schema enforces the same {verdict, violations} shape Ollama uses.
     # User body is fed via stdin to avoid argv overflow on large transcripts.
     OUT=$(timeout 240 claude --bare --print \
       --output-format json --input-format text \
-      --settings "$HOME/.claude/settings.json" \
+      --settings "$HOME/.claude/bin/bare-settings.json" \
       --append-system-prompt "$(cat "$RULES")" \
       --json-schema "$SCHEMA" \
       --allow-dangerously-skip-permissions \
