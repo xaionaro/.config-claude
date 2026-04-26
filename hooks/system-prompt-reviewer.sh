@@ -165,57 +165,100 @@ fi
 ANCHOR_IDX=${ANCHOR_IDX:-0}
 
 {
-  echo "## RECENT_TURNS"
   if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
-    # Three role labels:
-    #   USER:        — human-typed text (truncated per-block to 1000 chars)
-    #   TOOL_RESULT: — auto-generated tool outputs ([N result(s)] marker only)
-    #   ASSISTANT:   — model output, text truncated to 500 chars per block,
-    #                  tool_use shown as [tool_use=<name> input=<200-char>].
-    # Drop entries whose body collapses to empty (thinking-only turns).
-    # Final body capped via `tail -c 80000` (~20K tokens). qwen3.5:9b's
-    # context is 262144 but cold prefill of >100KB exceeds the 240s curl
-    # timeout, so 80KB is the practical ceiling. Beyond that, anchor
-    # rebases keep the body under the cap.
+    # Two explicit sections:
+    #   ## USER_HISTORY   — every USER text entry from `$cutoff` up to
+    #                       the start of the last turn. The agent's
+    #                       actions in those past turns are intentionally
+    #                       NOT shown — they were already audited in
+    #                       their own stops; we keep only the human's
+    #                       requests/corrections so the reviewer knows
+    #                       the agreements that bind the current turn.
+    #   ## CURRENT_TURN   — every entry from the last user-text message
+    #                       onward (USER text, ASSISTANT text+tool_use,
+    #                       TOOL_RESULT bodies). This is the only turn
+    #                       whose conduct is up for review.
+    # Per-tool input budgets:
+    #   - Agent: full prompt (no truncation) — subagent contracts are
+    #            critical reviewable surface.
+    #   - Bash:  full command — shell scripts must be auditable.
+    #   - other: 1500 chars.
+    # Tool outputs: first 200 chars per block.
+    # Final body capped via `tail -c 120000`.
     jq -rs --argjson cutoff "$ANCHOR_IDX" '
       . as $all
-      | $all[$cutoff:]
-      | map(
-          if .type == "user" then
-            (.message.content) as $c
-            | (
-                if ($c | type) == "string" then ($c | tostring)[:1000]
-                elif ($c | type) == "array" then
-                  ([$c[] | select(.type == "text") | .text[:1000]] | join(""))
-                else "" end
-              ) as $text
-            | (
-                if ($c | type) == "array" then
-                  [$c[] | select(.type == "tool_result")] | length
-                else 0 end
-              ) as $tr_count
-            | if ($text | length) > 0 then
-                "USER: " + $text
-              elif $tr_count > 0 then
-                "TOOL_RESULT: [" + ($tr_count | tostring) + " result(s)]"
-              else null end
-          elif .type == "assistant" then
-            (.message.content
-             | if type == "array" then
-                 [.[]
-                  | if .type == "text" then .text[:500]
-                    elif .type == "tool_use" then
-                      "[tool_use=" + .name + " input=" + (.input | tostring | .[:200]) + "]"
-                    else "" end]
-                 | join(" ")
-               elif type == "string" then .[:500]
-               else "" end) as $body
-            | if ($body | length) == 0 then null else "ASSISTANT: " + $body end
-          else null end
-        )
-      | map(select(. != null))
-      | join("\n\n---\n\n")
-    ' "$TRANSCRIPT" 2>/dev/null | tail -c 80000
+      | (
+          [ $all | to_entries[]
+              | select(.value.type == "user"
+                       and ((.value.message.content // [] | type) == "array")
+                       and (.value.message.content | map(select(.type == "text")) | length > 0))
+              | .key
+          ] | last // 0
+        ) as $lts
+      | def render_user_text($e):
+          ($e.message.content) as $c
+          | (
+              if ($c | type) == "string" then ($c | tostring)[:1000]
+              elif ($c | type) == "array" then
+                ([$c[] | select(.type == "text") | .text[:1000]] | join(""))
+              else "" end
+            ) as $text
+          | if ($text | length) > 0 then "USER: " + $text else null end;
+        def render_user_tr($e):
+          ($e.message.content) as $c
+          | (
+              if ($c | type) == "array" then
+                [$c[] | select(.type == "tool_result")
+                  | (.content
+                     | if type == "string" then .[:200]
+                       elif type == "array" then
+                         ([.[] | if .type == "text" then .text[:200] else "" end] | join(" "))[:200]
+                       else "" end)]
+              else [] end
+            ) as $tr
+          | if ($tr | length) > 0 then
+              "TOOL_RESULT: " + ($tr | map(if . == "" then "[empty]" else "[" + . + "]" end) | join(" "))
+            else null end;
+        def render_assistant($e):
+          ($e.message.content
+           | if type == "array" then
+             [.[]
+              | if .type == "text" then .text[:1500]
+                elif .type == "tool_use" then
+                  ( .name as $n
+                    | .input as $in
+                    | if $n == "Agent" then
+                        "[tool_use=Agent input=" + ($in | tostring) + "]"
+                      elif $n == "Bash" then
+                        "[tool_use=Bash input=" + ($in | tostring) + "]"
+                      else
+                        "[tool_use=" + $n + " input=" + ($in | tostring | .[:1500]) + "]"
+                      end )
+                else "" end]
+             | join(" ")
+           elif type == "string" then .[:1500]
+           else "" end) as $body
+          | if ($body | length) == 0 then null else "ASSISTANT: " + $body end;
+        ($all | to_entries
+         | map(select(.key >= $cutoff and .key < $lts))
+         | map(if .value.type == "user" then render_user_text(.value) else null end)
+         | map(select(. != null))
+         | join("\n\n---\n\n")) as $history
+      | ($all | to_entries
+         | map(select(.key >= $lts))
+         | map(
+             if .value.type == "user" then
+               (render_user_text(.value) // render_user_tr(.value))
+             elif .value.type == "assistant" then
+               render_assistant(.value)
+             else null end)
+         | map(select(. != null))
+         | join("\n\n---\n\n")) as $current
+      | "## USER_HISTORY (USER messages from earlier turns; the agent'"'"'s actions in those turns were already audited and are intentionally not shown)\n\n"
+        + $history
+        + "\n\n## CURRENT_TURN (the only turn under review now — all activity since the last USER message)\n\n"
+        + $current
+    ' "$TRANSCRIPT" 2>/dev/null | tail -c 120000
   fi
   echo
   echo "## DIFF"
