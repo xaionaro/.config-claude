@@ -10,11 +10,12 @@
 # this one critiques the conduct. Both fire on Stop in parallel.
 #
 # Cost / latency gates:
-#   - skip when stop_hook_active=true (second pass; nothing new)
 #   - skip on user-touched bypass marker
 #   - timeout 240s on the model call
 #   - track consecutive-fail streak (informational; bypass marker is the
 #     escape hatch when the reviewer is wrong)
+# Note: fires on every Stop pass (including stop_hook_active=true) so
+# post-correction state is also verified.
 
 set -uo pipefail
 
@@ -40,8 +41,11 @@ case "$SESSION_ID" in
   *[!A-Za-z0-9_-]*) log "exit reason=unsafe-session-id"; exit 0 ;;
 esac
 
-# Skip on second-pass stops; nothing new to review since first-pass.
-[ "$STOP_ACTIVE" = "true" ] && { log "exit reason=stop-active"; exit 0; }
+# NOTE: previously skipped when stop_hook_active=true to save cost on
+# second-pass stops. Under sync-block design that's wrong: the reviewer
+# must verify the agent's *correction* work too, not only the pre-block
+# state. Re-fire on every pass — cost is bounded by 240s timeout and
+# warm-call latency (5-22s observed).
 
 # Reviewer reads the transcript directly (per the rule-source-not-narrative
 # redesign), so it does not need proof.md / summary-to-print.md to exist.
