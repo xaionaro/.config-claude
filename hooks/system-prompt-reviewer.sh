@@ -233,8 +233,18 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
           $e.type == "user"
           and ($e.message.content | type) == "string"
           and (($e.isMeta // false) | not);
+        # ends_trim($cap): keep first $cap/2 + last $cap/2 chars of long
+        # strings; mid-omission marker preserves both the OPENING (intent)
+        # and the CLOSING (conclusions, questions, "Want me to..." phrases).
+        # Tail-only or head-only truncation hides exactly the part most
+        # likely to contain rule violations.
+        def ends_trim($cap):
+          if (. | length) <= $cap then .
+          else (($cap / 2) | floor) as $half
+               | .[:$half] + "…[truncated " + ((. | length) - $cap | tostring) + " chars]…" + .[-$half:]
+          end;
         def render_user_text($e):
-          ($e.message.content | tostring | .[:1000]) as $text
+          ($e.message.content | tostring | ends_trim(1000)) as $text
           | if ($text | length) > 0 then "USER: " + $text else null end;
         def render_user_tr($e):
           ($e.message.content) as $c
@@ -242,9 +252,9 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
               if ($c | type) == "array" then
                 [$c[] | select(.type == "tool_result")
                   | (.content
-                     | if type == "string" then .[:$tr_cap]
+                     | if type == "string" then ends_trim($tr_cap)
                        elif type == "array" then
-                         ([.[] | if .type == "text" then .text[:$tr_cap] else "" end] | join(" "))[:$tr_cap]
+                         ([.[] | if .type == "text" then (.text | ends_trim($tr_cap)) else "" end] | join(" ") | ends_trim($tr_cap))
                        else "" end)]
               else [] end
             ) as $tr
@@ -255,7 +265,7 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
           ($e.message.content
            | if type == "array" then
              [.[]
-              | if .type == "text" then .text[:$asst_cap]
+              | if .type == "text" then (.text | ends_trim($asst_cap))
                 elif .type == "tool_use" then
                   ( .name as $n
                     | .input as $in
@@ -264,15 +274,15 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
                       elif $n == "Bash" then
                         "[tool_use=Bash input=" + ($in | tostring) + "]"
                       elif $n == "Edit" or $n == "Write" then
-                        "[tool_use=" + $n + " input=" + ($in | tostring | .[:$edit_cap]) + "]"
+                        "[tool_use=" + $n + " input=" + ($in | tostring | ends_trim($edit_cap)) + "]"
                       elif $n == "MultiEdit" then
-                        "[tool_use=" + $n + " input=" + ($in | tostring | .[:$multiedit_cap]) + "]"
+                        "[tool_use=" + $n + " input=" + ($in | tostring | ends_trim($multiedit_cap)) + "]"
                       else
-                        "[tool_use=" + $n + " input=" + ($in | tostring | .[:$other_cap]) + "]"
+                        "[tool_use=" + $n + " input=" + ($in | tostring | ends_trim($other_cap)) + "]"
                       end )
                 else "" end]
              | join(" ")
-           elif type == "string" then .[:$asst_cap]
+           elif type == "string" then ends_trim($asst_cap)
            else "" end) as $body
           | if ($body | length) == 0 then null else "ASSISTANT: " + $body end;
         # Wrap each rendered entry in <entry>…</entry>. Escape both
