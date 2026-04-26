@@ -131,11 +131,15 @@ if [ -f "$ANCHOR_FILE" ]; then
   case "$ANCHOR_IDX" in *[!0-9]*) ANCHOR_IDX="" ;; esac
 fi
 if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
+  # Turn-start = a real human-typed user message. The signal in Claude
+  # Code transcripts: content is a string AND isMeta is not true. (Array
+  # content + isMeta=true is a skill-load body; string content + isMeta
+  # =true is synthetic stop-hook feedback. Neither counts as a turn.)
   TS_LIST=$(jq -s '
     [ to_entries[]
       | select(.value.type == "user"
-               and ((.value.message.content // [] | type) == "array")
-               and (.value.message.content | map(select(.type == "text")) | length > 0))
+               and ((.value.message.content | type) == "string")
+               and ((.value.isMeta // false) | not))
       | .key
     ]
   ' "$TRANSCRIPT" 2>/dev/null || echo "[]")
@@ -190,19 +194,17 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
       | (
           [ $all | to_entries[]
               | select(.value.type == "user"
-                       and ((.value.message.content // [] | type) == "array")
-                       and (.value.message.content | map(select(.type == "text")) | length > 0))
+                       and ((.value.message.content | type) == "string")
+                       and ((.value.isMeta // false) | not))
               | .key
           ] | last // 0
         ) as $lts
-      | def render_user_text($e):
-          ($e.message.content) as $c
-          | (
-              if ($c | type) == "string" then ($c | tostring)[:1000]
-              elif ($c | type) == "array" then
-                ([$c[] | select(.type == "text") | .text[:1000]] | join(""))
-              else "" end
-            ) as $text
+      | def is_real_user($e):
+          $e.type == "user"
+          and ($e.message.content | type) == "string"
+          and (($e.isMeta // false) | not);
+        def render_user_text($e):
+          ($e.message.content | tostring | .[:1000]) as $text
           | if ($text | length) > 0 then "USER: " + $text else null end;
         def render_user_tr($e):
           ($e.message.content) as $c
@@ -241,14 +243,16 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
           | if ($body | length) == 0 then null else "ASSISTANT: " + $body end;
         ($all | to_entries
          | map(select(.key >= $cutoff and .key < $lts))
-         | map(if .value.type == "user" then render_user_text(.value) else null end)
+         | map(if is_real_user(.value) then render_user_text(.value) else null end)
          | map(select(. != null))
          | join("\n\n---\n\n")) as $history
       | ($all | to_entries
          | map(select(.key >= $lts))
          | map(
-             if .value.type == "user" then
-               (render_user_text(.value) // render_user_tr(.value))
+             if is_real_user(.value) then
+               render_user_text(.value)
+             elif .value.type == "user" then
+               render_user_tr(.value)
              elif .value.type == "assistant" then
                render_assistant(.value)
              else null end)
