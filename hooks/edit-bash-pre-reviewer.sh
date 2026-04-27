@@ -26,6 +26,7 @@ SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 case "$SESSION_ID" in *[!A-Za-z0-9_-]*) exit 0 ;; esac
 
 TOOL=$(echo "$INPUT" | jq -r '.tool_name // empty')
+# KEEP IN SYNC with --argjson gated below (FIRST_OF_TURN jq filter).
 case "$TOOL" in Edit|Write|MultiEdit|Bash) ;; *) exit 0 ;; esac
 
 # Subagent skip — same role list as stop-gate.sh:19.
@@ -67,7 +68,7 @@ TRANSCRIPT=$(find "$HOME/.claude/projects" -name "${SESSION_ID}.jsonl" -type f 2
 # Determine: index of last real user-text message + whether any prior
 # assistant tool_use exists at index > that. Also emit the index so we can
 # scope the TOCTOU claim file per-turn.
-read -r LTS FIRST_OF_TURN < <(jq -rs '
+read -r LTS FIRST_OF_TURN < <(jq -rs --argjson gated '["Edit","Write","MultiEdit","Bash"]' '
   . as $all
   | ([$all | to_entries[]
       | select(.value.type == "user"
@@ -79,7 +80,7 @@ read -r LTS FIRST_OF_TURN < <(jq -rs '
         | select(.key > $lts
                  and .value.type == "assistant"
                  and ((.value.message.content | type) == "array")
-                 and any(.value.message.content[]; .type == "tool_use"))
+                 and any(.value.message.content[]; .type == "tool_use" and (.name as $n | $gated | index($n))))
         | .key] | length) as $prior
       | if $prior == 0 then "\($lts) yes" else "\($lts) no" end
     end
