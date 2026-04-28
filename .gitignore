@@ -1,5 +1,5 @@
 # Secrets & credentials
-.credentials.json
+.credentials.json*
 settings.local.json
 
 # Session logs, history & caches
@@ -30,3 +30,15 @@ plugins/
 
 # Plans (ephemeral)
 plans/
+
+teams/
+
+sessions/
+
+mcp-needs-auth-cache.json
+
+CLAUDE.md-improved
+
+.claude
+.caveman-active
+

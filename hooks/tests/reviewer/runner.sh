@@ -15,8 +15,9 @@
 #   fixtures : hooks/tests/reviewer/fixtures/usr-*.md
 #
 # Each per-pair summary line from run.sh looks like:
-#   summary wrapper=<stem> usr=<stem> expected=<v>: pass=N fail=N hit=H/T parse_ok=P/T p50=Xs p95=Ys
-# We extract `wrapper=`, `usr=`, and `hit=H/T`.
+#   summary wrapper=<stem> usr=<stem> expected=<v> mode=<m>: pass=N fail=N hit=H/T parse_ok=P/T p50=Xs p95=Ys
+# We extract `wrapper=`, `usr=`, `mode=`, and `hit=H/T`. (`mode=` is absent
+# in legacy run.sh output and degrades to `single` for back-compat.)
 
 set -uo pipefail
 
@@ -62,7 +63,7 @@ for w in "${WRAPPERS[@]}"; do
     rm -f "$out_file"
     if [ -z "$sum_line" ]; then
       echo "warn: no summary line for $w_stem x $f_stem" >&2
-      ROWS+=( "$w_stem|$f_stem|0|$N" )
+      ROWS+=( "$w_stem|$f_stem|single|0|$N" )
       TOTAL_RUNS=$((TOTAL_RUNS + N))
       continue
     fi
@@ -71,7 +72,10 @@ for w in "${WRAPPERS[@]}"; do
     H="${hit_pair%/*}"
     T="${hit_pair#*/}"
     : "${H:=0}" "${T:=$N}"
-    ROWS+=( "$w_stem|$f_stem|$H|$T" )
+    # mode=<word> — absent on legacy output, defaults to "single".
+    mode_val=$(echo "$sum_line" | grep -oE 'mode=[A-Za-z0-9=_-]+' | head -n 1 | sed 's/^mode=//')
+    : "${mode_val:=single}"
+    ROWS+=( "$w_stem|$f_stem|$mode_val|$H|$T" )
     TOTAL_HIT=$((TOTAL_HIT + H))
     TOTAL_RUNS=$((TOTAL_RUNS + T))
   done
@@ -80,11 +84,11 @@ done
 # Render table.
 echo
 echo "===== AGGREGATED SCORES ====="
-printf '%-20s %-22s %s\n' "wrapper" "fixture" "score"
-printf '%-20s %-22s %s\n' "-------" "-------" "-----"
+printf '%-20s %-22s %-18s %s\n' "wrapper" "fixture" "mode" "score"
+printf '%-20s %-22s %-18s %s\n' "-------" "-------" "----" "-----"
 for row in "${ROWS[@]}"; do
-  IFS='|' read -r w_stem f_stem H T <<<"$row"
-  printf '%-20s %-22s %d/%d\n' "$w_stem" "$f_stem" "$H" "$T"
+  IFS='|' read -r w_stem f_stem mode_val H T <<<"$row"
+  printf '%-20s %-22s %-18s %d/%d\n' "$w_stem" "$f_stem" "$mode_val" "$H" "$T"
 done
 echo "----------------------------------------------------------"
 
