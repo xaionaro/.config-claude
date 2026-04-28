@@ -33,6 +33,8 @@ log() { printf '%s pid=%d %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$" "$*" >> "$
 HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=reviewer-backend.sh
 . "$HOOK_DIR/reviewer-backend.sh"
+# shellcheck source=lib/compose-reviewer-prompt.sh
+. "$HOOK_DIR/lib/compose-reviewer-prompt.sh"
 if ! parse_reviewer_env; then
   log "exit reason=malformed-env CLAUDE_STOP_REVIEWER='${CLAUDE_STOP_REVIEWER:-}'"
   printf 'system-prompt-reviewer: invalid CLAUDE_STOP_REVIEWER — review skipped.\n'
@@ -82,48 +84,12 @@ INSTRUCTIONS="$HOME/.claude/CLAUDE.md"
 [ ! -f "$RULES_WRAPPER" ] && { log "exit reason=missing-wrapper"; exit 0; }
 [ ! -f "$INSTRUCTIONS" ] && { log "exit reason=missing-claude-md"; exit 0; }
 
-# Build the system message. The agent must obey *all* of these rule
-# sources, so the reviewer scores against all of them. Each is a single
-# source-of-truth file the agent is also supposed to follow:
-#   - reviewer-rules.md  : wrapper / framing for the reviewer LLM
-#   - CLAUDE.md          : user's global instructions (the master rules)
-#   - stop-checklist.md  : acceptance criteria for ending a turn — the
-#                          agent's last ASSISTANT text must show evidence
-#                          that each applicable item was met
-#   - MEMORY.md          : index of cross-session lessons-learned (full
-#                          feedback bodies live in sibling files but the
-#                          one-line summaries here name each rule)
+# Build the system message via the shared composer. Composes:
+#   wrapper + CLAUDE.md + stop-checklist.md + MEMORY.md
+# See lib/compose-reviewer-prompt.sh — sole source of truth, also used
+# by tests/reviewer/run.sh so harness and production stay in lockstep.
 RULES=$(mktemp)
-{
-  cat "$RULES_WRAPPER"
-  echo
-  echo
-  echo "============================================================"
-  echo "# CLAUDE.md (user's global instructions)"
-  echo "============================================================"
-  echo
-  cat "$INSTRUCTIONS"
-  echo
-  if [ -f "$HOME/.claude/hooks/stop-checklist.md" ]; then
-    echo
-    echo "============================================================"
-    echo "# stop-checklist.md (acceptance criteria for ending a turn)"
-    echo "============================================================"
-    echo
-    cat "$HOME/.claude/hooks/stop-checklist.md"
-    echo
-  fi
-  MEMORY_INDEX="$HOME/.claude/projects/-home-streaming--claude/memory/MEMORY.md"
-  if [ -f "$MEMORY_INDEX" ]; then
-    echo
-    echo "============================================================"
-    echo "# MEMORY.md (cross-session lessons-learned, one-line summaries)"
-    echo "============================================================"
-    echo
-    cat "$MEMORY_INDEX"
-    echo
-  fi
-} > "$RULES"
+compose_reviewer_prompt "$RULES_WRAPPER" > "$RULES"
 trap 'rm -f "$RULES"' EXIT
 
 # Build user-message body. Order is RECENT_TURNS first, DIFF last — DIFF
@@ -375,24 +341,9 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
 
 # JSON schema enforced on both backends: Ollama via /api/chat `format`,
 # claude via --json-schema. Same shape so verdict parsing is uniform.
-SCHEMA='{
-  "type": "object",
-  "required": ["verdict", "violations"],
-  "properties": {
-    "verdict": { "type": "string", "enum": ["pass", "fail"] },
-    "violations": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["rule", "evidence"],
-        "properties": {
-          "rule":     { "type": "string" },
-          "evidence": { "type": "string" }
-        }
-      }
-    }
-  }
-}'
+# Single source of truth at lib/reviewer-schema.json (also read by the
+# test harness in tests/reviewer/run.sh).
+SCHEMA=$(cat "$HOOK_DIR/lib/reviewer-schema.json")
 
 # Archive what was sent so the user can inspect later. Same path for both
 # backends; the dump file's `model` and `_backend` fields disambiguate.

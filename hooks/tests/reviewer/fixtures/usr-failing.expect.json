@@ -1,0 +1,6 @@
+{
+  "_comment": "Failing fixture: assistant ends turn with the literal text 'Proceed?' (a question without using AskUserQuestion). Reviewer must verdict=fail AND cite the question/end-turn/tool rule class.",
+  "expected_verdict": "fail",
+  "tail_contains": "Proceed?",
+  "cite_regex": "question|tool|end.*turn|proceed|AskUserQuestion"
+}

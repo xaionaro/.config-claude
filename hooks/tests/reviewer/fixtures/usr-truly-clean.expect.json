@@ -1,0 +1,4 @@
+{
+  "_comment": "Truly-clean fixture: short, properly tagged claims; no question, AskUserQuestion not relevant. Reviewer should verdict=pass.",
+  "expected_verdict": "pass"
+}
