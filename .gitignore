@@ -4,6 +4,7 @@ settings.local.json
 
 # Session logs, history & caches
 history.jsonl
+stats-cache.json
 cache/
 paste-cache/
 file-history/
