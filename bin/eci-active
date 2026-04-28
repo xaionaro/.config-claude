@@ -1,0 +1,125 @@
+#!/bin/bash
+# eci-active {on <task-description>|off <disengage-report.md>|status}
+#
+# Session-scoped marker for the explore-critique-implement (ECI) skill.
+# When `on`, the PreToolUse gate (eci-active-gate.sh) denies direct
+# Edit/Write/MultiEdit calls from the main thread, forcing delegation
+# to subagents per the ECI loop. Set `off` once the scope is closed
+# (clean pass, hard escalate, or user confirms) AND a disengage report
+# has been written walking the stop checklist with a critical analysis
+# of items that could not be fully complied with.
+#
+# Session discovery mirrors skip-stop:
+#   1. $CLAUDE_SESSION_ID if set.
+#   2. Newest UUID-named dir under ~/.cache/claude-proof/.
+
+set -euo pipefail
+
+CACHE_DIR="$HOME/.cache/claude-proof"
+ACTION="${1:-}"
+
+resolve_session_dir() {
+  if [ -n "${CLAUDE_SESSION_ID:-}" ]; then
+    echo "$CACHE_DIR/$CLAUDE_SESSION_ID"
+    return
+  fi
+  [ -d "$CACHE_DIR" ] || return
+  local newest="" newest_mtime=0 d name mtime
+  shopt -s nullglob
+  for d in "$CACHE_DIR"/*/; do
+    d="${d%/}"
+    name="${d##*/}"
+    [[ "$name" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || continue
+    mtime=$(stat -c '%Y' "$d" 2>/dev/null) || continue
+    if [ "$mtime" -gt "$newest_mtime" ]; then
+      newest_mtime=$mtime
+      newest=$d
+    fi
+  done
+  shopt -u nullglob
+  echo "$newest"
+}
+
+SESSION_DIR=$(resolve_session_dir)
+
+if [ -z "$SESSION_DIR" ]; then
+  echo "eci-active: no session directory found under $CACHE_DIR" >&2
+  exit 1
+fi
+
+MARKER="$SESSION_DIR/eci_active"
+
+case "$ACTION" in
+  on)
+    DESC="${2:-}"
+    if [ -z "$DESC" ]; then
+      echo "usage: eci-active on \"<task-description>\"" >&2
+      exit 2
+    fi
+    mkdir -p "$SESSION_DIR"
+    {
+      printf 'task: %s\n' "$DESC"
+      printf 'engaged: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    } > "$MARKER"
+    echo "eci-active: on ($MARKER)"
+    ;;
+  off)
+    REPORT="${2:-}"
+    if [ -z "$REPORT" ] || [ ! -f "$REPORT" ]; then
+      cat >&2 <<USAGE
+usage: eci-active off <path-to-disengage-report.md>
+
+Report must walk the stop checklist (~/.claude/hooks/stop-checklist.md)
+and critically analyze items that could not be fully complied with during
+the ECI scope. Required sections (case-insensitive):
+
+  ## Stop checklist walkthrough
+  <per-section pass/fail/N-A with one-line evidence; at least 3 content lines>
+
+  ## Incomplete compliance
+  <bullets — what could not be fully complied with, why, impact>
+  <or explicit single line: "fully-compliant: <reason rule-by-rule>">
+USAGE
+      exit 2
+    fi
+    if ! grep -qiE '[Ss]top[[:space:]-]checklist[[:space:]-]walkthrough' "$REPORT"; then
+      echo "eci-active: report missing 'Stop checklist walkthrough' header" >&2
+      exit 2
+    fi
+    if ! grep -qiE '[Ii]ncomplete[[:space:]-]compliance' "$REPORT"; then
+      echo "eci-active: report missing 'Incomplete compliance' header" >&2
+      exit 2
+    fi
+    REPORT_ERRS=$(awk '
+      BEGIN { in_walk=0; in_incomp=0; walk_body=0; incomp_body=0 }
+      /^#+[[:space:]]*[Ss]top[[:space:]-]+[Cc]hecklist[[:space:]-]+[Ww]alkthrough/ { in_walk=1; in_incomp=0; next }
+      /^#+[[:space:]]*[Ii]ncomplete[[:space:]-]+[Cc]ompliance/ { in_walk=0; in_incomp=1; next }
+      /^#+[[:space:]]/ { in_walk=0; in_incomp=0; next }
+      in_walk && /[^[:space:]]/ { walk_body++ }
+      in_incomp && /[^[:space:]]/ { incomp_body++ }
+      END {
+        if (walk_body < 3) print "  - Stop checklist walkthrough section needs at least 3 content lines (per-section pass/fail/N-A with evidence)"
+        if (incomp_body < 1) print "  - Incomplete compliance section is empty — add bullets or write \"fully-compliant: <reason>\""
+      }
+    ' "$REPORT")
+    if [ -n "$REPORT_ERRS" ]; then
+      echo "eci-active: disengage report failed validation:" >&2
+      echo "$REPORT_ERRS" >&2
+      exit 2
+    fi
+    rm -f "$MARKER"
+    echo "eci-active: off ($SESSION_DIR) — report: $REPORT"
+    ;;
+  status)
+    if [ -f "$MARKER" ]; then
+      echo "on ($MARKER):"
+      cat "$MARKER"
+    else
+      echo "off ($SESSION_DIR)"
+    fi
+    ;;
+  *)
+    echo "usage: eci-active {on \"<task-description>\"|off|status}" >&2
+    exit 2
+    ;;
+esac

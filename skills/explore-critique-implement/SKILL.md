@@ -20,6 +20,40 @@ Separate the hand that builds from the hand that tears down. The builder cannot 
 
 Coding task? Every subagent prompt (explorer, critic, implementer) must include: "Before starting, load the `<language>-coding-style` skill and follow its rules."
 
+## Engagement marker
+
+The PreToolUse gate `~/.claude/hooks/eci-active-gate.sh` denies direct Edit/Write/MultiEdit on the main thread while engaged. Every code change must flow through a subagent. Subagents (agent_id non-empty) bypass the gate.
+
+| Step | Command | When |
+|------|---------|------|
+| Engage | `~/.claude/bin/eci-active on "<task + scope>"` | Before Step 1 of the first iteration |
+| Disengage | `~/.claude/bin/eci-active off <disengage-report.md>` | Clean pass landed, hard escalate, or user confirms scope closed |
+
+Do not disengage mid-task to escape the gate — that is the regression this marker exists to catch. If a hand-edit feels necessary, spawn an implementer subagent for it.
+
+### Disengage report
+
+`~/.claude/bin/eci-active off` requires a markdown report walking the stop checklist (`~/.claude/hooks/stop-checklist.md`) and critically analyzing items that could not be fully complied with during the ECI scope. Required sections:
+
+```
+## Stop checklist walkthrough
+- Questions: pass/fail/N-A — <one-line evidence>
+- Git: pass/fail/N-A — <one-line evidence>
+- Completion: pass/fail/N-A — <one-line evidence>
+- Root cause: ...
+- Adversarial self-critique: ...
+- Assumed blockers: ...
+- Rule-compliance self-audit: ...
+- Testing: ...
+
+## Incomplete compliance
+- <item> — could not fully comply because <reason>; impact: <what slipped>
+- ...
+fully-compliant: <reason rule-by-rule>   # only if no incomplete items
+```
+
+The bin rejects reports missing either header or with an empty walkthrough. Validation is a content gate, not a wordcount — write substance, not boilerplate.
+
 ## Loop structure
 
 Each iteration tackles one change. All four steps run per iteration. Do not advance to next change until current one passes all steps.
@@ -123,6 +157,29 @@ Gate retry and cycle limits defined in Escalation table.
 
 **Clean pass** = zero REJECTs + zero CONDITIONALs + E2E pass, all from the same gate run.
 
+## Brainstormer (unblocker)
+
+Fresh idea generator — fires on-demand when the cycle stalls. Output is raw ideas only; never decisions, verdicts, or filtering. Bigger list = better.
+
+| Trigger | Action |
+|---------|--------|
+| Explorer returned zero viable options | Spawn brainstormer → feed ideas into a new explorer |
+| Step 2 critic rejected every option | Spawn brainstormer → feed ideas into a new explorer |
+| Implementer dead-end inside Step 3 | Spawn brainstormer → feed ideas into a new implementer prompt |
+
+### Prompt requirements
+
+- Original problem + everything tried so far, verbatim.
+- Current code/file paths — brainstormer reads them independently.
+- "Generate as many distinct ideas as possible. No filtering, no feasibility judgment, no negatives. Bigger list = better."
+- "You are NOT one of the cycle agents. Do not trust prior agent summaries."
+
+### Constraints
+
+- Must NOT be any cycle agent (explorer, Step 2 critic, implementer, Critic A, Critic B, E2E, loop-breaker).
+- Each invocation = distinct fresh agent.
+- Ideas only — the next cycle agent does the filtering.
+
 ## Loop-breaker
 
 A FRESH agent — not any of the cycle agents — gets one chance to break the loop before escalating to the user.
@@ -183,6 +240,7 @@ Cycle limit defined in Escalation table (3 full cycles per change).
 | Skipping exploration or critique for later iterations | Every iteration runs all four steps — none are optional |
 | Winner lacks concrete text | Critic under-specified. Re-spawn with "concrete text required" |
 | No rejected list in Step 2 | Critic is not adversarial. Re-spawn |
+| Brainstormer output filters/judges/picks a winner | Brainstormer is idea-only. Re-spawn with "no filtering, no negatives" |
 
 ## Relationship to other skills
 

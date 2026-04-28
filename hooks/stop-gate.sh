@@ -14,9 +14,13 @@ if [ -z "$SESSION_ID" ] || [ "$SESSION_ID" = "null" ]; then
   exit 0
 fi
 
-# Skip stop hook for roles that don't write code
+# Skip stop hook for roles that don't write code.
+# Lead and coordinator are NOT exempt: per ATE skill they must walk the stop
+# checklist on disengage and critically analyze items that could not be fully
+# complied with. Other non-code roles stay exempt — they report verdicts via
+# messaging and don't produce stop-cycle artifacts.
 case "${CLAUDE_ROLE:-}" in
-  lead|coordinator|snitch|explorer|brainstormer|designer|reviewer|test-designer|test-reviewer|verifier|qa)
+  snitch|explorer|brainstormer|designer|reviewer|test-designer|test-reviewer|verifier|qa)
     exit 0 ;;
 esac
 
@@ -91,10 +95,48 @@ case "$REVIEWER_BACKEND" in
 esac
 
 if [ ! -f "$REVIEWER_BYPASS" ] && [ "$REVIEWER_REACHABLE" = "1" ]; then
-  # Second-pass stop: agent already printed the result, allow the stop.
+  # Second-pass stop: by default, agent already printed the result, allow the
+  # stop. Reset and re-run the reviewer when substantial work has landed since
+  # the last reviewer call — closes the post-block silent-allow hole.
+  # Reset triggers: HEAD advanced in ~/.claude, OR ≥N new assistant tool_use
+  # blocks in the transcript (N defaults to 5; CLAUDE_REVIEWER_RESET_TOOL_CALLS
+  # overrides).
   if [ "$STOP_ACTIVE" = "true" ]; then
-    rm -rf "$PROOF_DIR" 2>/dev/null || true
-    exit 0
+    RESET=0
+    REVIEWER_STATE="$HOME/.cache/claude-proof/reviewer/$SESSION_ID"
+    if [ -f "$REVIEWER_STATE/last_reviewer_head" ]; then
+      LAST_HEAD=$(cat "$REVIEWER_STATE/last_reviewer_head" 2>/dev/null)
+      CUR_HEAD=$(git -C "$HOME/.claude" rev-parse HEAD 2>/dev/null)
+      if [ -n "$CUR_HEAD" ] && [ -n "$LAST_HEAD" ] && [ "$CUR_HEAD" != "$LAST_HEAD" ]; then
+        RESET=1
+      fi
+    fi
+    if [ "$RESET" = "0" ] && [ -f "$REVIEWER_STATE/last_reviewer_tool_count" ]; then
+      LAST_COUNT=$(cat "$REVIEWER_STATE/last_reviewer_tool_count" 2>/dev/null || echo 0)
+      TRANSCRIPT=$(find "$HOME/.claude/projects" -name "${SESSION_ID}.jsonl" -type f 2>/dev/null | head -1)
+      if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
+        CUR_COUNT=$(jq -s '[.[]
+                            | select(.type == "assistant")
+                            | .message.content
+                            | if type == "array" then [.[] | select(.type == "tool_use")] else [] end
+                           ] | flatten | length' "$TRANSCRIPT" 2>/dev/null || echo 0)
+        THRESHOLD="${CLAUDE_REVIEWER_RESET_TOOL_CALLS:-5}"
+        case "$LAST_COUNT$CUR_COUNT$THRESHOLD" in
+          *[!0-9]*) ;;
+          *)
+            DELTA=$(( CUR_COUNT - LAST_COUNT ))
+            if [ "$DELTA" -ge "$THRESHOLD" ]; then
+              RESET=1
+            fi
+            ;;
+        esac
+      fi
+    fi
+    if [ "$RESET" = "0" ]; then
+      rm -rf "$PROOF_DIR" 2>/dev/null || true
+      exit 0
+    fi
+    # Fall through to reviewer call below.
   fi
 
   # Run reviewer synchronously, feeding it the exact stdin we received.

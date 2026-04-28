@@ -309,6 +309,27 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
       '
   fi
   echo
+  echo "## GIT_STATUS"
+  echo "Working-tree state at this stop. Per stop-checklist Git rule, uncommitted code = violation."
+  echo
+  seen_dirs=""
+  for repo_dir in "$HOME/.claude" "${PWD:-}"; do
+    [ -z "$repo_dir" ] && continue
+    case " $seen_dirs " in *" $repo_dir "*) continue ;; esac
+    seen_dirs="$seen_dirs $repo_dir"
+    git -C "$repo_dir" rev-parse --git-dir >/dev/null 2>&1 || continue
+    porcelain=$(git -C "$repo_dir" status --porcelain 2>/dev/null)
+    if [ -z "$porcelain" ]; then
+      printf '### %s\nclean — all changes committed\n\n' "$repo_dir"
+    else
+      modified=$(printf '%s\n' "$porcelain" | grep -c '^.M')
+      staged=$(printf '%s\n' "$porcelain" | grep -cE '^[MADRC]')
+      untracked=$(printf '%s\n' "$porcelain" | grep -c '^??')
+      printf '### %s\nDIRTY — modified=%s staged=%s untracked=%s\n' "$repo_dir" "$modified" "$staged" "$untracked"
+      printf '%s\n\n' "$porcelain" | head -c 2048
+    fi
+  done
+
   echo "## DIFF"
   git -C "$HOME/.claude" log --pretty=format:"%H %s" -5 2>/dev/null
   echo
@@ -523,6 +544,19 @@ VN=$(printf '%s' "$RESULT" | jq '.violations | length' 2>/dev/null || echo 0)
 printf '{"ts":%s,"elapsed":%s,"backend":"%s","model":"%s","verdict":"%s","violations":%s}\n' \
   "$(date +%s)" "$ELAPSED_CALL" "$REVIEWER_BACKEND" "$MODEL" "${VERDICT:-malformed}" "$VN" \
   >> "$HISTORY_FILE" 2>/dev/null || true
+
+# Snapshot HEAD and assistant tool_use count at this reviewer call. stop-gate.sh
+# uses these on stop_hook_active=true to decide whether to silent-allow (no
+# meaningful work since last review) or fall through and re-run the reviewer
+# (substantial recovery work happened, must re-verify).
+git -C "$HOME/.claude" rev-parse HEAD > "$STATE_DIR/last_reviewer_head" 2>/dev/null || true
+if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
+  jq -s '[.[]
+          | select(.type == "assistant")
+          | .message.content
+          | if type == "array" then [.[] | select(.type == "tool_use")] else [] end
+         ] | flatten | length' "$TRANSCRIPT" > "$STATE_DIR/last_reviewer_tool_count" 2>/dev/null || true
+fi
 
 case "$VERDICT" in
   pass)

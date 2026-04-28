@@ -9,6 +9,10 @@ Phased agent team with adversarial review loops and tiered information trust.
 
 **Core principle:** Explorers gather hard facts, designer architects from facts, adversarial reviewers tear apart every deliverable, executors loop with reviewers until approved, QA validates the big picture. Coordinator manages logistics, lead audits rule compliance. Neither implements.
 
+The PreToolUse gate `ate-orchestrator-gate.sh` denies direct Edit/Write/MultiEdit when `CLAUDE_ROLE` is `lead` or `coordinator`. If the gate fires, spawn the appropriate teammate and assign the task — do not unset `CLAUDE_ROLE` to bypass it.
+
+Lead and coordinator stops go through the standard stop-checklist proof flow (`stop-gate.sh` does NOT exempt them). The proof must walk `~/.claude/hooks/stop-checklist.md` and critically analyze items that could not be fully complied with during the role's tenure. Disengaging by unsetting `CLAUDE_ROLE` to escape the gate is itself a violation flagged by the rule-compliance self-audit.
+
 **Parallelism principle:** Never serialize independent work. Parallelize everything that can be parallelized.
 
 **No urgency. Infinite time.** Never prioritize speed over discipline. Every shortcut, skipped review, or "good enough" degrades the final result. Do it right, every time.

@@ -40,6 +40,14 @@
           {
             "type": "command",
             "command": "$HOME/.claude/hooks/skill-marker-gate.sh"
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/eci-active-gate.sh"
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/ate-orchestrator-gate.sh"
           }
         ]
       },
