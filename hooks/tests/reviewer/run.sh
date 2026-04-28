@@ -65,6 +65,8 @@ USR="${USR:-$FIXTURES_DIR/usr-failing.md}"
 . "$LIB_DIR/compose-reviewer-prompt.sh"
 # shellcheck source=../../lib/reviewer-call.sh
 . "$LIB_DIR/reviewer-call.sh"
+# shellcheck source=../../lib/reviewer-filter.sh
+. "$LIB_DIR/reviewer-filter.sh"
 
 HOST="${OLLAMA_HOST:-$REVIEWER_DEFAULT_HOST}"
 MODEL="${REVIEWER_MODEL:-$REVIEWER_DEFAULT_MODEL}"
@@ -145,6 +147,12 @@ for i in $(seq 1 "$N"); do
       -H 'Content-Type: application/json' --data "$REQ" 2>/dev/null)
     INNER_OUTS+=("$OUT")
     INNER_RAW=$(echo "$OUT" | jq -r '.message.content // empty' 2>/dev/null)
+    # Apply the shingle filter so harness measures production behavior.
+    # Filter is a no-op when verdict=pass or violations=[].
+    if [ -n "$INNER_RAW" ]; then
+      INNER_FILTERED=$(filter_violations "$INNER_RAW" 2>/dev/null)
+      [ -n "$INNER_FILTERED" ] && INNER_RAW="$INNER_FILTERED"
+    fi
     INNER_RAWS+=("$INNER_RAW")
     INNER_VERDICT=$(echo "$INNER_RAW" | jq -r '.verdict // "?"' 2>/dev/null)
     INNER_VERDICTS+=("$INNER_VERDICT")

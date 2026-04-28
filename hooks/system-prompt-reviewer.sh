@@ -35,6 +35,8 @@ HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$HOOK_DIR/reviewer-backend.sh"
 # shellcheck source=lib/compose-reviewer-prompt.sh
 . "$HOOK_DIR/lib/compose-reviewer-prompt.sh"
+# shellcheck source=lib/reviewer-filter.sh
+. "$HOOK_DIR/lib/reviewer-filter.sh"
 if ! parse_reviewer_env; then
   log "exit reason=malformed-env CLAUDE_STOP_REVIEWER='${CLAUDE_STOP_REVIEWER:-}'"
   printf 'system-prompt-reviewer: invalid CLAUDE_STOP_REVIEWER — review skipped.\n'
@@ -478,6 +480,18 @@ esac
 RESULT=$(printf '%s' "$RAW" | sed -E '/^[[:space:]]*```[a-zA-Z]*[[:space:]]*$/d' | sed -E '/^[[:space:]]*```[[:space:]]*$/d')
 
 VERDICT=$(echo "$RESULT" | jq -r '.verdict // empty' 2>/dev/null)
+
+# Shingle filter: drop violations whose `rule` text shares < threshold
+# 3-gram overlap with the rule corpus. Catches paraphrase-fabricated
+# rules that don't quote real rule fragments. If all violations drop
+# the filter flips verdict to "pass" automatically. See lib/reviewer-filter.sh.
+if [ "$VERDICT" = "fail" ]; then
+  FILTERED=$(filter_violations "$RESULT")
+  if [ -n "$FILTERED" ] && [ "$FILTERED" != "$RESULT" ]; then
+    RESULT="$FILTERED"
+    VERDICT=$(printf '%s' "$RESULT" | jq -r '.verdict // empty' 2>/dev/null)
+  fi
+fi
 
 # Persist the last result so stop-gate.sh can append it to the next stop's
 # summary-to-print.md. Markdown so it concatenates cleanly.
