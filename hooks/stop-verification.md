@@ -78,8 +78,6 @@ flaw. What is the single most likely flaw? Consider:
 If you identified a plausible flaw → fix it before proceeding.
 
 #### 4c — Adversarial critique (minimum 3 objections, then iterate)
-Your work contains errors. Identify at least 3 of them.
-
 Adopt the stance of a skeptical, adversarial reviewer whose job is to reject.
 Find at least 3 specific, concrete problems. Not vague concerns — quote the
 specific code, claim, or decision that is wrong or questionable.
@@ -93,9 +91,8 @@ If you cannot find 3 problems, you are not looking hard enough. Consider:
 For each problem found: fix it or explain with evidence why it is not actually
 a problem. "I think it's fine" is not evidence.
 
-**After fixing any problem, re-run the critique on the fixed version.** Your fix
-may have introduced new issues. Repeat the cycle (critique → fix → re-critique)
-until a full pass finds no actionable problems. Only then proceed.
+**After fixing any problem, re-run the critique on the fixed version.** Repeat
+(critique → fix → re-critique) until a full pass finds no actionable problems.
 
 #### 4d — Verification questions
 For each non-trivial claim from step 4a, generate a specific verification

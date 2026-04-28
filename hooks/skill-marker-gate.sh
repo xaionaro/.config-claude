@@ -98,7 +98,7 @@ done
 
 [ -z "$MISSING" ] && exit 0
 
-REASON="Required skill not yet invoked this session: '$MISSING'. CLAUDE.md Mandatory Skills require this skill before editing this file. Invoke it via the Skill tool (skill: \"$MISSING\"), then retry this edit. File: $FILE_PATH"
+REASON="Required skill not yet invoked: '$MISSING'. Mandatory Skills require it before editing $FILE_PATH. Invoke via Skill tool (skill: \"$MISSING\"), then retry."
 
 jq -n --arg reason "$REASON" '{
   hookSpecificOutput: {

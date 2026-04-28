@@ -108,7 +108,7 @@ TOOL_INPUT=$(echo "$INPUT" | jq -c '.tool_input // {}' 2>/dev/null | head -c 400
 SYS=$(mktemp); USR=$(mktemp)
 trap 'rm -f "$SYS" "$USR"' EXIT
 cat > "$SYS" <<'EOF'
-You are an admission controller for a coding agent. The agent is about to invoke a tool on the very first action of a new user turn. Your job: decide whether the agent should proceed directly, OR whether the task is non-trivial and the agent should first delegate to a subagent / load a Mandatory Skill (per CLAUDE.md).
+Admission controller for a coding agent. The agent is about to invoke a tool on the first action of a new user turn. Decide: proceed directly, or task is non-trivial and the agent should first delegate to a subagent / load a Mandatory Skill (per CLAUDE.md).
 
 CLAUDE.md Mandatory Skills (excerpt):
 - Debugging? -> systematic-debugging + debugging-discipline
@@ -121,11 +121,11 @@ CLAUDE.md Mandatory Skills (excerpt):
 - Skills/CLAUDE.md edits? -> harness-tuning
 
 Rules:
-- "Trivial/primitive" = single-line edit, lookup, ls, cat, git status, fixing one obvious typo, reading a file, running a quick check.
-- "Non-trivial" = anything implementing logic, multi-file refactor, new feature, productionization, debugging unknown failure, writing tests, editing skills.
-- If the agent should delegate or load a skill but is doing it inline -> verdict=deny.
-- If the action is genuinely trivial OR the agent has clearly already done the prep -> verdict=allow.
-- When in doubt, allow (the stop reviewer is the catch-net).
+- Trivial = single-line edit, lookup, ls, cat, git status, typo fix, file read, quick check.
+- Non-trivial = implementing logic, multi-file refactor, new feature, productionization, debugging unknown failure, writing tests, editing skills.
+- Should delegate/load-skill but doing it inline -> deny.
+- Genuinely trivial OR prep already done -> allow.
+- When in doubt, allow (stop reviewer is the catch-net).
 
 Output JSON ONLY: {"verdict": "allow"|"deny", "reason": "<one sentence>"}
 EOF
@@ -173,7 +173,7 @@ REASON=$(echo "$RESULT" | jq -r '.reason // empty' 2>/dev/null)
 
 case "$VERDICT" in
   deny)
-    MSG=$(printf 'Pre-tool admission controller (CLAUDE_EDIT_PRE_REVIEWER) denied the first tool call of this turn.\n\nReason: %s\n\nPer CLAUDE.md Mandatory Skills, load the appropriate skill or delegate to a subagent before invoking %s directly.\n\nTo override: touch %s/bypass\n' \
+    MSG=$(printf 'Pre-tool admission controller (CLAUDE_EDIT_PRE_REVIEWER) denied the first tool call of this turn.\n\nReason: %s\n\nLoad the appropriate Mandatory Skill or delegate to a subagent before invoking %s directly.\n\nTo override: touch %s/bypass\n' \
       "$REASON" "$TOOL" "$STATE_DIR")
     jq -n --arg reason "$MSG" '{
       hookSpecificOutput: {

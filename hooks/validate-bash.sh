@@ -19,7 +19,7 @@ if echo "$COMMAND" | grep -qE 'go\s+test\b' && echo "$COMMAND" | grep -qE '\-cou
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
       permissionDecision: "deny",
-      permissionDecisionReason: "Do not add -count=1 to go test commands. Allow Go test caching. Re-run the same command without -count=1."
+      permissionDecisionReason: "Do not pass -count=1 to go test (defeats the test cache). Re-run without -count=1."
     }
   }'
   exit 0

@@ -54,7 +54,7 @@ fi
 
 LOOP_REMINDER=""
 if [ "$RECENT_COUNT" -ge 5 ]; then
-  LOOP_REMINDER=" LOOP DETECTED ($RECENT_COUNT hits in 5min): You are stuck in a stop-hook loop. This is YOUR problem to solve autonomously. How the stop hook works: (1) it blocks your first stop attempt, (2) you read ~/.cache/claude-proof/\$SESSION_ID/instructions.md or ~/.claude/hooks/stop-checklist.md, (3) you write proof to $PROOF, (4) you stop again and it lets you through. Figure out which step you are failing and fix it. Do NOT keep retrying the same approach."
+  LOOP_REMINDER=" LOOP DETECTED ($RECENT_COUNT hits in 5min). Flow: (1) hook blocks first stop, (2) read \$PROOF_DIR/instructions.md or ~/.claude/hooks/stop-checklist.md, (3) write proof to $PROOF, (4) stop again. Identify which step is failing; do not retry the same approach."
 fi
 
 block() {
@@ -281,7 +281,7 @@ if [ -f "$PROOF" ]; then
             }')
         fi
         if [ "$RESCAN_OK" != "1" ]; then
-          block "Rule-compliance self-audit is byte-identical to the prior stop. Repo unchanged, so a repeat finding is acceptable, but include a line inside the audit section: 'rescanned: CLAUDE.md, <source2>, <source3>, ... — <UTC timestamp>' naming at least three sources actually re-read."
+          block "Rule-compliance self-audit is byte-identical to the prior stop. Repo unchanged — a repeat finding is acceptable, but the audit section must include 'rescanned: CLAUDE.md, <source2>, <source3>, ... — <UTC timestamp>' naming at least three sources re-read."
         fi
       fi
 
@@ -358,11 +358,10 @@ NEVER end your turn to ask a question. Use the AskUserQuestion tool instead — 
 
 Proof file: $PROOF
 
-No code changes detected — full verification is NOT required.
-However, you must still check your work against the acceptance criteria.
+No code changes — full verification not required. Still check the acceptance criteria.
 
 1. Read the checklist at ~/.claude/hooks/stop-checklist.md
-2. For each item that applies to this session's work, verify it was followed.
+2. For each applicable item, verify it was followed.
 3. If any item was violated → fix it before stopping.
 4. Write to the proof file:
    - "fast-exit: checklist review (no code changes)" on the first line

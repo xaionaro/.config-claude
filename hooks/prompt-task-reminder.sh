@@ -34,6 +34,6 @@ esac
 # Remind coordinator/lead/snitch to re-read the skill after context compaction
 if [ "${CLAUDE_ROLE:-}" = "coordinator" ] || [ "${CLAUDE_ROLE:-}" = "lead" ] || [ "${CLAUDE_ROLE:-}" = "snitch" ]; then
   cat <<'EOF'
-SKILL RELOAD CHECK: If you cannot recall the full agent-teams-execution skill content (roles, protocols, rules), re-invoke it now: use the Skill tool with skill "agent-teams-execution". Context compaction may have removed it.
+SKILL RELOAD CHECK: If you cannot recall agent-teams-execution (roles, protocols, rules), re-invoke via Skill tool, skill "agent-teams-execution". Compaction may have evicted it.
 EOF
 fi

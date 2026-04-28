@@ -13,13 +13,13 @@ Before stopping, verify ALL of the following. If any check fails → continue wo
 
 - DONE = objective evidence only. No inference, no assumptions. You cannot claim DONE if you have not tested that it works. Session boundaries are not completion criteria.
 - Every statement in your completion summary is a claim. Apply the Claim Verification protocol: each must be [DOC] (backed by tool output from this session) or explicitly marked [UNVERIFIED].
-  Example: "All tests pass" requires: (1) searched the project for all test files and test commands, (2) ran every one, (3) all returned pass. Without all three steps, the claim is [UNVERIFIED].
+  Example: "All tests pass" requires (1) found every test file/command in the project, (2) ran them all, (3) all returned pass. Without all three, the claim is [UNVERIFIED].
 - NOT DONE if no objective evidence. State what's missing and why.
 - NOT DONE if you noticed a bug in code you touched or read — fix it before stopping.
 - NOT DONE if you chose a simple or convenient solution over the correct, clean one. Redo it.
 - Stated "next step" or know remaining work exists? Continue working. Completing a subtask means starting the next one.
 - All tasks completed? Check the task list. Open tasks = continue working.
-- BLOCKED on user input → report (what, exact questions, exact next commands) using the AskUserQuestion tool. Do not stop to ask — use the AskUserQuestion tool and keep working.
+- BLOCKED on user input → report (what, exact questions, exact next commands) using the AskUserQuestion tool. Do not stop to ask. Keep working.
 
 ## Root cause
 

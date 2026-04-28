@@ -46,7 +46,7 @@ if echo "$TEXT" | grep -qE '=>\s*\.\.?/'; then
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
       permissionDecision: "deny",
-      permissionDecisionReason: "NEVER add local path replace directives (=> ../something or => ./something) to go.mod. Use go.work for local module resolution instead. Remote fork replacements in go.mod are fine."
+      permissionDecisionReason: "Do not add local-path replace directives (=> ../something or => ./something) to go.mod. Use go.work for local module resolution. Remote fork replaces are fine."
     }
   }'
   exit 0
