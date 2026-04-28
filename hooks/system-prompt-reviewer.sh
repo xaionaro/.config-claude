@@ -532,7 +532,7 @@ case "$VERDICT" in
     # actually fix the violations (or the user must touch $BYPASS_MARKER) —
     # an asyncRewake-style nudge is too easy to ignore with acknowledgement
     # prose that doesn't fix anything.
-    REASON=$(printf 'External compliance reviewer (%s via %s) flagged violations in your last turn.\n\nViolations:\n%s\n\nFix in this turn (re-do the work correctly, do not just acknowledge). Streak=%d. To override: touch %s\n' "$MODEL" "$REVIEWER_BACKEND" "$VIOLATIONS" "$STREAK" "$BYPASS_MARKER")
+    REASON=$(printf 'External compliance reviewer (%s via %s) flagged violations in your last turn.\n\nViolations:\n%s\n\nFix in this turn (re-do the work correctly). Streak=%d. To override: touch %s\n' "$MODEL" "$REVIEWER_BACKEND" "$VIOLATIONS" "$STREAK" "$BYPASS_MARKER")
     jq -n --arg reason "$REASON" '{"decision": "block", "reason": $reason}'
     exit 0
     ;;
