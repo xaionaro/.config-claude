@@ -173,7 +173,7 @@ REASON=$(echo "$RESULT" | jq -r '.reason // empty' 2>/dev/null)
 
 case "$VERDICT" in
   deny)
-    MSG=$(printf 'Pre-tool admission controller (CLAUDE_EDIT_PRE_REVIEWER) denied the first tool call of this turn.\n\nReason: %s\n\nPer CLAUDE.md Mandatory Skills, load the appropriate skill or delegate to a subagent before invoking %s directly.\n\nTo override for THIS TURN ONLY: touch %s/bypass (auto-cleared on next user prompt)\n' \
+    MSG=$(printf 'Pre-tool admission controller (CLAUDE_EDIT_PRE_REVIEWER) denied the first tool call of this turn.\n\nReason: %s\n\nPer CLAUDE.md Mandatory Skills, load the appropriate skill or delegate to a subagent before invoking %s directly.\n\nTo override: touch %s/bypass\n' \
       "$REASON" "$TOOL" "$STATE_DIR")
     jq -n --arg reason "$MSG" '{
       hookSpecificOutput: {
