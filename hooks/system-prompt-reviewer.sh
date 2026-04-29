@@ -948,7 +948,7 @@ fi
 case "$VERDICT" in
   pass)
     log "verdict=pass elapsed=${ELAPSED_CALL}s — streak reset"
-    rm -f "$STREAK_FILE"
+    rm -f "$STREAK_FILE" "$STATE_DIR/recent_violations.jsonl"
     write_last_result "pass" ""
     exit 0
     ;;
@@ -995,13 +995,43 @@ case "$VERDICT" in
     # actually fix the violations (or the user must touch $BYPASS_MARKER) —
     # an asyncRewake-style nudge is too easy to ignore with acknowledgement
     # prose that doesn't fix anything.
-    # Override hint only surfaces at streak >= 3: on streaks 1-2 the agent
-    # must fix the violations, not escape. Wording explicitly frames it as
-    # an escape hatch for genuine reviewer errors — NOT as a convenience
-    # for "the fix is annoying." Bypass should not be the first thing that
-    # comes to mind on a flag; correcting the underlying state is.
-    if [ "$STREAK" -ge 3 ]; then
-      OVERRIDE_HINT=$(printf '\n\nEscape hatch (only if you have verified the reviewer is genuinely wrong — not because the fix is inconvenient): touch %s' "$BYPASS_MARKER")
+    #
+    # Bypass-hint policy: surface the escape hatch ONLY when the reviewer
+    # is consistently obstructing the SAME rule, not when it's just stacking
+    # different fix-able issues across consecutive fails. Concretely:
+    #   - Append normalized rule set to recent_violations.jsonl per fail.
+    #   - At streak >= 3, intersect the last 3 fail entries.
+    #   - If the intersection is non-empty → reviewer genuinely stuck on
+    #     those rules → show bypass hint citing them.
+    #   - If empty → agent is making progress (different rules each fail) →
+    #     no bypass hint, keep working.
+    RECENT_FILE="$STATE_DIR/recent_violations.jsonl"
+    NORMALIZED_RULES=$(printf '%s' "$RESULT" | jq -c '
+      def _norm: ascii_downcase
+        | gsub("[[:punct:]]"; "")
+        | gsub("\\s+"; " ")
+        | sub("^ "; "")
+        | sub(" $"; "");
+      [.violations[].rule | _norm] | unique
+    ' 2>/dev/null)
+    if [ -n "$NORMALIZED_RULES" ] && [ "$NORMALIZED_RULES" != "null" ]; then
+      printf '%s\n' "$NORMALIZED_RULES" >> "$RECENT_FILE"
+      tail -n 5 "$RECENT_FILE" > "$RECENT_FILE.tmp" 2>/dev/null && mv "$RECENT_FILE.tmp" "$RECENT_FILE"
+    fi
+    PERSISTENT_RULES=""
+    if [ "$STREAK" -ge 3 ] && [ -s "$RECENT_FILE" ]; then
+      PERSISTENT_RULES=$(tail -n 3 "$RECENT_FILE" | jq -s -r '
+        if length < 3 then []
+        else (.[0]) as $first
+          | reduce .[1:][] as $next ($first;
+              map(select(. as $r | $next | index($r))))
+        end
+        | .[]
+      ' 2>/dev/null)
+    fi
+    if [ -n "$PERSISTENT_RULES" ]; then
+      PERSIST_LIST=$(printf '%s\n' "$PERSISTENT_RULES" | sed 's/^/  - /')
+      OVERRIDE_HINT=$(printf '\n\nBypass available — reviewer has been re-blocking on the SAME rule(s) across all 3 last fails (genuinely stuck, not flagging fix-able mistakes):\n%s\n\nIf you have verified these are reviewer errors (not real violations the agent could correct): touch %s' "$PERSIST_LIST" "$BYPASS_MARKER")
     else
       OVERRIDE_HINT=""
     fi
