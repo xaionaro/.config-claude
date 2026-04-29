@@ -409,8 +409,25 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
   echo "## BACKGROUND_PROCESSES"
   echo "User-owned processes started within the last hour (etimes <= 3600). Per stop-checklist Background-processes rule: kill anything spawned this session that the user does not need running. Long-lived intended services are out of scope."
   echo
+  # Exclude administrative process trees that are NEVER leftover work:
+  #   ~/.claude/hooks/*    — the hook scripts running right now
+  #   ~/.claude/bin/*      — skill-flow helpers (eci-active, skip-stop)
+  #   bin/claude           — the claude CLI itself + subagent claude procs
+  #   share/claude         — claude install path
+  #   npm exec / node …mcp — MCP servers spawned by claude (administrative)
+  #   ps/awk/jq/grep/cat   — short-lived utilities of this pipeline itself
+  # Plus the hook's own pid + ppid (defense in depth).
   ps -eo pid,ppid,etimes,stat,cmd -u "$USER" --no-headers 2>/dev/null \
-    | awk '$3 <= 3600' \
+    | awk -v me="$$" -v me_pp="$PPID" '
+        $3 <= 3600 \
+        && $0 !~ /\.claude\/hooks\// \
+        && $0 !~ /\.claude\/bin\// \
+        && $0 !~ /bin\/claude(\s|$)/ \
+        && $0 !~ /share\/claude\// \
+        && $0 !~ /(npm exec|context7-mcp|node .*\/mcp)/ \
+        && $5 !~ /^(ps|awk|jq|grep|cat|head|tail|sed|cut|sort|tr)$/ \
+        && $1 != me && $2 != me \
+        && $1 != me_pp && $2 != me_pp' \
     | head -30
   echo
 
@@ -803,10 +820,18 @@ fi
 # returns empty → keep $RESULT unchanged.
 if [ -n "$RESULT" ]; then
   DEDUPED=$(printf '%s' "$RESULT" | jq '
+    # Normalize key: strip punctuation FIRST (otherwise punct between
+    # words leaves doubled spaces that break the collapse), then collapse
+    # whitespace, then trim leading/trailing.
+    def _norm: ascii_downcase
+      | gsub("[[:punct:]]"; "")
+      | gsub("\\s+"; " ")
+      | sub("^ "; "")
+      | sub(" $"; "");
     .violations |= ((. // []) | (
       reduce .[] as $v ([];
-        ($v.rule | ascii_downcase | gsub("\\s+"; " ") | gsub("[[:punct:]]"; "")) as $k
-        | if any(.[]; (.rule | ascii_downcase | gsub("\\s+"; " ") | gsub("[[:punct:]]"; "")) == $k)
+        ($v.rule | _norm) as $k
+        | if any(.[]; (.rule | _norm) == $k)
           then . else . + [$v] end)))
   ' 2>/dev/null)
   if [ -n "$DEDUPED" ]; then RESULT="$DEDUPED"; fi
