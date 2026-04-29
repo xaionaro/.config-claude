@@ -18,6 +18,16 @@
 #   - Bearer cached on disk with mode 600 (apps.json itself is mode 600).
 #   - No token value of either kind appears in any echo/printf/log path.
 
+# Identity headers spoofing a known-good VSCode Copilot client. Rotate as
+# upstream Copilot rotates accepted editor versions. Used by token exchange
+# AND chat-completions calls — keep one source of truth.
+COPILOT_EDITOR_VERSION='vscode/1.95.0'
+COPILOT_PLUGIN_VERSION='copilot-chat/0.26.7'
+COPILOT_USER_AGENT='GitHubCopilotChat/0.26.7'
+COPILOT_API_VERSION='2025-04-01'
+COPILOT_INTEGRATION_ID='vscode-chat'
+COPILOT_USER_AGENT_LIB='electron-fetch'
+
 copilot_get_bearer() {
   COPILOT_BEARER=""
   local apps_file="$HOME/.config/github-copilot/apps.json"
@@ -65,10 +75,10 @@ copilot_get_bearer() {
     -w '\n%{http_code}' \
     -H "authorization: token $pat" \
     -H 'accept: application/json' \
-    -H 'editor-version: vscode/1.95.0' \
-    -H 'editor-plugin-version: copilot-chat/0.26.7' \
-    -H 'user-agent: GitHubCopilotChat/0.26.7' \
-    -H 'x-github-api-version: 2025-04-01' \
+    -H "editor-version: $COPILOT_EDITOR_VERSION" \
+    -H "editor-plugin-version: $COPILOT_PLUGIN_VERSION" \
+    -H "user-agent: $COPILOT_USER_AGENT" \
+    -H "x-github-api-version: $COPILOT_API_VERSION" \
     'https://api.github.com/copilot_internal/v2/token' 2>/dev/null)
   http=$(printf '%s' "$resp" | tail -n1)
   local body

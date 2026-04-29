@@ -215,14 +215,14 @@ case "$REVIEWER_BACKEND" in
       -X POST 'https://api.githubcopilot.com/chat/completions' \
       -H "Authorization: Bearer $COPILOT_BEARER" \
       -H 'content-type: application/json' \
-      -H 'copilot-integration-id: vscode-chat' \
-      -H 'editor-version: vscode/1.95.0' \
-      -H 'editor-plugin-version: copilot-chat/0.26.7' \
-      -H 'user-agent: GitHubCopilotChat/0.26.7' \
+      -H "copilot-integration-id: $COPILOT_INTEGRATION_ID" \
+      -H "editor-version: $COPILOT_EDITOR_VERSION" \
+      -H "editor-plugin-version: $COPILOT_PLUGIN_VERSION" \
+      -H "user-agent: $COPILOT_USER_AGENT" \
       -H 'openai-intent: conversation-panel' \
-      -H 'x-github-api-version: 2025-04-01' \
+      -H "x-github-api-version: $COPILOT_API_VERSION" \
       -H "x-request-id: $(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid)" \
-      -H 'x-vscode-user-agent-library-version: electron-fetch' \
+      -H "x-vscode-user-agent-library-version: $COPILOT_USER_AGENT_LIB" \
       --data-binary "@$REQ_FILE" 2>/dev/null)
     EC=$?
     rm -f "$REQ_FILE"
