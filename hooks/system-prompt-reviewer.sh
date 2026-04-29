@@ -317,7 +317,9 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
   # unconditionally would surface ~/.claude's own uncommitted state (the user's
   # separate hooks-config repo) when the agent is working in any other project,
   # spuriously blocking stops on dirty state in an unrelated tree.
-  for repo_dir in "${PWD:-$HOME/.claude}"; do
+  for repo_dir in "$PWD"; do
+    # $PWD unset → skip GIT_STATUS entirely (better than re-leaking ~/.claude
+    # state which is exactly what this scoping fix avoids).
     [ -z "$repo_dir" ] && continue
     case " $seen_dirs " in *" $repo_dir "*) continue ;; esac
     seen_dirs="$seen_dirs $repo_dir"
@@ -334,41 +336,43 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
     fi
   done
 
-  echo "## DIFF"
   # Same scoping rationale as the GIT_STATUS loop above: pull commits
   # and diff from the project the agent is working in, not unconditionally
-  # from ~/.claude. Falls back to ~/.claude when $PWD is unset (e.g.,
-  # Claude Code launched without a workdir).
-  REVIEW_REPO="${PWD:-$HOME/.claude}"
-  git -C "$REVIEW_REPO" log --pretty=format:"%H %s" -5 2>/dev/null
-  echo
-  # Diff base = HEAD recorded by the UserPromptSubmit hook for this
-  # session, so the reviewer sees ALL commits made in the current turn
-  # (not just HEAD~1..HEAD). Falls back to HEAD~1 when the prompt-head
-  # file is missing (first prompt of a session, or pre-hook session) or
-  # when the recorded SHA is no longer reachable (force-push, rebase).
-  PROMPT_HEAD_FILE="$STATE_DIR/prompt_head"
-  DIFF_BASE="HEAD~1"
-  if [ -s "$PROMPT_HEAD_FILE" ]; then
-    PH=$(cat "$PROMPT_HEAD_FILE" 2>/dev/null)
-    if [ -n "$PH" ] && git -C "$REVIEW_REPO" cat-file -e "${PH}^{commit}" 2>/dev/null; then
-      DIFF_BASE="$PH"
+  # from ~/.claude.
+  # Skip DIFF entirely when $PWD unset; do NOT fall back to ~/.claude.
+  REVIEW_REPO="$PWD"
+  if [ -n "$REVIEW_REPO" ]; then
+    echo "## DIFF"
+    git -C "$REVIEW_REPO" log --pretty=format:"%H %s" -5 2>/dev/null
+    echo
+    # Diff base = HEAD recorded by the UserPromptSubmit hook for this
+    # session, so the reviewer sees ALL commits made in the current turn
+    # (not just HEAD~1..HEAD). Falls back to HEAD~1 when the prompt-head
+    # file is missing (first prompt of a session, or pre-hook session) or
+    # when the recorded SHA is no longer reachable (force-push, rebase).
+    PROMPT_HEAD_FILE="$STATE_DIR/prompt_head"
+    DIFF_BASE="HEAD~1"
+    if [ -s "$PROMPT_HEAD_FILE" ]; then
+      PH=$(cat "$PROMPT_HEAD_FILE" 2>/dev/null)
+      if [ -n "$PH" ] && git -C "$REVIEW_REPO" cat-file -e "${PH}^{commit}" 2>/dev/null; then
+        DIFF_BASE="$PH"
+      fi
     fi
+    # Bound diff bytes: a huge diff (large refactor, generated files) blows
+    # past Ollama's num_ctx and causes timeouts. Probe size first; if over
+    # threshold, omit the diff body entirely — commit titles above are
+    # enough context, and a mid-line truncation is misleading.
+    DIFF_RAW=$(git -C "$REVIEW_REPO" diff "$DIFF_BASE..HEAD" 2>/dev/null)
+    DIFF_BYTES=$(printf %s "$DIFF_RAW" | wc -c | awk '{print $1}')
+    DIFF_LIMIT=4096
+    if [ "$DIFF_BYTES" -gt "$DIFF_LIMIT" ]; then
+      printf '(diff body omitted: %s bytes raw, exceeds %s-byte budget — see commit titles above)\n' \
+        "$DIFF_BYTES" "$DIFF_LIMIT"
+    else
+      printf '%s' "$DIFF_RAW"
+    fi
+    echo
   fi
-  # Bound diff bytes: a huge diff (large refactor, generated files) blows
-  # past Ollama's num_ctx and causes timeouts. Probe size first; if over
-  # threshold, omit the diff body entirely — commit titles above are
-  # enough context, and a mid-line truncation is misleading.
-  DIFF_RAW=$(git -C "$REVIEW_REPO" diff "$DIFF_BASE..HEAD" 2>/dev/null)
-  DIFF_BYTES=$(printf %s "$DIFF_RAW" | wc -c | awk '{print $1}')
-  DIFF_LIMIT=4096
-  if [ "$DIFF_BYTES" -gt "$DIFF_LIMIT" ]; then
-    printf '(diff body omitted: %s bytes raw, exceeds %s-byte budget — see commit titles above)\n' \
-      "$DIFF_BYTES" "$DIFF_LIMIT"
-  else
-    printf '%s' "$DIFF_RAW"
-  fi
-  echo
 } > "$USER_BODY"
 
 # JSON schema enforced on both backends: Ollama via /api/chat `format`,
