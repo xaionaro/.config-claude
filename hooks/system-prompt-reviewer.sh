@@ -28,8 +28,10 @@ LOG="$LOG_DIR/invocations.log"
 log() { printf '%s pid=%d %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$" "$*" >> "$LOG"; }
 
 # Backend selection via CLAUDE_STOP_REVIEWER (parsed by shared helper).
-# After parse: $REVIEWER_BACKEND in {ollama, claude}, plus the ollama
-# host/model when applicable. See reviewer-backend.sh for format.
+# After parse: $REVIEWER_BACKEND in {ollama, opencode-zen, claude}, plus
+# backend-specific host/model when applicable. See reviewer-backend.sh.
+# MODEL/OLLAMA_HOST are NOT set here — each case branch derives them
+# from its backend-specific REVIEWER_* var to avoid cross-backend bleed.
 HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=reviewer-backend.sh
 . "$HOOK_DIR/reviewer-backend.sh"
@@ -48,8 +50,6 @@ if [ -z "$REVIEWER_BACKEND" ]; then
   log "exit reason=no-backend (CLAUDE_STOP_REVIEWER unset)"
   exit 0
 fi
-OLLAMA_HOST="$REVIEWER_OLLAMA_HOST"
-MODEL="${REVIEWER_OLLAMA_MODEL:-claude-bare}"
 
 INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
@@ -313,7 +313,11 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
   echo "Working-tree state at this stop. Per stop-checklist Git rule, uncommitted code = violation."
   echo
   seen_dirs=""
-  for repo_dir in "$HOME/.claude" "${PWD:-}"; do
+  # Iterate only the project the agent is working in. Including $HOME/.claude
+  # unconditionally would surface ~/.claude's own uncommitted state (the user's
+  # separate hooks-config repo) when the agent is working in any other project,
+  # spuriously blocking stops on dirty state in an unrelated tree.
+  for repo_dir in "${PWD:-$HOME/.claude}"; do
     [ -z "$repo_dir" ] && continue
     case " $seen_dirs " in *" $repo_dir "*) continue ;; esac
     seen_dirs="$seen_dirs $repo_dir"
@@ -331,7 +335,12 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
   done
 
   echo "## DIFF"
-  git -C "$HOME/.claude" log --pretty=format:"%H %s" -5 2>/dev/null
+  # Same scoping rationale as the GIT_STATUS loop above: pull commits
+  # and diff from the project the agent is working in, not unconditionally
+  # from ~/.claude. Falls back to ~/.claude when $PWD is unset (e.g.,
+  # Claude Code launched without a workdir).
+  REVIEW_REPO="${PWD:-$HOME/.claude}"
+  git -C "$REVIEW_REPO" log --pretty=format:"%H %s" -5 2>/dev/null
   echo
   # Diff base = HEAD recorded by the UserPromptSubmit hook for this
   # session, so the reviewer sees ALL commits made in the current turn
@@ -342,7 +351,7 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
   DIFF_BASE="HEAD~1"
   if [ -s "$PROMPT_HEAD_FILE" ]; then
     PH=$(cat "$PROMPT_HEAD_FILE" 2>/dev/null)
-    if [ -n "$PH" ] && git -C "$HOME/.claude" cat-file -e "${PH}^{commit}" 2>/dev/null; then
+    if [ -n "$PH" ] && git -C "$REVIEW_REPO" cat-file -e "${PH}^{commit}" 2>/dev/null; then
       DIFF_BASE="$PH"
     fi
   fi
@@ -350,7 +359,7 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
   # past Ollama's num_ctx and causes timeouts. Probe size first; if over
   # threshold, omit the diff body entirely — commit titles above are
   # enough context, and a mid-line truncation is misleading.
-  DIFF_RAW=$(git -C "$HOME/.claude" diff "$DIFF_BASE..HEAD" 2>/dev/null)
+  DIFF_RAW=$(git -C "$REVIEW_REPO" diff "$DIFF_BASE..HEAD" 2>/dev/null)
   DIFF_BYTES=$(printf %s "$DIFF_RAW" | wc -c | awk '{print $1}')
   DIFF_LIMIT=4096
   if [ "$DIFF_BYTES" -gt "$DIFF_LIMIT" ]; then
@@ -374,8 +383,18 @@ DUMP_DIR="$HOME/.cache/claude-proof/reviewer-dumps/$SESSION_ID"
 mkdir -p "$DUMP_DIR"
 DUMP_PATH="$DUMP_DIR/$(date -u +%Y%m%dT%H%M%SZ).json"
 
+# archive_dump <content>
+# Writes <content> to $DUMP_PATH (global) and rotates $DUMP_DIR (global)
+# to keep at most 20 files. Both globals must be set before calling.
+archive_dump() {
+  printf '%s' "$1" > "$DUMP_PATH"
+  ls -1t "$DUMP_DIR"/*.json 2>/dev/null | tail -n +21 | xargs -r rm -f --
+}
+
 case "$REVIEWER_BACKEND" in
   ollama)
+    MODEL="$REVIEWER_OLLAMA_MODEL"
+    OLLAMA_HOST="$REVIEWER_OLLAMA_HOST"
     REQ=$(jq -n \
       --arg model "$MODEL" \
       --rawfile sys "$RULES" \
@@ -401,37 +420,127 @@ case "$REVIEWER_BACKEND" in
           { role: "user",   content: $usr }
         ]
       }')
-    printf '%s' "$REQ" > "$DUMP_PATH"
-    ls -1t "$DUMP_DIR"/*.json 2>/dev/null | tail -n +21 | xargs -r rm -f --
+    archive_dump "$REQ"
     log "calling-ollama model=$MODEL host=$OLLAMA_HOST dump=$DUMP_PATH"
     START_CALL=$(date +%s)
-    OUT=$(timeout 240 curl -s --max-time 240 -X POST "$OLLAMA_HOST/api/chat" \
+    RESPONSE=$(timeout 240 curl -s --max-time 240 -X POST "$OLLAMA_HOST/api/chat" \
       -H 'Content-Type: application/json' \
-      --data-binary "@$DUMP_PATH" 2>/dev/null)
+      --data-binary "@$DUMP_PATH" \
+      -w '\n%{http_code}' 2>/dev/null)
     EXIT_CALL=$?
     ELAPSED_CALL=$(( $(date +%s) - START_CALL ))
+    HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+    OUT=$(echo "$RESPONSE" | sed '$d')
     rm -f "$USER_BODY"
     if [ $EXIT_CALL -ne 0 ] || [ -z "$OUT" ]; then
-      log "exit reason=ollama-call-failed exit=$EXIT_CALL elapsed=${ELAPSED_CALL}s"
+      log "exit reason=call-failed backend=ollama exit=$EXIT_CALL elapsed=${ELAPSED_CALL}s"
       printf 'system-prompt-reviewer: ollama call failed (exit=%s, host=%s) — review skipped.\n' "$EXIT_CALL" "$OLLAMA_HOST"
       exit 0
     fi
+    case "$HTTP_CODE" in
+      2*) ;;
+      *)
+        log "exit reason=ollama-http-error backend=ollama http=$HTTP_CODE elapsed=${ELAPSED_CALL}s"
+        printf 'system-prompt-reviewer: ollama HTTP %s — review skipped.\n' "$HTTP_CODE"
+        exit 0
+        ;;
+    esac
     OLLAMA_ERR=$(echo "$OUT" | jq -r '.error // empty' 2>/dev/null)
     if [ -n "$OLLAMA_ERR" ]; then
-      log "exit reason=ollama-error err=\"$OLLAMA_ERR\" elapsed=${ELAPSED_CALL}s"
+      log "exit reason=backend-error backend=ollama err=\"$OLLAMA_ERR\" elapsed=${ELAPSED_CALL}s"
       printf 'system-prompt-reviewer: ollama error: %s — review skipped.\n' "$OLLAMA_ERR"
       exit 0
     fi
     RAW=$(echo "$OUT" | jq -r '.message.content // empty' 2>/dev/null)
-    [ -z "$RAW" ] && { log "exit reason=empty-message-content elapsed=${ELAPSED_CALL}s"; exit 0; }
+    [ -z "$RAW" ] && { log "exit reason=empty-message-content backend=ollama elapsed=${ELAPSED_CALL}s"; exit 0; }
+    ;;
+
+  opencode-zen)
+    MODEL="$REVIEWER_OPENCODE_MODEL"
+    # OpenAI-compatible /zen/v1/chat/completions. Anonymous today; honors
+    # OPENCODE_ZEN_API_KEY when set so a future cutover to authenticated
+    # access is zero-config. The _backend field is archived in the dump
+    # but stripped before POST — strict OpenAI-compat servers reject
+    # unknown top-level keys.
+    # max_tokens=4096: matches REVIEWER_DEFAULT_MAX_TOKENS in lib/reviewer-call.sh.
+    # The lib is not sourced by the production hook (avoids extra I/O at every Stop);
+    # change both literally if you tune this value.
+    REQ=$(jq -n \
+      --arg model "$MODEL" \
+      --rawfile sys "$RULES" \
+      --rawfile usr "$USER_BODY" \
+      --argjson schema "$SCHEMA" \
+      '{
+        _backend: "opencode-zen",
+        model: $model,
+        stream: false,
+        max_tokens: 4096,
+        max_completion_tokens: 4096,
+        temperature: 0.3,
+        top_p: 0.9,
+        seed: 42,
+        response_format: {
+          type: "json_schema",
+          json_schema: { name: "reviewer_verdict", schema: $schema, strict: false }
+        },
+        messages: [
+          { role: "system", content: $sys },
+          { role: "user",   content: $usr }
+        ]
+      }')
+    archive_dump "$REQ"
+    log "calling-opencode-zen model=$MODEL host=$REVIEWER_OPENCODE_HOST dump=$DUMP_PATH"
+    # Wire body strips $._backend (forensic-only field). Written to a
+    # separate temp file so curl can stream it via @file (symmetry with
+    # the ollama branch — safer with large bodies than inline shell var).
+    SEND_PATH=$(mktemp)
+    echo "$REQ" | jq 'del(._backend)' > "$SEND_PATH"
+    # ${arr[@]+...} guard makes empty-array expansion safe on bash ≤ 4.3 under set -u; modern bash doesn't need it but the defensive form is cheap.
+    OPENCODE_AUTH_HEADER=()
+    if [ -n "${OPENCODE_ZEN_API_KEY:-}" ]; then
+      OPENCODE_AUTH_HEADER=(-H "Authorization: Bearer $OPENCODE_ZEN_API_KEY")
+    fi
+    START_CALL=$(date +%s)
+    RESPONSE=$(timeout 240 curl -s --max-time 240 -X POST "$REVIEWER_OPENCODE_HOST/zen/v1/chat/completions" \
+      -H 'Content-Type: application/json' \
+      ${OPENCODE_AUTH_HEADER[@]+"${OPENCODE_AUTH_HEADER[@]}"} \
+      --data-binary "@$SEND_PATH" \
+      -w '\n%{http_code}' 2>/dev/null)
+    EXIT_CALL=$?
+    ELAPSED_CALL=$(( $(date +%s) - START_CALL ))
+    HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+    OUT=$(echo "$RESPONSE" | sed '$d')
+    rm -f "$USER_BODY" "$SEND_PATH"
+    if [ $EXIT_CALL -ne 0 ] || [ -z "$OUT" ]; then
+      log "exit reason=call-failed backend=opencode-zen exit=$EXIT_CALL elapsed=${ELAPSED_CALL}s"
+      printf 'system-prompt-reviewer: opencode call failed (exit=%s, host=%s) — review skipped.\n' "$EXIT_CALL" "$REVIEWER_OPENCODE_HOST"
+      exit 0
+    fi
+    case "$HTTP_CODE" in
+      2*) ;;
+      *)
+        log "exit reason=opencode-http-error backend=opencode-zen http=$HTTP_CODE elapsed=${ELAPSED_CALL}s"
+        printf 'system-prompt-reviewer: opencode HTTP %s — review skipped.\n' "$HTTP_CODE"
+        exit 0
+        ;;
+    esac
+    OPENCODE_ERR=$(echo "$OUT" | jq -r '.error.message // empty' 2>/dev/null)
+    if [ -n "$OPENCODE_ERR" ]; then
+      log "exit reason=backend-error backend=opencode-zen err=\"$OPENCODE_ERR\" elapsed=${ELAPSED_CALL}s"
+      printf 'system-prompt-reviewer: opencode error: %s — review skipped.\n' "$OPENCODE_ERR"
+      exit 0
+    fi
+    RAW=$(echo "$OUT" | jq -r '.choices[0].message.content // empty' 2>/dev/null)
+    [ -z "$RAW" ] && { log "exit reason=empty-opencode-content backend=opencode-zen elapsed=${ELAPSED_CALL}s"; exit 0; }
     ;;
 
   claude)
+    MODEL="claude-bare"
     # claude --bare reads system prompt + user body via dedicated flags,
     # not as JSON-API messages. Archive a representation of the inputs in
     # the same shape so the dump remains comparable across backends.
     REQ=$(jq -n \
-      --arg model "claude-bare" \
+      --arg model "$MODEL" \
       --rawfile sys "$RULES" \
       --rawfile usr "$USER_BODY" \
       --argjson schema "$SCHEMA" \
@@ -444,8 +553,7 @@ case "$REVIEWER_BACKEND" in
           { role: "user",   content: $usr }
         ]
       }')
-    printf '%s' "$REQ" > "$DUMP_PATH"
-    ls -1t "$DUMP_DIR"/*.json 2>/dev/null | tail -n +21 | xargs -r rm -f --
+    archive_dump "$REQ"
     log "calling-claude --bare dump=$DUMP_PATH"
     START_CALL=$(date +%s)
     # --bare: skip hooks/plugin sync/auto-memory; auth strictly via
@@ -549,6 +657,12 @@ printf '{"ts":%s,"elapsed":%s,"backend":"%s","model":"%s","verdict":"%s","violat
 # uses these on stop_hook_active=true to decide whether to silent-allow (no
 # meaningful work since last review) or fall through and re-run the reviewer
 # (substantial recovery work happened, must re-verify).
+# NOTE: this stays anchored to $HOME/.claude (NOT $REVIEW_REPO) because
+# stop-gate.sh's reciprocal comparison reads HEAD from $HOME/.claude as well.
+# Both sides must reference the same repo for the SHA equality check to be
+# meaningful. The GIT_STATUS / DIFF sections above were rescoped to $PWD to
+# stop ~/.claude's dirty state from leaking into other projects' reviews;
+# this snapshot semantic is unrelated to that bug.
 git -C "$HOME/.claude" rev-parse HEAD > "$STATE_DIR/last_reviewer_head" 2>/dev/null || true
 if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
   jq -s '[.[]
@@ -580,7 +694,15 @@ case "$VERDICT" in
     # actually fix the violations (or the user must touch $BYPASS_MARKER) —
     # an asyncRewake-style nudge is too easy to ignore with acknowledgement
     # prose that doesn't fix anything.
-    REASON=$(printf 'External compliance reviewer (%s via %s) flagged violations in your last turn.\n\nViolations:\n%s\n\nFix in this turn (re-do the work correctly). Streak=%d. To override: touch %s\n' "$MODEL" "$REVIEWER_BACKEND" "$VIOLATIONS" "$STREAK" "$BYPASS_MARKER")
+    # Override hint only surfaces at streak >= 3: on streaks 1-2 the agent
+    # must fix the violations, not escape. The :+ form prepends a space
+    # only when the hint is non-empty so streak=1 reads "...Streak=1.\n".
+    if [ "$STREAK" -ge 3 ]; then
+      OVERRIDE_HINT=$(printf 'To override: touch %s' "$BYPASS_MARKER")
+    else
+      OVERRIDE_HINT=""
+    fi
+    REASON=$(printf 'External compliance reviewer (%s via %s) flagged violations in your last turn.\n\nViolations:\n%s\n\nFix in this turn (re-do the work correctly). Streak=%d.%s\n' "$MODEL" "$REVIEWER_BACKEND" "$VIOLATIONS" "$STREAK" "${OVERRIDE_HINT:+ $OVERRIDE_HINT}")
     jq -n --arg reason "$REASON" '{"decision": "block", "reason": $reason}'
     exit 0
     ;;

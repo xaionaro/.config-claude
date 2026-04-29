@@ -3,9 +3,11 @@
 # and stop-gate.sh so the env-var parse lives in one place.
 #
 # Reads CLAUDE_STOP_REVIEWER and exports:
-#   REVIEWER_BACKEND        — "ollama" or "claude"
+#   REVIEWER_BACKEND        — "ollama", "opencode-zen", or "claude"
 #   REVIEWER_OLLAMA_HOST    — only for ollama backend
 #   REVIEWER_OLLAMA_MODEL   — only for ollama backend
+#   REVIEWER_OPENCODE_HOST  — only for opencode-zen backend
+#   REVIEWER_OPENCODE_MODEL — only for opencode-zen backend
 #
 # Format:
 #   unset / empty → no LLM reviewer; stop-gate falls back to the proof.md
@@ -16,6 +18,8 @@
 #                   after that is the model (which may itself contain ":",
 #                   e.g. qwen3.5:9b-mxfp8). The simpler "split on last colon"
 #                   approach can't tell a port boundary from a model boundary.
+#   "opencode-zen:<URL>:<MODEL>"
+#                 → URL parsed same way as ollama; calls /zen/v1/chat/completions on URL
 #
 # Supported URL forms: scheme://host[:port]
 # NOT supported (would need parser changes):
@@ -33,6 +37,8 @@ parse_reviewer_env() {
     REVIEWER_BACKEND=""
     REVIEWER_OLLAMA_HOST=""
     REVIEWER_OLLAMA_MODEL=""
+    REVIEWER_OPENCODE_HOST=""
+    REVIEWER_OPENCODE_MODEL=""
     return 0
   fi
 
@@ -41,6 +47,8 @@ parse_reviewer_env() {
       REVIEWER_BACKEND="claude"
       REVIEWER_OLLAMA_HOST=""
       REVIEWER_OLLAMA_MODEL=""
+      REVIEWER_OPENCODE_HOST=""
+      REVIEWER_OPENCODE_MODEL=""
       return 0
       ;;
     ollama:*)
@@ -56,13 +64,30 @@ parse_reviewer_env() {
         REVIEWER_OLLAMA_HOST="${BASH_REMATCH[1]}"
         REVIEWER_OLLAMA_MODEL="${BASH_REMATCH[3]}"
         REVIEWER_BACKEND="ollama"
+        REVIEWER_OPENCODE_HOST=""
+        REVIEWER_OPENCODE_MODEL=""
         return 0
       fi
       echo "reviewer-backend: malformed CLAUDE_STOP_REVIEWER='$raw' (expected 'ollama:scheme://host[:port][/]:MODEL')" >&2
       return 1
       ;;
+    opencode-zen:*)
+      # Same URL-shape parser as ollama; model is everything after the
+      # boundary ":" and may itself contain colons.
+      local rest="${raw#opencode-zen:}"
+      if [[ "$rest" =~ ^([a-zA-Z][a-zA-Z0-9+.-]*://[^:/[:space:]]+(:[0-9]+)?)/?:(.+)$ ]]; then
+        REVIEWER_OPENCODE_HOST="${BASH_REMATCH[1]}"
+        REVIEWER_OPENCODE_MODEL="${BASH_REMATCH[3]}"
+        REVIEWER_BACKEND="opencode-zen"
+        REVIEWER_OLLAMA_HOST=""
+        REVIEWER_OLLAMA_MODEL=""
+        return 0
+      fi
+      echo "reviewer-backend: malformed CLAUDE_STOP_REVIEWER='$raw' (expected 'opencode-zen:scheme://host[:port][/]:MODEL')" >&2
+      return 1
+      ;;
     *)
-      echo "reviewer-backend: unknown CLAUDE_STOP_REVIEWER='$raw' (expected 'claude' or 'ollama:URL:MODEL')" >&2
+      echo "reviewer-backend: unknown CLAUDE_STOP_REVIEWER='$raw' (expected 'claude', 'ollama:URL:MODEL', or 'opencode-zen:URL:MODEL')" >&2
       return 1
       ;;
   esac

@@ -19,6 +19,9 @@
 REVIEWER_DEFAULT_MODEL="qwen3.5:9b-mxfp8"
 REVIEWER_DEFAULT_HOST="http://192.168.0.171:11434"
 
+# Output token budget. Ollama uses num_predict (set in reviewer_ollama_options) at 2048 historically; OpenAI-compat backends use this larger value because reasoning models can burn budget on hidden CoT before content emission.
+REVIEWER_DEFAULT_MAX_TOKENS=4096
+
 # reviewer_ollama_options <seed>
 # Emit the Ollama options JSON for a single call. Seed is a parameter so
 # the harness can vary it across runs while production keeps a fixed seed.

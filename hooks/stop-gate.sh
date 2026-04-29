@@ -79,13 +79,19 @@ parse_reviewer_env || REVIEWER_BACKEND=""
 
 REVIEWER_BYPASS="$HOME/.cache/claude-proof/reviewer/$SESSION_ID/bypass"
 
-# Reachability probe: ollama needs an HTTP probe; claude is always
-# considered "reachable" — the reviewer hook itself reports
-# auth/connectivity failures and falls open with a diagnostic.
+# Reachability probe: ollama needs an HTTP probe to /api/tags; opencode-zen
+# probes /zen/v1/models; claude is always considered "reachable" — the
+# reviewer hook itself reports auth/connectivity failures and falls open
+# with a diagnostic.
 REVIEWER_REACHABLE=0
 case "$REVIEWER_BACKEND" in
   ollama)
     if timeout 3 curl -sf "$REVIEWER_OLLAMA_HOST/api/tags" >/dev/null 2>&1; then
+      REVIEWER_REACHABLE=1
+    fi
+    ;;
+  opencode-zen)
+    if timeout 3 curl -sf "$REVIEWER_OPENCODE_HOST/zen/v1/models" >/dev/null 2>&1; then
       REVIEWER_REACHABLE=1
     fi
     ;;
