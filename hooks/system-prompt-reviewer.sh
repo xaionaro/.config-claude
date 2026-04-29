@@ -1032,6 +1032,13 @@ case "$VERDICT" in
     if [ -n "$PERSISTENT_RULES" ]; then
       PERSIST_LIST=$(printf '%s\n' "$PERSISTENT_RULES" | sed 's/^/  - /')
       OVERRIDE_HINT=$(printf '\n\nBypass available — reviewer has been re-blocking on the SAME rule(s) across all 3 last fails (genuinely stuck, not flagging fix-able mistakes):\n%s\n\nIf you have verified these are reviewer errors (not real violations the agent could correct): touch %s' "$PERSIST_LIST" "$BYPASS_MARKER")
+    elif [ "$STREAK" -ge 10 ]; then
+      # Safety valve: 10 consecutive fails without any single rule persisting
+      # means the agent is in an unproductive loop the persistent-rule check
+      # didn't catch (rules rotate, model paraphrases differently each time,
+      # filter logic has a hole, etc.). Surface bypass as last resort so the
+      # agent isn't trapped forever.
+      OVERRIDE_HINT=$(printf '\n\nSafety hatch — %d consecutive blocks with no single rule persisting. The same-rule heuristic did not surface a bypass, but a 10-deep streak is itself unproductive. Last-resort bypass: touch %s' "$STREAK" "$BYPASS_MARKER")
     else
       OVERRIDE_HINT=""
     fi
