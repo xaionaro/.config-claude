@@ -44,6 +44,18 @@ if [ "$TOOL" = "Bash" ]; then
   if [[ "$CMD" =~ ^[[:space:]]*touch[[:space:]]+[\"\']?$HOME/\.cache/claude-proof/(reviewer|pre-reviewer)/[A-Za-z0-9_-]+/bypass[\"\']?[[:space:]]*$ ]]; then
     exit 0
   fi
+  # Skill-flow entry points must always pass — they ARE the documented way to
+  # engage/disengage ECI and ATE. Blocking them here would make every "load
+  # the skill, then engage" sequence require a bypass touch, defeating the
+  # gate's intent. Match the canonical paths only:
+  #   ~/.claude/bin/eci-active {on|off|status} [args]
+  #   ~/.claude/bin/skip-stop  {on|off|status}
+  # Path forms: literal `~`, literal `$HOME`, or the expanded absolute home
+  # (the third alternative comes from bash expanding $HOME in the regex
+  # before the match runs, so the resulting regex carries /home/<user>).
+  if [[ "$CMD" =~ ^[[:space:]]*(\~|\$HOME|$HOME)/\.claude/bin/(eci-active|skip-stop)[[:space:]]+(on|off|status)([[:space:]].*)?$ ]]; then
+    exit 0
+  fi
 fi
 
 # Subagent skip — same role list as stop-gate.sh:19.
