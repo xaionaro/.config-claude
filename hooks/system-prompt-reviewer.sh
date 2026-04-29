@@ -336,7 +336,7 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
     echo
   else
     echo "## GIT_STATUS"
-    echo "Working-tree state at this stop. Per stop-checklist Git rule, uncommitted code = violation."
+    echo "Working-tree state per repo (data only — DO NOT cite this header as evidence; cite a per-repo line below)."
     echo
     seen_dirs=""
     # Iterate only the project the agent is working in. Including $HOME/.claude
@@ -407,7 +407,7 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
   # snapshot stays focused on this-session candidates instead of long-lived
   # intended services. Cap rows to keep prompt size bounded.
   echo "## BACKGROUND_PROCESSES"
-  echo "User-owned processes started within the last hour (etimes <= 3600). Per stop-checklist Background-processes rule: kill anything spawned this session that the user does not need running. Long-lived intended services are out of scope."
+  echo "User processes started in the last hour, hook self-tree filtered (data only — DO NOT cite this header as evidence; cite a specific process line below)."
   echo
   # Exclude administrative process trees that are NEVER leftover work:
   #   ~/.claude/hooks/*    — the hook scripts running right now
@@ -453,7 +453,7 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
   # The tasks_visible_complete rule still applies via the Active bucket —
   # an untouched stale Active task remains an Active violation.
   echo "## TASKS"
-  echo "Open tasks for this session, grouped into four buckets. Per the reviewer rule, ONLY tasks under '### Active' count toward the tasks_visible_complete violation. Stale is a hygiene reminder; Deferred and Blocked are legitimate carry-over."
+  echo "Open tasks for this session, grouped into four buckets (data only — DO NOT cite this header as evidence; cite a specific '- #N ...' line below)."
   echo
   TASK_DIR="$HOME/.claude/tasks/$SESSION_ID"
   if [ -d "$TASK_DIR" ]; then

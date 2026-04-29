@@ -35,6 +35,15 @@ enum values map 1:1 to these classes (tail, tools, checklist, agreements).
   ASSISTANT entries here are up for review. Quoted evidence must come
   from a single `<entry>` body in this section.
 - `## DIFF` — git log + (sometimes) diff of `~/.claude`.
+- `## GIT_STATUS`, `## BACKGROUND_PROCESSES`, `## TASKS` — data sections.
+  The one-line section headers are NEUTRAL framing, NOT evidence. NEVER
+  cite a section header as evidence for a violation. To flag a violation
+  in a data section, you must quote a SPECIFIC ROW: a per-repo line
+  (`### <path>` + `clean — all changes committed` or `DIRTY — modified=N
+  ...`), a `pid ppid etimes ...` process row, or a `- #N [status] ...`
+  task row. If every row in a section refutes the violation (e.g. all
+  repos `clean`, no offending processes, no `### Active` tasks), DO NOT
+  emit a violation for that section's rule.
 - `## TASKS` — open tasks grouped into four subsections: `### Active`,
   `### Stale`, `### Deferred`, `### Blocked`. The `tasks_visible_complete`
   rule (MEMORY.md) is violated ONLY by tasks under `### Active`. Tasks
