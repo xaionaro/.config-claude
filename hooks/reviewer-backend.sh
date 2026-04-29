@@ -3,11 +3,12 @@
 # and stop-gate.sh so the env-var parse lives in one place.
 #
 # Reads CLAUDE_STOP_REVIEWER and exports:
-#   REVIEWER_BACKEND        — "ollama", "opencode-zen", or "claude"
+#   REVIEWER_BACKEND        — "ollama", "opencode-zen", "github-copilot", or "claude"
 #   REVIEWER_OLLAMA_HOST    — only for ollama backend
 #   REVIEWER_OLLAMA_MODEL   — only for ollama backend
 #   REVIEWER_OPENCODE_HOST  — only for opencode-zen backend
 #   REVIEWER_OPENCODE_MODEL — only for opencode-zen backend
+#   REVIEWER_COPILOT_MODEL  — only for github-copilot backend (URL is fixed)
 #
 # Format:
 #   unset / empty → no LLM reviewer; stop-gate falls back to the proof.md
@@ -20,6 +21,13 @@
 #                   approach can't tell a port boundary from a model boundary.
 #   "opencode-zen:<URL>:<MODEL>"
 #                 → URL parsed same way as ollama; calls /zen/v1/chat/completions on URL
+#   "github-copilot:<MODEL>"
+#                 → URL is fixed at https://api.githubcopilot.com/chat/completions
+#                   (the public Copilot proxy for individual accounts). Bearer
+#                   is fetched via the lib/copilot-token.sh helper using the
+#                   PAT in ~/.config/github-copilot/apps.json. Enterprise hosts
+#                   (api.{biz}.githubcopilot.com) NOT supported — open an issue
+#                   if needed; trivial to layer on top.
 #
 # Supported URL forms: scheme://host[:port]
 # NOT supported (would need parser changes):
@@ -39,6 +47,7 @@ parse_reviewer_env() {
     REVIEWER_OLLAMA_MODEL=""
     REVIEWER_OPENCODE_HOST=""
     REVIEWER_OPENCODE_MODEL=""
+    REVIEWER_COPILOT_MODEL=""
     return 0
   fi
 
@@ -49,31 +58,24 @@ parse_reviewer_env() {
       REVIEWER_OLLAMA_MODEL=""
       REVIEWER_OPENCODE_HOST=""
       REVIEWER_OPENCODE_MODEL=""
+      REVIEWER_COPILOT_MODEL=""
       return 0
       ;;
     ollama:*)
-      # Parse URL pattern explicitly: scheme://host(:port)?, then model is
-      # everything after the next ":". Cannot use last-colon split because
-      # model names often contain colons (e.g. qwen3.5:9b-mxfp8).
       local rest="${raw#ollama:}"
-      # Allow an optional trailing "/" between the URL and the model
-      # boundary ":" — a common copy-paste shape where the URL is given
-      # as `http://host:port/`. The slash is consumed but NOT included
-      # in the captured host (Ollama expects clean URL with no path).
       if [[ "$rest" =~ ^([a-zA-Z][a-zA-Z0-9+.-]*://[^:/[:space:]]+(:[0-9]+)?)/?:(.+)$ ]]; then
         REVIEWER_OLLAMA_HOST="${BASH_REMATCH[1]}"
         REVIEWER_OLLAMA_MODEL="${BASH_REMATCH[3]}"
         REVIEWER_BACKEND="ollama"
         REVIEWER_OPENCODE_HOST=""
         REVIEWER_OPENCODE_MODEL=""
+        REVIEWER_COPILOT_MODEL=""
         return 0
       fi
       echo "reviewer-backend: malformed CLAUDE_STOP_REVIEWER='$raw' (expected 'ollama:scheme://host[:port][/]:MODEL')" >&2
       return 1
       ;;
     opencode-zen:*)
-      # Same URL-shape parser as ollama; model is everything after the
-      # boundary ":" and may itself contain colons.
       local rest="${raw#opencode-zen:}"
       if [[ "$rest" =~ ^([a-zA-Z][a-zA-Z0-9+.-]*://[^:/[:space:]]+(:[0-9]+)?)/?:(.+)$ ]]; then
         REVIEWER_OPENCODE_HOST="${BASH_REMATCH[1]}"
@@ -81,13 +83,28 @@ parse_reviewer_env() {
         REVIEWER_BACKEND="opencode-zen"
         REVIEWER_OLLAMA_HOST=""
         REVIEWER_OLLAMA_MODEL=""
+        REVIEWER_COPILOT_MODEL=""
         return 0
       fi
       echo "reviewer-backend: malformed CLAUDE_STOP_REVIEWER='$raw' (expected 'opencode-zen:scheme://host[:port][/]:MODEL')" >&2
       return 1
       ;;
+    github-copilot:*)
+      local model="${raw#github-copilot:}"
+      if [ -n "$model" ]; then
+        REVIEWER_COPILOT_MODEL="$model"
+        REVIEWER_BACKEND="github-copilot"
+        REVIEWER_OLLAMA_HOST=""
+        REVIEWER_OLLAMA_MODEL=""
+        REVIEWER_OPENCODE_HOST=""
+        REVIEWER_OPENCODE_MODEL=""
+        return 0
+      fi
+      echo "reviewer-backend: malformed CLAUDE_STOP_REVIEWER='$raw' (expected 'github-copilot:MODEL')" >&2
+      return 1
+      ;;
     *)
-      echo "reviewer-backend: unknown CLAUDE_STOP_REVIEWER='$raw' (expected 'claude', 'ollama:URL:MODEL', or 'opencode-zen:URL:MODEL')" >&2
+      echo "reviewer-backend: unknown CLAUDE_STOP_REVIEWER='$raw' (expected 'claude', 'ollama:URL:MODEL', 'opencode-zen:URL:MODEL', or 'github-copilot:MODEL')" >&2
       return 1
       ;;
   esac

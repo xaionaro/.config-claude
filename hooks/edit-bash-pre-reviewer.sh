@@ -196,6 +196,43 @@ case "$REVIEWER_BACKEND" in
     [ "$EC" -ne 0 ] || [ -z "$OUT" ] && exit 0
     RAW=$(echo "$OUT" | jq -r '.choices[0].message.content // empty' 2>/dev/null)
     ;;
+  github-copilot)
+    MODEL="$REVIEWER_COPILOT_MODEL"
+    # shellcheck source=lib/copilot-token.sh
+    . "$HOOK_DIR/lib/copilot-token.sh"
+    if ! copilot_get_bearer || [ -z "${COPILOT_BEARER:-}" ]; then
+      exit 0
+    fi
+    REQ=$(jq -n --arg model "$MODEL" --rawfile sys "$SYS" --rawfile usr "$USR" --argjson schema "$SCHEMA" \
+      '{model:$model,stream:false,
+        max_tokens:4096,
+        temperature:0.1,seed:42,
+        tool_choice:{type:"function",function:{name:"emit_verdict"}},
+        tools:[{type:"function",function:{name:"emit_verdict",description:"Emit the admission-control verdict.",parameters:$schema}}],
+        messages:[{role:"system",content:$sys},{role:"user",content:$usr}]}')
+    REQ_FILE=$(mktemp); printf '%s' "$REQ" > "$REQ_FILE"
+    OUT=$(timeout "$TIMEOUT" curl -s --max-time "$TIMEOUT" \
+      -X POST 'https://api.githubcopilot.com/chat/completions' \
+      -H "Authorization: Bearer $COPILOT_BEARER" \
+      -H 'content-type: application/json' \
+      -H 'copilot-integration-id: vscode-chat' \
+      -H 'editor-version: vscode/1.95.0' \
+      -H 'editor-plugin-version: copilot-chat/0.26.7' \
+      -H 'user-agent: GitHubCopilotChat/0.26.7' \
+      -H 'openai-intent: conversation-panel' \
+      -H 'x-github-api-version: 2025-04-01' \
+      -H "x-request-id: $(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid)" \
+      -H 'x-vscode-user-agent-library-version: electron-fetch' \
+      --data-binary "@$REQ_FILE" 2>/dev/null)
+    EC=$?
+    rm -f "$REQ_FILE"
+    [ "$EC" -ne 0 ] || [ -z "$OUT" ] && exit 0
+    RAW=$(echo "$OUT" | jq -r '
+      (.choices[0].message.tool_calls[0].function.arguments // empty) as $args
+      | if ($args | length) > 0 then $args
+        else (.choices[0].message.content // empty) end
+    ' 2>/dev/null)
+    ;;
   claude)
     MODEL="claude-bare"
     OUT=$(timeout "$TIMEOUT" claude --bare --print \

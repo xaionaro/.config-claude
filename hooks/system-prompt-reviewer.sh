@@ -558,6 +558,95 @@ case "$REVIEWER_BACKEND" in
     [ -z "$RAW" ] && { log "exit reason=empty-opencode-content backend=opencode-zen elapsed=${ELAPSED_CALL}s"; exit 0; }
     ;;
 
+  github-copilot)
+    MODEL="$REVIEWER_COPILOT_MODEL"
+    # shellcheck source=lib/copilot-token.sh
+    . "$HOOK_DIR/lib/copilot-token.sh"
+    if ! copilot_get_bearer || [ -z "${COPILOT_BEARER:-}" ]; then
+      log "exit reason=copilot-token-fetch-failed backend=github-copilot"
+      printf 'system-prompt-reviewer: github-copilot token fetch failed — review skipped.\n'
+      rm -f "$USER_BODY"
+      exit 0
+    fi
+    REQ=$(jq -n \
+      --arg model "$MODEL" \
+      --rawfile sys "$RULES" \
+      --rawfile usr "$USER_BODY" \
+      --argjson schema "$SCHEMA" \
+      '{
+        _backend: "github-copilot",
+        model: $model,
+        stream: false,
+        max_tokens: 8192,
+        temperature: 0.3,
+        top_p: 0.9,
+        seed: 42,
+        tool_choice: {type:"function",function:{name:"emit_verdict"}},
+        tools: [{
+          type: "function",
+          function: {
+            name: "emit_verdict",
+            description: "Emit the reviewer verdict.",
+            parameters: $schema
+          }
+        }],
+        messages: [
+          { role: "system", content: $sys },
+          { role: "user",   content: $usr }
+        ]
+      }')
+    printf '%s' "$REQ" > "$DUMP_PATH"
+    ls -1t "$DUMP_DIR"/*.json 2>/dev/null | tail -n +21 | xargs -r rm -f --
+    log "calling-github-copilot model=$MODEL dump=$DUMP_PATH"
+    SEND_PATH=$(mktemp)
+    echo "$REQ" | jq 'del(._backend)' > "$SEND_PATH"
+    START_CALL=$(date +%s)
+    RESPONSE=$(timeout 240 curl -s --max-time 240 \
+      -X POST 'https://api.githubcopilot.com/chat/completions' \
+      -H "Authorization: Bearer $COPILOT_BEARER" \
+      -H 'content-type: application/json' \
+      -H 'copilot-integration-id: vscode-chat' \
+      -H 'editor-version: vscode/1.95.0' \
+      -H 'editor-plugin-version: copilot-chat/0.26.7' \
+      -H 'user-agent: GitHubCopilotChat/0.26.7' \
+      -H 'openai-intent: conversation-panel' \
+      -H 'x-github-api-version: 2025-04-01' \
+      -H "x-request-id: $(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid)" \
+      -H 'x-vscode-user-agent-library-version: electron-fetch' \
+      --data-binary "@$SEND_PATH" \
+      -w '\n%{http_code}' 2>/dev/null)
+    EXIT_CALL=$?
+    ELAPSED_CALL=$(( $(date +%s) - START_CALL ))
+    HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+    OUT=$(echo "$RESPONSE" | sed '$d')
+    rm -f "$USER_BODY" "$SEND_PATH"
+    if [ $EXIT_CALL -ne 0 ] || [ -z "$OUT" ]; then
+      log "exit reason=call-failed backend=github-copilot exit=$EXIT_CALL elapsed=${ELAPSED_CALL}s"
+      printf 'system-prompt-reviewer: github-copilot call failed (exit=%s) — review skipped.\n' "$EXIT_CALL"
+      exit 0
+    fi
+    case "$HTTP_CODE" in
+      2*) ;;
+      *)
+        log "exit reason=copilot-http-error backend=github-copilot http=$HTTP_CODE elapsed=${ELAPSED_CALL}s"
+        printf 'system-prompt-reviewer: github-copilot HTTP %s — review skipped.\n' "$HTTP_CODE"
+        exit 0
+        ;;
+    esac
+    COPILOT_ERR=$(echo "$OUT" | jq -r '.error.message // empty' 2>/dev/null)
+    if [ -n "$COPILOT_ERR" ]; then
+      log "exit reason=backend-error backend=github-copilot err=\"$COPILOT_ERR\" elapsed=${ELAPSED_CALL}s"
+      printf 'system-prompt-reviewer: github-copilot error: %s — review skipped.\n' "$COPILOT_ERR"
+      exit 0
+    fi
+    RAW=$(echo "$OUT" | jq -r '
+      (.choices[0].message.tool_calls[0].function.arguments // empty) as $args
+      | if ($args | length) > 0 then $args
+        else (.choices[0].message.content // empty) end
+    ' 2>/dev/null)
+    [ -z "$RAW" ] && { log "exit reason=empty-copilot-content backend=github-copilot elapsed=${ELAPSED_CALL}s"; exit 0; }
+    ;;
+
   claude)
     MODEL="claude-bare"
     # claude --bare reads system prompt + user body via dedicated flags,
