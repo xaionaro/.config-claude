@@ -67,8 +67,6 @@ if ! parse_reviewer_env; then
 fi
 CLAUDE_STOP_REVIEWER="$_SAVED_STOP_REVIEWER"
 [ -z "${REVIEWER_BACKEND:-}" ] && exit 0
-OLLAMA_HOST="${REVIEWER_OLLAMA_HOST:-}"
-MODEL="${REVIEWER_OLLAMA_MODEL:-claude-bare}"
 
 # Sibling state dir (not under $PROOF_DIR — survives stop-cycle wipe).
 STATE_DIR="$HOME/.cache/claude-proof/pre-reviewer/$SESSION_ID"
@@ -157,6 +155,8 @@ RAW=""
 
 case "$REVIEWER_BACKEND" in
   ollama)
+    MODEL="$REVIEWER_OLLAMA_MODEL"
+    OLLAMA_HOST="$REVIEWER_OLLAMA_HOST"
     REQ=$(jq -n --arg model "$MODEL" --rawfile sys "$SYS" --rawfile usr "$USR" --argjson schema "$SCHEMA" \
       '{model:$model,stream:false,think:false,format:$schema,
         options:{temperature:0.1,seed:42,num_ctx:8192,num_predict:256},
@@ -169,7 +169,35 @@ case "$REVIEWER_BACKEND" in
     [ "$EC" -ne 0 ] || [ -z "$OUT" ] && exit 0
     RAW=$(echo "$OUT" | jq -r '.message.content // empty' 2>/dev/null)
     ;;
+  opencode-zen)
+    MODEL="$REVIEWER_OPENCODE_MODEL"
+    # OpenAI-compat /zen/v1/chat/completions. Anonymous today; honors
+    # OPENCODE_ZEN_API_KEY for forward-compat.
+    # 4096 not 256: reasoning-heavy free models burn 100-200 tokens on hidden
+    # CoT before content emission. Verified live against system-prompt-reviewer.sh.
+    REQ=$(jq -n --arg model "$MODEL" --rawfile sys "$SYS" --rawfile usr "$USR" --argjson schema "$SCHEMA" \
+      '{model:$model,stream:false,
+        max_tokens:4096,max_completion_tokens:4096,
+        temperature:0.1,seed:42,
+        response_format:{type:"json_schema",
+          json_schema:{name:"pre_reviewer_verdict",schema:$schema,strict:false}},
+        messages:[{role:"system",content:$sys},{role:"user",content:$usr}]}')
+    REQ_FILE=$(mktemp); printf '%s' "$REQ" > "$REQ_FILE"
+    OPENCODE_AUTH_HEADER=()
+    if [ -n "${OPENCODE_ZEN_API_KEY:-}" ]; then
+      OPENCODE_AUTH_HEADER=(-H "Authorization: Bearer $OPENCODE_ZEN_API_KEY")
+    fi
+    OUT=$(timeout "$TIMEOUT" curl -s --max-time "$TIMEOUT" -X POST "$REVIEWER_OPENCODE_HOST/zen/v1/chat/completions" \
+      -H 'Content-Type: application/json' \
+      ${OPENCODE_AUTH_HEADER[@]+"${OPENCODE_AUTH_HEADER[@]}"} \
+      --data-binary "@$REQ_FILE" 2>/dev/null)
+    EC=$?
+    rm -f "$REQ_FILE"
+    [ "$EC" -ne 0 ] || [ -z "$OUT" ] && exit 0
+    RAW=$(echo "$OUT" | jq -r '.choices[0].message.content // empty' 2>/dev/null)
+    ;;
   claude)
+    MODEL="claude-bare"
     OUT=$(timeout "$TIMEOUT" claude --bare --print \
       --output-format json --input-format text \
       --settings "$HOME/.claude/bin/bare-settings.json" \
