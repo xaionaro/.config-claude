@@ -466,7 +466,7 @@ case "$REVIEWER_BACKEND" in
     # access is zero-config. The _backend field is archived in the dump
     # but stripped before POST — strict OpenAI-compat servers reject
     # unknown top-level keys.
-    # max_tokens=4096: matches REVIEWER_DEFAULT_MAX_TOKENS in lib/reviewer-call.sh.
+    # max_tokens=8192: matches REVIEWER_DEFAULT_MAX_TOKENS in lib/reviewer-call.sh.
     # The lib is not sourced by the production hook (avoids extra I/O at every Stop);
     # change both literally if you tune this value.
     REQ=$(jq -n \
@@ -478,8 +478,8 @@ case "$REVIEWER_BACKEND" in
         _backend: "opencode-zen",
         model: $model,
         stream: false,
-        max_tokens: 4096,
-        max_completion_tokens: 4096,
+        max_tokens: 8192,
+        max_completion_tokens: 8192,
         temperature: 0.3,
         top_p: 0.9,
         seed: 42,

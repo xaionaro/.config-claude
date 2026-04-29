@@ -19,8 +19,15 @@
 REVIEWER_DEFAULT_MODEL="qwen3.5:9b-mxfp8"
 REVIEWER_DEFAULT_HOST="http://192.168.0.171:11434"
 
-# Output token budget. Ollama uses num_predict (set in reviewer_ollama_options) at 2048 historically; OpenAI-compat backends use this larger value because reasoning models can burn budget on hidden CoT before content emission.
-REVIEWER_DEFAULT_MAX_TOKENS=4096
+# Output token budget. Ollama uses num_predict (set in reviewer_ollama_options)
+# at 2048 historically. OpenAI-compat backends use this larger value because
+# reasoning-heavy free models on opencode-zen (notably big-pickle and
+# minimax-m2.5-free) spend 100-200 tokens on hidden chain-of-thought before
+# any content emission. Verified empirically: at 4096 they emit empty content
+# (finish_reason=length); at 8192 they emit valid json_schema-conformant
+# verdicts. nemotron-3-super-free works at either budget; the larger value
+# covers all three reasoning-capable free models without per-model dispatch.
+REVIEWER_DEFAULT_MAX_TOKENS=8192
 
 # reviewer_ollama_options <seed>
 # Emit the Ollama options JSON for a single call. Seed is a parameter so
