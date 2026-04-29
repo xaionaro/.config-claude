@@ -961,7 +961,35 @@ case "$VERDICT" in
     if [ -z "$VIOLATIONS" ]; then
       VIOLATIONS="(reviewer returned fail without enumerating violations)"
     fi
-    write_last_result "fail (streak=$STREAK)" "$VIOLATIONS"
+
+    # Task-tracking correction recipe: when a violation mentions tasks,
+    # surface the live Active task list + the exact TaskUpdate calls that
+    # would resolve a desync (work actually done, accepted out-of-scope,
+    # waiting on input). The reviewer can only see the task store; if
+    # tracking is wrong, the agent corrects it via TaskUpdate and re-stops.
+    TASK_CORRECTIONS=""
+    if printf '%s' "$VIOLATIONS" | grep -qiE '\btasks?\b|tasks_visible_complete'; then
+      TASK_DIR_C="$HOME/.claude/tasks/$SESSION_ID"
+      if [ -d "$TASK_DIR_C" ]; then
+        ACTIVE_NOW=$(ls -1 "$TASK_DIR_C"/*.json 2>/dev/null \
+          | awk -F/ '{n=$NF; sub(/\.json$/,"",n); print n"\t"$0}' \
+          | sort -n -k1,1 \
+          | cut -f2- \
+          | while IFS= read -r tf; do
+              [ -z "$tf" ] && continue
+              jq -r '
+                select((.status // "") != "completed" and (.status // "") != "canceled")
+                | .subject as $s
+                | select(($s | test("^\\[(DEFERRED|BLOCKED)"; "i")) | not)
+                | "  - #\(.id) [\(.status)] \(.subject)"
+              ' "$tf" 2>/dev/null
+            done)
+        if [ -n "$ACTIVE_NOW" ]; then
+          TASK_CORRECTIONS=$(printf '\n=== Task-tracking corrections ===\nIf any flagged task is actually done/deferred/blocked, fix the tracking and re-stop:\n  Completed: TaskUpdate(taskId=N, status="completed")\n  Deferred:  TaskUpdate(taskId=N, subject="[DEFERRED <reason>] <subject>")\n  Blocked:   TaskUpdate(taskId=N, subject="[BLOCKED on <thing>] <subject>")\nCurrently Active (resolve, defer, block, or continue working):\n%s\n' "$ACTIVE_NOW")
+        fi
+      fi
+    fi
+    write_last_result "fail (streak=$STREAK)" "$VIOLATIONS$TASK_CORRECTIONS"
 
     # Synchronous block: hold the stop until verdict=pass. The agent must
     # actually fix the violations (or the user must touch $BYPASS_MARKER) —
@@ -975,7 +1003,7 @@ case "$VERDICT" in
     else
       OVERRIDE_HINT=""
     fi
-    REASON=$(printf 'External compliance reviewer (%s via %s) flagged violations in your last turn.\n\nViolations:\n%s\n\nFix in this turn (re-do the work correctly). Streak=%d.%s\n' "$MODEL" "$REVIEWER_BACKEND" "$VIOLATIONS" "$STREAK" "${OVERRIDE_HINT:+ $OVERRIDE_HINT}")
+    REASON=$(printf 'External compliance reviewer (%s via %s) flagged violations in your last turn.\n\nViolations:\n%s%s\n\nFix in this turn (re-do the work correctly). Streak=%d.%s\n' "$MODEL" "$REVIEWER_BACKEND" "$VIOLATIONS" "$TASK_CORRECTIONS" "$STREAK" "${OVERRIDE_HINT:+ $OVERRIDE_HINT}")
     jq -n --arg reason "$REASON" '{"decision": "block", "reason": $reason}'
     exit 0
     ;;
