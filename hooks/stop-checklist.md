@@ -70,6 +70,11 @@ Prefer the strongest feasible fix (Eliminate > Facilitate > Detect > Document). 
 
 The scan is performed this turn, not carried forward from a prior stop. When HEAD advanced or the working tree is dirty, the audit must reflect that motion. When the repo is unchanged, a repeat finding is acceptable but must include a `rescanned: <source1>, <source2>, ... — <UTC time>` line.
 
+## Background processes
+
+- No unneeded leftover background processes. Anything spawned this session that the user does not need running (one-shot servers, abandoned `&` jobs, build watchers, scratch tmux/screen sessions, dangling `claude` subprocesses) → kill before stopping. Long-lived intended services are fine; transient experiments are not.
+- Reviewer sees a `## BACKGROUND_PROCESSES` snapshot. If anything there does not justify staying alive → kill it. Document any survivors with one-line rationale.
+
 ## Testing (if code was touched this session)
 
 - All tests pass. Failing tests = keep working until they pass. Fix the root cause, not the test.

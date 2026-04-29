@@ -393,6 +393,19 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
       echo
     fi
   fi
+
+  # BACKGROUND_PROCESSES — always shown (orthogonal to GIT_STATUS skip cases).
+  # Per stop-checklist, agent must clean up unneeded stragglers from this
+  # session. Filter to user-owned processes started in the last hour so the
+  # snapshot stays focused on this-session candidates instead of long-lived
+  # intended services. Cap rows to keep prompt size bounded.
+  echo "## BACKGROUND_PROCESSES"
+  echo "User-owned processes started within the last hour (etimes <= 3600). Per stop-checklist Background-processes rule: kill anything spawned this session that the user does not need running. Long-lived intended services are out of scope."
+  echo
+  ps -eo pid,ppid,etimes,stat,cmd -u "$USER" --no-headers 2>/dev/null \
+    | awk '$3 <= 3600' \
+    | head -30
+  echo
 } > "$USER_BODY"
 
 # JSON schema enforced on both backends: Ollama via /api/chat `format`,
