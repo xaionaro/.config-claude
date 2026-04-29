@@ -996,14 +996,16 @@ case "$VERDICT" in
     # an asyncRewake-style nudge is too easy to ignore with acknowledgement
     # prose that doesn't fix anything.
     # Override hint only surfaces at streak >= 3: on streaks 1-2 the agent
-    # must fix the violations, not escape. The :+ form prepends a space
-    # only when the hint is non-empty so streak=1 reads "...Streak=1.\n".
+    # must fix the violations, not escape. Wording explicitly frames it as
+    # an escape hatch for genuine reviewer errors — NOT as a convenience
+    # for "the fix is annoying." Bypass should not be the first thing that
+    # comes to mind on a flag; correcting the underlying state is.
     if [ "$STREAK" -ge 3 ]; then
-      OVERRIDE_HINT=$(printf 'To override: touch %s' "$BYPASS_MARKER")
+      OVERRIDE_HINT=$(printf '\n\nEscape hatch (only if you have verified the reviewer is genuinely wrong — not because the fix is inconvenient): touch %s' "$BYPASS_MARKER")
     else
       OVERRIDE_HINT=""
     fi
-    REASON=$(printf 'External compliance reviewer (%s via %s) flagged violations in your last turn.\n\nViolations:\n%s%s\n\nFix in this turn (re-do the work correctly). Streak=%d.%s\n' "$MODEL" "$REVIEWER_BACKEND" "$VIOLATIONS" "$TASK_CORRECTIONS" "$STREAK" "${OVERRIDE_HINT:+ $OVERRIDE_HINT}")
+    REASON=$(printf 'External compliance reviewer (%s via %s) flagged violations in your last turn.\n\nViolations:\n%s%s\n\nPRIMARY ACTION: fix the violations this turn. Streak=%d.%s\n' "$MODEL" "$REVIEWER_BACKEND" "$VIOLATIONS" "$TASK_CORRECTIONS" "$STREAK" "$OVERRIDE_HINT")
     jq -n --arg reason "$REASON" '{"decision": "block", "reason": $reason}'
     exit 0
     ;;
