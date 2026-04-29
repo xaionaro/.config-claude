@@ -35,6 +35,13 @@ enum values map 1:1 to these classes (tail, tools, checklist, agreements).
   ASSISTANT entries here are up for review. Quoted evidence must come
   from a single `<entry>` body in this section.
 - `## DIFF` — git log + (sometimes) diff of `~/.claude`.
+- `## TASKS` — open tasks grouped into four subsections: `### Active`,
+  `### Stale`, `### Deferred`, `### Blocked`. The `tasks_visible_complete`
+  rule (MEMORY.md) is violated ONLY by tasks under `### Active`. Tasks
+  under `### Stale` are a hygiene reminder, not a stop-blocking violation.
+  Tasks under `### Deferred` and `### Blocked` are legitimate carry-over
+  the agent has explicitly tagged as such — never flag them as open-task
+  violations.
 
 `<entry>…</entry>` tags are the structural boundary. Literal `<entry>` /
 `</entry>` inside an entry's body are escaped to `<_entry>` / `</_entry>`

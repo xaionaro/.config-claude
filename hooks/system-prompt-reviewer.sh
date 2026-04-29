@@ -434,11 +434,26 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
   # TASKS — per tasks_visible_complete (MEMORY.md): the agent must not stop
   # with open tasks unless explicitly handed off. Reviewer needs to see the
   # current list to enforce this. Numeric sort (lex order would put 10
-  # before 2). Cap at 50 lines so a runaway task list cannot blow the body
-  # cap. Always shown — unlike GIT_STATUS, the open-tasks list is not made
-  # transient by teammate/subagent work.
+  # before 2). Always shown — unlike GIT_STATUS, the open-tasks list is not
+  # made transient by teammate/subagent work.
+  #
+  # Four-bucket categorization (subject-prefix convention + file mtime):
+  #   Active    — no prefix, mtime ≤ 24h. Must resolve this turn.
+  #   Stale     — no prefix, mtime > 24h. Hygiene flag (confirm or cancel).
+  #   Deferred  — subject starts with "[DEFERRED ...". User-accepted carry-over.
+  #   Blocked   — subject starts with "[BLOCKED on ...". Waiting on input/external.
+  #
+  # Per-bucket caps prevent a runaway list blowing the body budget. Active
+  # gets the largest cap (it is the load-bearing bucket); the omitted-count
+  # is always printed loudly so a hidden Active overflow cannot pass review.
+  #
+  # KNOWN LIMITATION: file mtime is updated on every TaskUpdate, so a stale
+  # task that receives a no-op TaskUpdate appears fresh and falls out of the
+  # Stale bucket. Fixing this would require an audit log we do not have.
+  # The tasks_visible_complete rule still applies via the Active bucket —
+  # an untouched stale Active task remains an Active violation.
   echo "## TASKS"
-  echo "Open tasks for this session. Per tasks_visible_complete rule (MEMORY.md), the agent must not stop with open tasks unless explicitly handed off to the user."
+  echo "Open tasks for this session, grouped into four buckets. Per the reviewer rule, ONLY tasks under '### Active' count toward the tasks_visible_complete violation. Stale is a hygiene reminder; Deferred and Blocked are legitimate carry-over."
   echo
   TASK_DIR="$HOME/.claude/tasks/$SESSION_ID"
   if [ -d "$TASK_DIR" ]; then
@@ -446,26 +461,69 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
       | awk -F/ '{n=$NF; sub(/\.json$/,"",n); print n"\t"$0}' \
       | sort -n -k1,1 \
       | cut -f2-)
-    LINES=""
+    NOW_EPOCH=$(date +%s)
+    STALE_SECS=86400  # 24h
+    ACTIVE_LINES=""
+    STALE_LINES=""
+    DEFERRED_LINES=""
+    BLOCKED_LINES=""
     if [ -n "$TASK_FILES" ]; then
-      LINES=$(printf '%s\n' "$TASK_FILES" | while IFS= read -r tf; do
+      while IFS= read -r tf; do
         [ -z "$tf" ] && continue
-        jq -r 'select((.status // "") != "completed" and (.status // "") != "canceled")
-               | "- #\(.id) [\(.status)] \(.subject)"' "$tf" 2>/dev/null
-      done)
+        # Emit "<id>\t<status>\t<subject>" only for non-completed/canceled.
+        REC=$(jq -r 'select((.status // "") != "completed" and (.status // "") != "canceled")
+                     | "\(.id)\t\(.status)\t\(.subject)"' "$tf" 2>/dev/null)
+        [ -z "$REC" ] && continue
+        TID=$(printf '%s' "$REC" | cut -f1)
+        TST=$(printf '%s' "$REC" | cut -f2)
+        TSUB=$(printf '%s' "$REC" | cut -f3-)
+        LINE="- #${TID} [${TST}] ${TSUB}"
+        case "$TSUB" in
+          "[DEFERRED"*"]"*|"[DEFERRED "*)
+            DEFERRED_LINES="${DEFERRED_LINES}${LINE}"$'\n' ;;
+          "[BLOCKED on "*"]"*|"[BLOCKED "*)
+            BLOCKED_LINES="${BLOCKED_LINES}${LINE}"$'\n' ;;
+          *)
+            MT=$(stat -c '%Y' "$tf" 2>/dev/null || echo 0)
+            AGE=$(( NOW_EPOCH - MT ))
+            if [ "$AGE" -gt "$STALE_SECS" ]; then
+              # Format idle interval as Nd Nh (rounded down).
+              IDLE_D=$(( AGE / 86400 ))
+              IDLE_H=$(( (AGE % 86400) / 3600 ))
+              STALE_LINES="${STALE_LINES}${LINE} (idle ${IDLE_D}d ${IDLE_H}h)"$'\n'
+            else
+              ACTIVE_LINES="${ACTIVE_LINES}${LINE}"$'\n'
+            fi
+            ;;
+        esac
+      done <<<"$TASK_FILES"
     fi
-    if [ -z "$LINES" ]; then
-      # Empty in either case: no JSON files, OR every file filtered out by
-      # the status select (all tasks completed/canceled). Both = "no open
-      # tasks recorded" as far as the reviewer's tasks_visible_complete
-      # check is concerned.
+    # render_bucket <name> <header-suffix> <cap> <lines>
+    # Prints the "### <name> ..." subsection with at most <cap> lines and
+    # an "(N more omitted)" tail when the bucket overflows. Empty bucket
+    # prints nothing — caller decides the all-empty fallback.
+    render_bucket() {
+      local name=$1 suffix=$2 cap=$3 lines=$4
+      [ -z "$lines" ] && return 0
+      local total
+      total=$(printf '%s' "$lines" | grep -c '^- ' || true)
+      printf '### %s %s\n' "$name" "$suffix"
+      printf '%s' "$lines" | head -n "$cap"
+      if [ "${total:-0}" -gt "$cap" ]; then
+        printf '… (%d more %s tasks omitted)\n' "$(( total - cap ))" "$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
+      fi
+      printf '\n'
+    }
+    if [ -z "$ACTIVE_LINES" ] && [ -z "$STALE_LINES" ] \
+       && [ -z "$DEFERRED_LINES" ] && [ -z "$BLOCKED_LINES" ]; then
       echo "(no open tasks recorded)"
     else
-      TOTAL=$(printf '%s\n' "$LINES" | grep -c '^- ' || true)
-      printf '%s\n' "$LINES" | head -50
-      if [ "${TOTAL:-0}" -gt 50 ]; then
-        printf '… (%d more open tasks omitted)\n' "$(( TOTAL - 50 ))"
-      fi
+      # Active gets cap=30 (load-bearing — reviewer must see overflow loudly).
+      # Other buckets get cap=15.
+      render_bucket "Active"   "(must resolve this turn or relabel as Deferred/Blocked)" 30 "$ACTIVE_LINES"
+      render_bucket "Stale"    "(idle > 24h with no prefix — confirm or cancel)"          15 "$STALE_LINES"
+      render_bucket "Deferred" "(user-accepted carry-over — not a violation)"             15 "$DEFERRED_LINES"
+      render_bucket "Blocked"  "(waiting on input/external — not a violation)"            15 "$BLOCKED_LINES"
     fi
   else
     echo "(task store not present for this session)"
