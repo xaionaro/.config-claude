@@ -316,27 +316,42 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
       '
   fi
   echo
-  # Skip GIT_STATUS / DIFF when the session is an ATE orchestrator (CLAUDE_ROLE
+  # Skip VCS_STATUS / DIFF when the session is an ATE orchestrator (CLAUDE_ROLE
   # set — stop-gate.sh exempts non-orchestrator ATE roles before reviewer runs,
   # so any non-empty role here is lead/coordinator with active teammates) or
   # when ECI is active (subagent-driven implementation in flight). In both
   # cases the working tree is expected to be transiently dirty from peer/
   # subagent edits not yet landed, and flagging it as a Git rule violation
   # blocked every stop while teammates worked.
+  #
+  # Detect VCS per repo: git first, then hg. The same stop-checklist commit
+  # rule applies to both — `hg status` rendering parallels `git status
+  # --porcelain` so the reviewer cites the same shape regardless of backend.
+  vcs_kind() {
+    local d=$1
+    if git -C "$d" rev-parse --git-dir >/dev/null 2>&1; then
+      echo git
+    elif command -v hg >/dev/null 2>&1 \
+         && HGPLAIN=1 hg --cwd "$d" root >/dev/null 2>&1; then
+      echo hg
+    else
+      echo ""
+    fi
+  }
   ECI_MARKER="$HOME/.cache/claude-proof/$SESSION_ID/eci_active"
   if [ -n "${CLAUDE_ROLE:-}" ] || [ -e "$ECI_MARKER" ]; then
     SKIP_REASON=""
     [ -n "${CLAUDE_ROLE:-}" ] && SKIP_REASON="CLAUDE_ROLE=${CLAUDE_ROLE} (orchestrator session — teammates may be mid-edit)"
     [ -e "$ECI_MARKER" ] && SKIP_REASON="${SKIP_REASON:+$SKIP_REASON; }ECI active (subagent-driven implementation in flight)"
-    echo "## GIT_STATUS"
+    echo "## VCS_STATUS"
     echo "(skipped: $SKIP_REASON. Working-tree state is transient until teammates/subagents commit.)"
     echo
     echo "## DIFF"
-    echo "(skipped: same reason as GIT_STATUS.)"
+    echo "(skipped: same reason as VCS_STATUS.)"
     echo
   else
-    echo "## GIT_STATUS"
-    echo "Working-tree state per repo (data only — DO NOT cite this header as evidence; cite a per-repo line below)."
+    echo "## VCS_STATUS"
+    echo "Working-tree state per repo, git or mercurial (data only — DO NOT cite this header as evidence; cite a per-repo line below)."
     echo
     seen_dirs=""
     # Iterate only the project the agent is working in. Including $HOME/.claude
@@ -344,60 +359,107 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
     # separate hooks-config repo) when the agent is working in any other project,
     # spuriously blocking stops on dirty state in an unrelated tree.
     for repo_dir in "$PWD"; do
-      # $PWD unset → skip GIT_STATUS entirely (better than re-leaking ~/.claude
+      # $PWD unset → skip VCS_STATUS entirely (better than re-leaking ~/.claude
       # state which is exactly what this scoping fix avoids).
       [ -z "$repo_dir" ] && continue
       case " $seen_dirs " in *" $repo_dir "*) continue ;; esac
       seen_dirs="$seen_dirs $repo_dir"
-      git -C "$repo_dir" rev-parse --git-dir >/dev/null 2>&1 || continue
-      porcelain=$(git -C "$repo_dir" status --porcelain 2>/dev/null)
-      if [ -z "$porcelain" ]; then
-        printf '### %s\nclean — all changes committed\n\n' "$repo_dir"
-      else
-        modified=$(printf '%s\n' "$porcelain" | grep -c '^.M')
-        staged=$(printf '%s\n' "$porcelain" | grep -cE '^[MADRC]')
-        untracked=$(printf '%s\n' "$porcelain" | grep -c '^??')
-        printf '### %s\nDIRTY — modified=%s staged=%s untracked=%s\n' "$repo_dir" "$modified" "$staged" "$untracked"
-        printf '%s\n\n' "$porcelain" | head -c 2048
-      fi
+      kind=$(vcs_kind "$repo_dir")
+      case "$kind" in
+        git)
+          porcelain=$(git -C "$repo_dir" status --porcelain 2>/dev/null)
+          if [ -z "$porcelain" ]; then
+            printf '### %s (git)\nclean — all changes committed\n\n' "$repo_dir"
+          else
+            modified=$(printf '%s\n' "$porcelain" | grep -c '^.M')
+            staged=$(printf '%s\n' "$porcelain" | grep -cE '^[MADRC]')
+            untracked=$(printf '%s\n' "$porcelain" | grep -c '^??')
+            printf '### %s (git)\nDIRTY — modified=%s staged=%s untracked=%s\n' "$repo_dir" "$modified" "$staged" "$untracked"
+            printf '%s\n\n' "$porcelain" | head -c 2048
+          fi
+          ;;
+        hg)
+          porcelain=$(HGPLAIN=1 hg --cwd "$repo_dir" status 2>/dev/null)
+          if [ -z "$porcelain" ]; then
+            printf '### %s (hg)\nclean — all changes committed\n\n' "$repo_dir"
+          else
+            # hg status format: 'M file', 'A file', 'R file', '? file', '! file'
+            modified=$(printf '%s\n' "$porcelain" | grep -c '^M ')
+            added=$(printf '%s\n' "$porcelain" | grep -c '^A ')
+            removed=$(printf '%s\n' "$porcelain" | grep -c '^R ')
+            untracked=$(printf '%s\n' "$porcelain" | grep -c '^? ')
+            missing=$(printf '%s\n' "$porcelain" | grep -c '^! ')
+            printf '### %s (hg)\nDIRTY — modified=%s added=%s removed=%s untracked=%s missing=%s\n' "$repo_dir" "$modified" "$added" "$removed" "$untracked" "$missing"
+            printf '%s\n\n' "$porcelain" | head -c 2048
+          fi
+          ;;
+        *)
+          continue
+          ;;
+      esac
     done
 
-    # Same scoping rationale as the GIT_STATUS loop above: pull commits
-    # and diff from the project the agent is working in, not unconditionally
-    # from ~/.claude.
+    # Same scoping rationale as the VCS_STATUS loop above: pull commits and
+    # diff from the project the agent is working in, not unconditionally from
+    # ~/.claude. DIFF base for git uses prompt-head HEAD (set by UserPromptSubmit
+    # hook). For hg we lack that machinery; emit `hg log -l 5` + `hg diff`
+    # (working-dir vs parent), which captures uncommitted changes — the
+    # primary signal the reviewer needs.
     # Skip DIFF entirely when $PWD unset; do NOT fall back to ~/.claude.
     REVIEW_REPO="$PWD"
     if [ -n "$REVIEW_REPO" ]; then
-      echo "## DIFF"
-      git -C "$REVIEW_REPO" log --pretty=format:"%H %s" -5 2>/dev/null
-      echo
-      # Diff base = HEAD recorded by the UserPromptSubmit hook for this
-      # session, so the reviewer sees ALL commits made in the current turn
-      # (not just HEAD~1..HEAD). Falls back to HEAD~1 when the prompt-head
-      # file is missing (first prompt of a session, or pre-hook session) or
-      # when the recorded SHA is no longer reachable (force-push, rebase).
-      PROMPT_HEAD_FILE="$STATE_DIR/prompt_head"
-      DIFF_BASE="HEAD~1"
-      if [ -s "$PROMPT_HEAD_FILE" ]; then
-        PH=$(cat "$PROMPT_HEAD_FILE" 2>/dev/null)
-        if [ -n "$PH" ] && git -C "$REVIEW_REPO" cat-file -e "${PH}^{commit}" 2>/dev/null; then
-          DIFF_BASE="$PH"
-        fi
-      fi
-      # Bound diff bytes: a huge diff (large refactor, generated files) blows
-      # past Ollama's num_ctx and causes timeouts. Probe size first; if over
-      # threshold, omit the diff body entirely — commit titles above are
-      # enough context, and a mid-line truncation is misleading.
-      DIFF_RAW=$(git -C "$REVIEW_REPO" diff "$DIFF_BASE..HEAD" 2>/dev/null)
-      DIFF_BYTES=$(printf %s "$DIFF_RAW" | wc -c | awk '{print $1}')
-      DIFF_LIMIT=4096
-      if [ "$DIFF_BYTES" -gt "$DIFF_LIMIT" ]; then
-        printf '(diff body omitted: %s bytes raw, exceeds %s-byte budget — see commit titles above)\n' \
-          "$DIFF_BYTES" "$DIFF_LIMIT"
-      else
-        printf '%s' "$DIFF_RAW"
-      fi
-      echo
+      review_kind=$(vcs_kind "$REVIEW_REPO")
+      case "$review_kind" in
+        git)
+          echo "## DIFF"
+          git -C "$REVIEW_REPO" log --pretty=format:"%H %s" -5 2>/dev/null
+          echo
+          # Diff base = HEAD recorded by the UserPromptSubmit hook for this
+          # session, so the reviewer sees ALL commits made in the current turn
+          # (not just HEAD~1..HEAD). Falls back to HEAD~1 when the prompt-head
+          # file is missing (first prompt of a session, or pre-hook session) or
+          # when the recorded SHA is no longer reachable (force-push, rebase).
+          PROMPT_HEAD_FILE="$STATE_DIR/prompt_head"
+          DIFF_BASE="HEAD~1"
+          if [ -s "$PROMPT_HEAD_FILE" ]; then
+            PH=$(cat "$PROMPT_HEAD_FILE" 2>/dev/null)
+            if [ -n "$PH" ] && git -C "$REVIEW_REPO" cat-file -e "${PH}^{commit}" 2>/dev/null; then
+              DIFF_BASE="$PH"
+            fi
+          fi
+          # Bound diff bytes: a huge diff (large refactor, generated files) blows
+          # past Ollama's num_ctx and causes timeouts. Probe size first; if over
+          # threshold, omit the diff body entirely — commit titles above are
+          # enough context, and a mid-line truncation is misleading.
+          DIFF_RAW=$(git -C "$REVIEW_REPO" diff "$DIFF_BASE..HEAD" 2>/dev/null)
+          DIFF_BYTES=$(printf %s "$DIFF_RAW" | wc -c | awk '{print $1}')
+          DIFF_LIMIT=4096
+          if [ "$DIFF_BYTES" -gt "$DIFF_LIMIT" ]; then
+            printf '(diff body omitted: %s bytes raw, exceeds %s-byte budget — see commit titles above)\n' \
+              "$DIFF_BYTES" "$DIFF_LIMIT"
+          else
+            printf '%s' "$DIFF_RAW"
+          fi
+          echo
+          ;;
+        hg)
+          echo "## DIFF"
+          HGPLAIN=1 hg --cwd "$REVIEW_REPO" log -l 5 --template '{node} {desc|firstline}\n' 2>/dev/null
+          echo
+          # Working-tree diff vs parent — captures uncommitted changes.
+          # No turn-base equivalent for hg yet (no prompt-head machinery for it).
+          DIFF_RAW=$(HGPLAIN=1 hg --cwd "$REVIEW_REPO" diff 2>/dev/null)
+          DIFF_BYTES=$(printf %s "$DIFF_RAW" | wc -c | awk '{print $1}')
+          DIFF_LIMIT=4096
+          if [ "$DIFF_BYTES" -gt "$DIFF_LIMIT" ]; then
+            printf '(diff body omitted: %s bytes raw, exceeds %s-byte budget — see commit titles above)\n' \
+              "$DIFF_BYTES" "$DIFF_LIMIT"
+          else
+            printf '%s' "$DIFF_RAW"
+          fi
+          echo
+          ;;
+      esac
     fi
   fi
 
