@@ -29,6 +29,23 @@ TOOL=$(echo "$INPUT" | jq -r '.tool_name // empty')
 # KEEP IN SYNC with --argjson gated below (FIRST_OF_TURN jq filter).
 case "$TOOL" in Edit|Write|MultiEdit|Bash) ;; *) exit 0 ;; esac
 
+# Whitelist: `touch <path-under-~/.cache/claude-proof/.../bypass>` is the
+# documented escape hatch for both this hook and the stop-hook reviewer.
+# It MUST work even when no skill is loaded — that's the entire point of
+# the bypass. Otherwise an ECI-active session would be impossible to
+# release because the touch itself would be denied. Allowed paths:
+#   $HOME/.cache/claude-proof/reviewer/<session>/bypass     (stop reviewer)
+#   $HOME/.cache/claude-proof/pre-reviewer/<session>/bypass (this hook)
+# Path components are restricted to safe chars (no `.`, no `/`) so a
+# traversal payload like `..%2F..%2F../etc/bypass` cannot match.
+# Quoting the path is also accepted (single or double quotes).
+if [ "$TOOL" = "Bash" ]; then
+  CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
+  if [[ "$CMD" =~ ^[[:space:]]*touch[[:space:]]+[\"\']?$HOME/\.cache/claude-proof/(reviewer|pre-reviewer)/[A-Za-z0-9_-]+/bypass[\"\']?[[:space:]]*$ ]]; then
+    exit 0
+  fi
+fi
+
 # Subagent skip — same role list as stop-gate.sh:19.
 case "${CLAUDE_ROLE:-}" in
   lead|coordinator|snitch|explorer|brainstormer|designer|reviewer|test-designer|test-reviewer|verifier|qa)
