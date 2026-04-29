@@ -120,13 +120,13 @@ if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
   # Code transcripts: content is a string AND isMeta is not true. (Array
   # content + isMeta=true is a skill-load body; string content + isMeta
   # =true is synthetic stop-hook feedback. Neither counts as a turn.)
-  TS_LIST=$(jq -s '
+  TS_LIST=$(jq -s --arg synth_re "$SYNTHETIC_USER_TAG_RE" '
     [ to_entries[]
       | select(.value.type == "user"
                and ((.value.message.content | type) == "string")
                and ((.value.isMeta // false) | not)
                and ((.value.origin.kind // "") == "")
-               and ((.value.message.content | tostring | test("^[[:space:]]*<(task-notification|command-name|command-message|command-args|local-command-stdout|local-command-caveat|system-reminder)>"; "i")) | not))
+               and ((.value.message.content | tostring | test($synth_re; "i")) | not))
       | .key
     ]
   ' "$TRANSCRIPT" 2>/dev/null || echo "[]")
@@ -189,6 +189,7 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
       --argjson edit_cap 5000 \
       --argjson multiedit_cap 15000 \
       --argjson other_cap 1500 \
+      --arg synth_re "$SYNTHETIC_USER_TAG_RE" \
       '
       . as $all
       | (
@@ -197,7 +198,7 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
                        and ((.value.message.content | type) == "string")
                        and ((.value.isMeta // false) | not)
                        and ((.value.origin.kind // "") == "")
-                       and ((.value.message.content | tostring | test("^[[:space:]]*<(task-notification|command-name|command-message|command-args|local-command-stdout|local-command-caveat|system-reminder)>"; "i")) | not))
+                       and ((.value.message.content | tostring | test($synth_re; "i")) | not))
               | .key
           ] | last // 0
         ) as $lts
@@ -206,7 +207,7 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
           and ($e.message.content | type) == "string"
           and (($e.isMeta // false) | not)
           and (($e.origin.kind // "") == "")
-          and (($e.message.content | tostring | test("^[[:space:]]*<(task-notification|command-name|command-message|command-args|local-command-stdout|local-command-caveat|system-reminder)>"; "i")) | not);
+          and (($e.message.content | tostring | test($synth_re; "i")) | not);
         # ends_trim($cap): keep first $cap/2 + last $cap/2 chars of long
         # strings; mid-omission marker preserves both the OPENING (intent)
         # and the CLOSING (conclusions, questions, "Want me to..." phrases).
@@ -428,14 +429,21 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
       | awk -F/ '{n=$NF; sub(/\.json$/,"",n); print n"\t"$0}' \
       | sort -n -k1,1 \
       | cut -f2-)
-    if [ -z "$TASK_FILES" ]; then
-      echo "(no open tasks recorded)"
-    else
+    LINES=""
+    if [ -n "$TASK_FILES" ]; then
       LINES=$(printf '%s\n' "$TASK_FILES" | while IFS= read -r tf; do
         [ -z "$tf" ] && continue
         jq -r 'select((.status // "") != "completed" and (.status // "") != "canceled")
                | "- #\(.id) [\(.status)] \(.subject)"' "$tf" 2>/dev/null
       done)
+    fi
+    if [ -z "$LINES" ]; then
+      # Empty in either case: no JSON files, OR every file filtered out by
+      # the status select (all tasks completed/canceled). Both = "no open
+      # tasks recorded" as far as the reviewer's tasks_visible_complete
+      # check is concerned.
+      echo "(no open tasks recorded)"
+    else
       TOTAL=$(printf '%s\n' "$LINES" | grep -c '^- ' || true)
       printf '%s\n' "$LINES" | head -50
       if [ "${TOTAL:-0}" -gt 50 ]; then
@@ -795,11 +803,11 @@ fi
 # returns empty → keep $RESULT unchanged.
 if [ -n "$RESULT" ]; then
   DEDUPED=$(printf '%s' "$RESULT" | jq '
-    .violations |= (
+    .violations |= ((. // []) | (
       reduce .[] as $v ([];
         ($v.rule | ascii_downcase | gsub("\\s+"; " ") | gsub("[[:punct:]]"; "")) as $k
         | if any(.[]; (.rule | ascii_downcase | gsub("\\s+"; " ") | gsub("[[:punct:]]"; "")) == $k)
-          then . else . + [$v] end))
+          then . else . + [$v] end)))
   ' 2>/dev/null)
   if [ -n "$DEDUPED" ]; then RESULT="$DEDUPED"; fi
 fi

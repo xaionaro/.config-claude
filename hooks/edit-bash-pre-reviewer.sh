@@ -95,14 +95,14 @@ TRANSCRIPT=$(find "$HOME/.claude/projects" -name "${SESSION_ID}.jsonl" -type f 2
 # Determine: index of last real user-text message + whether any prior
 # assistant tool_use exists at index > that. Also emit the index so we can
 # scope the TOCTOU claim file per-turn.
-read -r LTS FIRST_OF_TURN < <(jq -rs --argjson gated '["Edit","Write","MultiEdit","Bash"]' '
+read -r LTS FIRST_OF_TURN < <(jq -rs --argjson gated '["Edit","Write","MultiEdit","Bash"]' --arg synth_re "$SYNTHETIC_USER_TAG_RE" '
   . as $all
   | ([$all | to_entries[]
       | select(.value.type == "user"
                and ((.value.message.content | type) == "string")
                and ((.value.isMeta // false) | not)
                and ((.value.origin.kind // "") == "")
-               and ((.value.message.content | tostring | test("^[[:space:]]*<(task-notification|command-name|command-message|command-args|local-command-stdout|local-command-caveat|system-reminder)>"; "i")) | not))
+               and ((.value.message.content | tostring | test($synth_re; "i")) | not))
       | .key] | last // -1) as $lts
   | if $lts < 0 then "\($lts) no" else
       ([$all | to_entries[]
@@ -124,12 +124,12 @@ CLAIM="$STATE_DIR/claim-$LTS"
 ( set -C; : > "$CLAIM" ) 2>/dev/null || exit 0
 
 # Extract last user message text + tool input snippet (truncated).
-USER_MSG=$(jq -rs '
+USER_MSG=$(jq -rs --arg synth_re "$SYNTHETIC_USER_TAG_RE" '
   [.[] | select(.type == "user"
                 and ((.message.content | type) == "string")
                 and ((.isMeta // false) | not)
                 and ((.origin.kind // "") == "")
-                and ((.message.content | tostring | test("^[[:space:]]*<(task-notification|command-name|command-message|command-args|local-command-stdout|local-command-caveat|system-reminder)>"; "i")) | not))
+                and ((.message.content | tostring | test($synth_re; "i")) | not))
    | .message.content] | last // ""
 ' "$TRANSCRIPT" 2>/dev/null | head -c 4000)
 TOOL_INPUT=$(echo "$INPUT" | jq -c '.tool_input // {}' 2>/dev/null | head -c 4000)

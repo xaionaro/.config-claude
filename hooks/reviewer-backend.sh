@@ -38,6 +38,16 @@
 # Returns 0 on success (including the empty-env case — REVIEWER_BACKEND
 # is "" then), 1 on parse failure (malformed non-empty env var).
 
+# Regex matching the leading XML tag of synthetic user-shape transcript
+# entries that look like real user prompts but are NOT (Claude Code injects
+# them for slash-command echoes, subagent completion notifications, etc.).
+# Used by the turn-slicing filters in system-prompt-reviewer.sh and
+# edit-bash-pre-reviewer.sh — single source so a new synthetic tag class
+# only needs adding here.
+# Pass into jq as `--arg synth_re "$SYNTHETIC_USER_TAG_RE"` and apply via
+# `test($synth_re; "i")`. Match() would raise on no-match; test() returns bool.
+SYNTHETIC_USER_TAG_RE='^[[:space:]]*<(task-notification|command-name|command-message|command-args|local-command-stdout|local-command-caveat|system-reminder)>'
+
 parse_reviewer_env() {
   local raw="${CLAUDE_STOP_REVIEWER:-}"
 
