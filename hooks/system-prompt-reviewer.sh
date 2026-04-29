@@ -124,7 +124,9 @@ if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
     [ to_entries[]
       | select(.value.type == "user"
                and ((.value.message.content | type) == "string")
-               and ((.value.isMeta // false) | not))
+               and ((.value.isMeta // false) | not)
+               and ((.value.origin.kind // "") == "")
+               and ((.value.message.content | tostring | test("^[[:space:]]*<(task-notification|command-name|command-message|command-args|local-command-stdout|local-command-caveat|system-reminder)>"; "i")) | not))
       | .key
     ]
   ' "$TRANSCRIPT" 2>/dev/null || echo "[]")
@@ -193,14 +195,18 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
           [ $all | to_entries[]
               | select(.value.type == "user"
                        and ((.value.message.content | type) == "string")
-                       and ((.value.isMeta // false) | not))
+                       and ((.value.isMeta // false) | not)
+                       and ((.value.origin.kind // "") == "")
+                       and ((.value.message.content | tostring | test("^[[:space:]]*<(task-notification|command-name|command-message|command-args|local-command-stdout|local-command-caveat|system-reminder)>"; "i")) | not))
               | .key
           ] | last // 0
         ) as $lts
       | def is_real_user($e):
           $e.type == "user"
           and ($e.message.content | type) == "string"
-          and (($e.isMeta // false) | not);
+          and (($e.isMeta // false) | not)
+          and (($e.origin.kind // "") == "")
+          and (($e.message.content | tostring | test("^[[:space:]]*<(task-notification|command-name|command-message|command-args|local-command-stdout|local-command-caveat|system-reminder)>"; "i")) | not);
         # ends_trim($cap): keep first $cap/2 + last $cap/2 chars of long
         # strings; mid-omission marker preserves both the OPENING (intent)
         # and the CLOSING (conclusions, questions, "Want me to..." phrases).
@@ -405,6 +411,40 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
   ps -eo pid,ppid,etimes,stat,cmd -u "$USER" --no-headers 2>/dev/null \
     | awk '$3 <= 3600' \
     | head -30
+  echo
+
+  # TASKS — per tasks_visible_complete (MEMORY.md): the agent must not stop
+  # with open tasks unless explicitly handed off. Reviewer needs to see the
+  # current list to enforce this. Numeric sort (lex order would put 10
+  # before 2). Cap at 50 lines so a runaway task list cannot blow the body
+  # cap. Always shown — unlike GIT_STATUS, the open-tasks list is not made
+  # transient by teammate/subagent work.
+  echo "## TASKS"
+  echo "Open tasks for this session. Per tasks_visible_complete rule (MEMORY.md), the agent must not stop with open tasks unless explicitly handed off to the user."
+  echo
+  TASK_DIR="$HOME/.claude/tasks/$SESSION_ID"
+  if [ -d "$TASK_DIR" ]; then
+    TASK_FILES=$(ls -1 "$TASK_DIR"/*.json 2>/dev/null \
+      | awk -F/ '{n=$NF; sub(/\.json$/,"",n); print n"\t"$0}' \
+      | sort -n -k1,1 \
+      | cut -f2-)
+    if [ -z "$TASK_FILES" ]; then
+      echo "(no open tasks recorded)"
+    else
+      LINES=$(printf '%s\n' "$TASK_FILES" | while IFS= read -r tf; do
+        [ -z "$tf" ] && continue
+        jq -r 'select((.status // "") != "completed" and (.status // "") != "canceled")
+               | "- #\(.id) [\(.status)] \(.subject)"' "$tf" 2>/dev/null
+      done)
+      TOTAL=$(printf '%s\n' "$LINES" | grep -c '^- ' || true)
+      printf '%s\n' "$LINES" | head -50
+      if [ "${TOTAL:-0}" -gt 50 ]; then
+        printf '… (%d more open tasks omitted)\n' "$(( TOTAL - 50 ))"
+      fi
+    fi
+  else
+    echo "(task store not present for this session)"
+  fi
   echo
 } > "$USER_BODY"
 
@@ -745,6 +785,23 @@ if [ "$VERDICT" = "fail" ]; then
     RESULT="$FILTERED"
     VERDICT=$(printf '%s' "$RESULT" | jq -r '.verdict // empty' 2>/dev/null)
   fi
+fi
+
+# Dedupe violations by normalized rule text. Defense in depth: the prompt
+# already asks for one-per-rule, but local models occasionally still emit
+# duplicates when several CURRENT_TURN entries trip the same rule.
+# First-seen preservation (NOT unique_by — that re-sorts) keeps the most
+# representative evidence the model placed first. Fail-safe: jq error
+# returns empty → keep $RESULT unchanged.
+if [ -n "$RESULT" ]; then
+  DEDUPED=$(printf '%s' "$RESULT" | jq '
+    .violations |= (
+      reduce .[] as $v ([];
+        ($v.rule | ascii_downcase | gsub("\\s+"; " ") | gsub("[[:punct:]]"; "")) as $k
+        | if any(.[]; (.rule | ascii_downcase | gsub("\\s+"; " ") | gsub("[[:punct:]]"; "")) == $k)
+          then . else . + [$v] end))
+  ' 2>/dev/null)
+  if [ -n "$DEDUPED" ]; then RESULT="$DEDUPED"; fi
 fi
 
 # Persist the last result so stop-gate.sh can append it to the next stop's

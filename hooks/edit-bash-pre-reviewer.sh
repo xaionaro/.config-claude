@@ -100,7 +100,9 @@ read -r LTS FIRST_OF_TURN < <(jq -rs --argjson gated '["Edit","Write","MultiEdit
   | ([$all | to_entries[]
       | select(.value.type == "user"
                and ((.value.message.content | type) == "string")
-               and ((.value.isMeta // false) | not))
+               and ((.value.isMeta // false) | not)
+               and ((.value.origin.kind // "") == "")
+               and ((.value.message.content | tostring | test("^[[:space:]]*<(task-notification|command-name|command-message|command-args|local-command-stdout|local-command-caveat|system-reminder)>"; "i")) | not))
       | .key] | last // -1) as $lts
   | if $lts < 0 then "\($lts) no" else
       ([$all | to_entries[]
@@ -125,7 +127,9 @@ CLAIM="$STATE_DIR/claim-$LTS"
 USER_MSG=$(jq -rs '
   [.[] | select(.type == "user"
                 and ((.message.content | type) == "string")
-                and ((.isMeta // false) | not))
+                and ((.isMeta // false) | not)
+                and ((.origin.kind // "") == "")
+                and ((.message.content | tostring | test("^[[:space:]]*<(task-notification|command-name|command-message|command-args|local-command-stdout|local-command-caveat|system-reminder)>"; "i")) | not))
    | .message.content] | last // ""
 ' "$TRANSCRIPT" 2>/dev/null | head -c 4000)
 TOOL_INPUT=$(echo "$INPUT" | jq -c '.tool_input // {}' 2>/dev/null | head -c 4000)

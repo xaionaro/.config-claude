@@ -66,6 +66,9 @@ schema. Mechanically:
 4. `violations`: empty when verdict=`"pass"`; one object per violation
    when verdict=`"fail"`, each with `rule` (paraphrase, ≤240 chars) and
    `evidence` (exact quote from one entry, ≤600 chars).
+5. Emit ONE object per distinct violated rule. When multiple entries
+   demonstrate the same rule, pick the single most-severe representative
+   evidence quote. Do NOT emit multiple objects for the same rule.
 
 No prose, no markdown, no extra fields. The model MUST NOT write any text
 outside the JSON object — the schema is enforced and overflow is an error.
