@@ -18,6 +18,7 @@ Before stopping, verify ALL of the following. If any check fails → continue wo
 - NOT DONE if you noticed a bug in code you touched or read — fix it before stopping.
 - NOT DONE if you chose a simple or convenient solution over the correct, clean one. Redo it.
 - Stated "next step" or know remaining work exists? Continue working. Completing a subtask means starting the next one.
+- Discovered any new issue this turn (bug, incomplete code, anything needing fixing) → TaskCreate immediately, even if you intend to address it the same turn. Mental notes don't survive compaction; tasks do.
 - All Active tasks resolved this turn. (In the reviewer prompt's `## TASKS`, only items under `### Active` count toward the no-open-tasks-at-stop violation.) Tasks the user accepted as out-of-scope → rename subject to `[DEFERRED <reason>] <original subject>` via TaskUpdate. Tasks waiting on user input or an external dependency → rename to `[BLOCKED on <thing>] <original subject>`. Stale tasks (idle > 24h with no prefix) → confirm and resolve, cancel, or relabel.
 - BLOCKED on user input → report (what, exact questions, exact next commands) using the AskUserQuestion tool. Do not stop to ask. Keep working.
 

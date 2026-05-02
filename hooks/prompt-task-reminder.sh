@@ -37,3 +37,17 @@ if [ "${CLAUDE_ROLE:-}" = "coordinator" ] || [ "${CLAUDE_ROLE:-}" = "lead" ] || 
 SKILL RELOAD CHECK: If you cannot recall agent-teams-execution (roles, protocols, rules), re-invoke via Skill tool, skill "agent-teams-execution". Compaction may have evicted it.
 EOF
 fi
+
+# ECI activation persists on disk but its skill content does not survive
+# context compaction. When the eci_active marker exists, surface it on
+# every user prompt so the agent re-engages even after compaction.
+if [ -n "${SESSION_ID:-}" ]; then
+  ECI_MARKER="$HOME/.cache/claude-proof/$SESSION_ID/eci_active"
+  if [ -f "$ECI_MARKER" ]; then
+    cat <<EOF
+ECI ACTIVE for this session — main thread MUST delegate Edit/Write/MultiEdit to subagents (per the eci-active-gate hook). Marker contents:
+$(cat "$ECI_MARKER")
+If you cannot recall the explore-critique-implement flow, re-invoke via Skill tool, skill "explore-critique-implement". Compaction may have evicted it. Disengage only when the scope is closed via: ~/.claude/bin/eci-active off <disengage-report.md>
+EOF
+  fi
+fi

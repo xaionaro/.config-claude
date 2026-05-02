@@ -296,3 +296,4 @@ Assume every subagent result is wrong until you have independently verified it. 
 - **Look for what's missing.** Subagents silently drop requirements they find inconvenient. Diff their output against the original task — every requirement must be accounted for.
 - **Reject incomplete work.** If a subagent punts with "needs further investigation", "left as TODO", or "out of scope" — that is not done. Either finish it yourself or send it back.
 - **Never relay unverified subagent output to the user.** You are the last line of defense. If you pass along a subagent's false claim, it's your error.
+- **Cancel implementors gracefully, never kill mid-edit.** Stopping an active implementor: send a cancel-and-revert message ("stop, revert your changes, leave the tree clean") and let it finish. Hard-killing strands partial edits as untracked working-tree state — the orchestrator's mess to clean up.

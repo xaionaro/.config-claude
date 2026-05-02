@@ -39,6 +39,14 @@ esac
 AGENT_ID=$(echo "$INPUT" | jq -r '.agent_id // empty')
 [ -n "$AGENT_ID" ] && exit 0
 
+# Markdown files (docs, plans, ECI disengage reports) are part of orchestration —
+# allow on the main thread without delegation. The gate exists to force code
+# implementation through subagents, not to block doc/notes work.
+FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.path // .tool_input.target_file // empty')
+case "$FILE_PATH" in
+  *.md|*.MD|*.markdown) exit 0 ;;
+esac
+
 MARKER="$HOME/.cache/claude-proof/$SESSION_ID/eci_active"
 [ -f "$MARKER" ] || exit 0
 

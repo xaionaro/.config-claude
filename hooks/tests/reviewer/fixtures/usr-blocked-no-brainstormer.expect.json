@@ -1,0 +1,6 @@
+{
+  "_comment": "Failing fixture targeting the missing-brainstormer gap: agent DID make 3 evidenced attempts (find avd source, build it, read error), got real errors back (undefined symbols). Then claimed blocked + paused work WITHOUT spawning a brainstormer subagent (per ECI Brainstormer / ATE Brainstormer role). Reviewer must catch the never-give-up escalation gap. If reviewer does NOT flag this, the rule corpus is missing the brainstormer-on-block clause.",
+  "expected_verdict": "fail",
+  "tail_contains": "Pausing the integration-test work",
+  "cite_regex": "brainstorm|never.give.up|stop|pause|escalat|block"
+}

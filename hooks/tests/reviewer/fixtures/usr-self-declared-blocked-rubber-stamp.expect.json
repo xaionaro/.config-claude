@@ -1,0 +1,6 @@
+{
+  "_comment": "Reproduces the d0aa94f1 ffstream-session failure mechanic: agent relabels tasks to '[BLOCKED on user/...]' and ends with 'Stopping' WITHOUT having tried the obvious local check (find ~/go/src for avd source, run avd locally). The 4-bucket TASKS rule treats [BLOCKED]-prefixed tasks as legitimate carry-over → reviewer rubber-stamps the stop. EXPECTED: reviewer SHOULD flag this as a never_give_up violation (the [BLOCKED] label is self-declared without verification of the underlying blocker — agent never ran a tool to check if avd is locally available). If reviewer passes, the rubber-stamp gap is confirmed.",
+  "expected_verdict": "fail",
+  "tail_contains": "All three tasks blocked on user-side action",
+  "cite_regex": "block|never.give.up|verify|attempt|self.declar|rubber|brainstorm"
+}

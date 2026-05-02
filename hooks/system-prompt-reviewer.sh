@@ -463,6 +463,57 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
     fi
   fi
 
+  # BRAINSTORMER_INVOCATIONS — count Agent tool_uses in CURRENT_TURN whose
+  # description or prompt mentions "brainstorm". Per never_give_up: if the
+  # agent claims stuck/blocked/cannot-reproduce, it must have spawned a
+  # brainstormer subagent at least 3 times before stopping. The count is
+  # MECHANICAL data the reviewer can correlate against any give-up claim
+  # in CURRENT_TURN.
+  echo "## BRAINSTORMER_INVOCATIONS_THIS_TURN"
+  echo "Count of Agent tool_uses in CURRENT_TURN whose description/prompt mentions 'brainstorm'. Rule: if the agent claims stuck/blocked/cannot-reproduce/blocked-on-user, it must have spawned a brainstormer >= 3 times this turn (per never_give_up). Count below; <3 + any stuck-claim = violation."
+  echo
+  if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
+    BRAINSTORM_COUNT=$(jq -s --argjson lts "$ANCHOR_IDX" '
+      [ to_entries[]
+        | select(.key >= $lts)
+        | select(.value.type == "assistant" and ((.value.message.content | type) == "array"))
+        | .value.message.content[]
+        | select(.type == "tool_use" and .name == "Agent")
+        | (((.input.description // "") + " " + (.input.prompt // "")) | ascii_downcase)
+        | select(test("brainstorm"))
+      ] | length
+    ' "$TRANSCRIPT" 2>/dev/null || echo 0)
+    echo "count: ${BRAINSTORM_COUNT:-0}"
+  else
+    echo "count: 0 (no transcript)"
+  fi
+  echo
+
+  # VERIFICATION_TOOL_CALLS — count Bash tool_uses in CURRENT_TURN whose
+  # command matches verification-style patterns (test/build/run/curl/etc.).
+  # Per stop-checklist DONE rule: claims of "fixed/improved/works" require
+  # objective evidence — at least one verification tool call. Mechanical
+  # data the reviewer correlates with any fix/done claim in CURRENT_TURN.
+  echo "## VERIFICATION_TOOL_CALLS_THIS_TURN"
+  echo "Count of Bash tool_uses in CURRENT_TURN whose command matches verification patterns (go test|cargo test|pytest|jest|make test|ctest|npm test|run\\.sh|tests/|/test/|curl|measure). Rule: any claim of 'fixed/improved/works/done/passes' requires at least one verification call. Count below; 0 + any fix-claim = DONE-without-evidence violation."
+  echo
+  if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
+    VERIF_COUNT=$(jq -s --argjson lts "$ANCHOR_IDX" '
+      [ to_entries[]
+        | select(.key >= $lts)
+        | select(.value.type == "assistant" and ((.value.message.content | type) == "array"))
+        | .value.message.content[]
+        | select(.type == "tool_use" and .name == "Bash")
+        | (.input.command // "" | ascii_downcase)
+        | select(test("(go test|cargo test|pytest|jest|make test|ctest|npm test|run\\.sh|tests?/|/test/|curl|^measure)"))
+      ] | length
+    ' "$TRANSCRIPT" 2>/dev/null || echo 0)
+    echo "count: ${VERIF_COUNT:-0}"
+  else
+    echo "count: 0 (no transcript)"
+  fi
+  echo
+
   # BACKGROUND_PROCESSES — always shown (orthogonal to GIT_STATUS skip cases).
   # Per stop-checklist, agent must clean up unneeded stragglers from this
   # session. Filter to user-owned processes started in the last hour so the
@@ -540,10 +591,24 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
         TST=$(printf '%s' "$REC" | cut -f2)
         TSUB=$(printf '%s' "$REC" | cut -f3-)
         LINE="- #${TID} [${TST}] ${TSUB}"
+        # Bucketing: Deferred/Blocked require an explicit reason after
+        # the keyword. `[DEFERRED <reason>] ...` and `[BLOCKED on <thing>] ...`
+        # are accepted; bare `[DEFERRED]` / `[BLOCKED]` (no reason) fall
+        # through to Active so the agent can't legitimize stopping with
+        # an empty self-declaration.
         case "$TSUB" in
-          "[DEFERRED"*"]"*|"[DEFERRED "*)
+          "[DEFERRED "[!]]*"]"*)
             DEFERRED_LINES="${DEFERRED_LINES}${LINE}"$'\n' ;;
-          "[BLOCKED on "*"]"*|"[BLOCKED "*)
+          "[BLOCKED on "[!]]*"]"*)
+            # Annotate JUST-RELABELED Blocked tasks (file mtime within
+            # last 5 min). Rubber-stamp risk: agent relabels Active to
+            # [BLOCKED on X] mid-turn without ever attempting to verify X.
+            # The annotation primes the reviewer to check whether
+            # CURRENT_TURN actually contains a tool call probing X.
+            MT_REL=$(stat -c '%Y' "$tf" 2>/dev/null || echo 0)
+            if [ $((NOW_EPOCH - MT_REL)) -lt 300 ]; then
+              LINE="${LINE} ⚠ JUST RELABELED (last 5 min) — verify a tool call in CURRENT_TURN actually attempted the cited blocker; if none, this is a self-declared [BLOCKED] = never_give_up violation"
+            fi
             BLOCKED_LINES="${BLOCKED_LINES}${LINE}"$'\n' ;;
           *)
             MT=$(stat -c '%Y' "$tf" 2>/dev/null || echo 0)

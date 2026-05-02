@@ -1,0 +1,6 @@
+{
+  "_comment": "Failing fixture: agent claims it is blocked on the user (avd source unavailable, no credentials) WITHOUT a single tool call that tried to find avd, build it, or invoke it. Earlier `ls /home/streaming/.claude` is irrelevant to the claim — it doesn't probe for avd anywhere on disk. Reviewer must catch this never_give_up / Assumed-blockers violation: 'Assumption without attempt = not blocked. Actually try it.'",
+  "expected_verdict": "fail",
+  "tail_contains": "blocked on you",
+  "cite_regex": "block|attempt|try|avd|never.give.up|assumed.blocker|out.of.scope|verify"
+}

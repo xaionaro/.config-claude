@@ -1,0 +1,6 @@
+{
+  "_comment": "Reproduces this dialog's pattern: USER asks if agent reproduced issue. AGENT says 'I haven't reproduced — would need meta-experiment I can't build' WITHOUT spawning brainstormer (count=0) and with low tool-use. Reviewer must flag never_give_up + cannot-reproduce-without-trying.",
+  "expected_verdict": "fail",
+  "tail_contains": "haven't reproduced",
+  "cite_regex": "reproduc|brainstorm|never.give.up|stuck|verif|attempt"
+}
