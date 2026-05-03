@@ -14,33 +14,18 @@ if [ -z "$SESSION_ID" ] || [ "$SESSION_ID" = "null" ]; then
   exit 0
 fi
 
-# Skip stop hook for roles that don't write code.
+# Skip stop hook for subordinate team roles. Only the lead/coordinator
+# (and main-thread sessions with no role) walk the proof checklist.
 #
-# `eci-implementer` is exempt only when at least one
-# `~/.cache/claude-proof/<session>/eci_active` marker exists AND was
-# touched within the last 24 hours. Stale markers from crashed
-# orchestrators do not grant the bypass.
+# Subordinates report verdicts via messaging or commit their work
+# directly; the lead's stop-gate is the single accountability point.
 #
-# Lead and coordinator are NOT exempt: per ATE skill they must walk the
-# stop checklist on disengage and critically analyze items that could not
-# be fully complied with. Other non-code roles stay exempt — they report
-# verdicts via messaging and don't produce stop-cycle artifacts.
-#
-# Keep eci-implementer in sync with skills/explore-critique-implement/SKILL.md "CLAUDE_ROLE per role" canonical table.
+# Keep this list in sync with skills/explore-critique-implement/SKILL.md
+# and skills/agent-teams-execution/SKILL.md role tables, plus the
+# `bin/claude-as-role` allowlist.
 case "${CLAUDE_ROLE:-}" in
-  snitch|explorer|brainstormer|designer|reviewer|test-designer|test-reviewer|verifier|qa)
+  snitch|explorer|brainstormer|designer|reviewer|test-designer|test-reviewer|verifier|qa|eci-implementer|executor|test-executor)
     exit 0 ;;
-  eci-implementer)
-    # Only exempt while a fresh ECI scope marker is active anywhere on
-    # this host (any session). Stale markers ignored via 24h mtime check.
-    # Any active engagement on this host exempts all `eci-implementer`
-    # instances; teammate sessions do not own the marker.
-    # The eci-active bin writes ~/.cache/claude-proof/<session>/eci_active.
-    for marker in "$HOME/.cache/claude-proof"/*/eci_active; do
-      [ -f "$marker" ] || continue
-      [ -n "$(find "$marker" -mmin -1440 -print 2>/dev/null)" ] && exit 0
-    done
-    ;;
 esac
 
 PROOF_DIR="$HOME/.cache/claude-proof/$SESSION_ID"
