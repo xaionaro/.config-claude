@@ -34,7 +34,12 @@ PROOF="$PROOF_DIR/proof.md"
 # Skill-controlled bypass: any skill that knows the main thread never
 # implements code can touch this marker on entry and remove it on exit.
 # See ~/.claude/bin/skip-stop for the helper that manages it.
-if [ -f "$PROOF_DIR/skip_stop" ]; then
+#
+# Freshness gate: marker must have been touched within the last 60 minutes.
+# Stops the leak class where a prior session's marker (e.g. ATE skill that
+# crashed before `skip-stop off`) silently bypasses verification in a
+# later, unrelated session reusing the same session-id directory.
+if [ -f "$PROOF_DIR/skip_stop" ] && [ -n "$(find "$PROOF_DIR/skip_stop" -mmin -60 -print 2>/dev/null)" ]; then
   exit 0
 fi
 
