@@ -50,6 +50,8 @@ CLAUDE_ROLE must be set in the teammate's *process env* — this only applies to
 | Spawn implementer (persistent, independent process) | tmux pane: `claude-as-role eci-implementer ...` |
 | Spawn fresh-role agent | Agent tool with no `team_name` |
 
+**Teammate `subagent_type` must include team tools** (SendMessage, TaskUpdate, etc.). Use `general-purpose` (or any full-capability type). Read-only types — `feature-dev:code-explorer`, `feature-dev:code-architect`, `feature-dev:code-reviewer`, `Explore`, `Plan` — lack SendMessage and cannot reply to the lead. The teammate will then say it has no SendMessage and the cycle stalls.
+
 ### CLAUDE_ROLE per role (canonical)
 
 Stop-hook role allowlist references this table. Keep `hooks/stop-gate.sh` case statement and `bin/claude-as-role` allowlist in sync.
