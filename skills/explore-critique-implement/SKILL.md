@@ -37,20 +37,22 @@ Do not disengage mid-task to escape the gate — that is the regression this mar
 
 Persistent teammates handle Step 1 (explorer) and Step 3 (implementer) across iterations. Fresh-role work (Step 2 critic, Critic A, Critic B, E2E, brainstormer, loop-breaker) spawns fresh Agent-tool subagents — never SendMessage to a teammate.
 
-Every spawn — persistent or fresh — sets `CLAUDE_ROLE` per the canonical table below. Skip this and the Stop hook won't exempt the session.
+CLAUDE_ROLE must be set in the teammate's *process env* — this only applies to teammates launched as independent claude CLI processes (e.g. ATE-style tmux panes). Use `claude-as-role <role>` (or `CLAUDE_ROLE=<role> claude ...`) when launching. Setting CLAUDE_ROLE inside the spawn-prompt body has no effect — that's text the agent reads, not env. Agent-tool sidechain teammates (`team_name`+`name` to the Agent tool) do NOT fire the Stop hook in current Claude Code, so the env mechanism does not apply to them; only fresh subagents (E2E/critics/brainstormer) which also never fire Stop. The exemption is therefore only load-bearing when ECI teammates are launched as independent claude processes.
 
 ### Spawning
 
 | Action | Command |
 |--------|---------|
 | Create team | `TeamCreate eci-<short-task-slug>` |
-| Spawn explorer (persistent) | Agent tool: `team_name=eci-<slug>`, `name=explorer` |
-| Spawn implementer (persistent) | Agent tool: `team_name=eci-<slug>`, `name=implementer` |
+| Spawn explorer (persistent, sidechain) | Agent tool: `team_name=eci-<slug>`, `name=explorer` |
+| Spawn explorer (persistent, independent process) | tmux pane: `claude-as-role explorer ...` |
+| Spawn implementer (persistent, sidechain) | Agent tool: `team_name=eci-<slug>`, `name=implementer` |
+| Spawn implementer (persistent, independent process) | tmux pane: `claude-as-role eci-implementer ...` |
 | Spawn fresh-role agent | Agent tool with no `team_name` |
 
 ### CLAUDE_ROLE per role (canonical)
 
-Stop-hook role allowlist references this table. Keep `hooks/stop-gate.sh` case statement in sync.
+Stop-hook role allowlist references this table. Keep `hooks/stop-gate.sh` case statement and `bin/claude-as-role` allowlist in sync.
 
 | Role | CLAUDE_ROLE | Persistence |
 |------|-------------|-------------|
@@ -66,13 +68,13 @@ Stop-hook role allowlist references this table. Keep `hooks/stop-gate.sh` case s
 ### Explorer spawn-prompt baseline
 
 Per-message body in Step 1.
-- `name`/`team_name`/`CLAUDE_ROLE` per Team-setup canonical table.
+- `name`/`team_name` per Spawning table. For independent-process teammates, launch via `claude-as-role explorer` (sets CLAUDE_ROLE in process env).
 - "Treat each new task message as a fresh assignment per Step 1 of the ECI skill. Re-read every referenced file each turn — do not trust prior-turn reads."
 
 ### Implementer spawn-prompt baseline
 
 Per-message body in Step 3.
-- `name`/`team_name`/`CLAUDE_ROLE` per Team-setup canonical table.
+- `name`/`team_name` per Spawning table. For independent-process teammates, launch via `claude-as-role eci-implementer`.
 - "Treat each new task message as a fresh assignment per Step 3 of the ECI skill. Re-read every file you intend to modify each turn."
 - One commit per logical change.
 
@@ -312,7 +314,7 @@ Cycle limit defined in Escalation table (3 full cycles per change).
 | Brainstormer output filters/judges/picks a winner | Brainstormer is idea-only. Re-spawn with "no filtering, no negatives" |
 | Persistent teammate addressed for any fresh-role work (Step 2 critic, Critic A, Critic B, E2E, brainstormer, loop-breaker) | STOP. Spawn fresh Agent-tool subagent instead. |
 | Disengage without teardown sequence | STOP. Shutdown teammates → TeamDelete → eci-active off, in that order. |
-| Spawn-prompt missing CLAUDE_ROLE | STOP. Re-spawn with CLAUDE_ROLE per Team-setup canonical table. |
+| Independent-process teammate launched without `claude-as-role`/`CLAUDE_ROLE=` env prefix | STOP. Stop hook will gate every iteration. Re-launch via `claude-as-role <role>`. |
 
 ## Relationship to other skills
 

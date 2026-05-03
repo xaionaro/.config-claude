@@ -1,0 +1,42 @@
+#!/bin/bash
+# claude-as-role <role> [claude args...]
+#
+# Launches the standard `claude` wrapper with CLAUDE_ROLE set in the
+# child env. The Stop-hook gate (`hooks/stop-gate.sh`) reads CLAUDE_ROLE
+# from the running claude process's env to decide whether to skip the
+# stop-checklist proof flow.
+#
+# Setting CLAUDE_ROLE inside a spawn-prompt body has no effect — that's
+# text the spawned agent reads, not process env. Use this wrapper from
+# the launcher (team lead's `tmux send-keys ... claude-as-role <role>`).
+#
+# Allowlist matches the canonical role tables in:
+#   - skills/explore-critique-implement/SKILL.md
+#   - skills/agent-teams-execution/SKILL.md
+#   - hooks/stop-gate.sh case statement
+# Keep all four in sync.
+
+set -euo pipefail
+
+ROLE="${1:-}"
+if [ -z "$ROLE" ]; then
+  echo "usage: claude-as-role <role> [claude args...]" >&2
+  echo "  role must be one of:" >&2
+  echo "    snitch explorer brainstormer designer reviewer test-designer" >&2
+  echo "    test-reviewer verifier qa eci-implementer executor test-executor" >&2
+  echo "    lead coordinator" >&2
+  exit 2
+fi
+shift
+
+case "$ROLE" in
+  snitch|explorer|brainstormer|designer|reviewer|test-designer|test-reviewer|verifier|qa|eci-implementer|executor|test-executor|lead|coordinator)
+    ;;
+  *)
+    echo "claude-as-role: unknown role '$ROLE'" >&2
+    echo "  allowed: snitch explorer brainstormer designer reviewer test-designer test-reviewer verifier qa eci-implementer executor test-executor lead coordinator" >&2
+    exit 2 ;;
+esac
+
+export CLAUDE_ROLE="$ROLE"
+exec "$HOME/.claude/bin/claude" "$@"

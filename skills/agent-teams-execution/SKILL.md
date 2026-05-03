@@ -533,7 +533,7 @@ Review independently first — no reading peer findings before writing your own.
 - [ ] Reviewer/verifier spawns include: executor's original objective with full context, and all scrutiny rules (coding style, claim tagging, OWASP, semantic integrity, etc.)
 - [ ] Execution reviewer spawns include: explicit "Load the `<language>-coding-style` skill via Skill tool" instruction + shared concerns register
 - [ ] Preemptive warnings included: coordinator anticipates the most likely mistakes this agent could make given the specific task and explicitly warns against them in the spawn prompt
-- [ ] CLAUDE_ROLE env set to role name for every spawn (coordinator, explorer, designer, reviewer, executor, test-designer, test-executor, test-reviewer, verifier, qa, brainstormer, snitch)
+- [ ] Launched via `claude-as-role <role>` (or env-prefixed `CLAUDE_ROLE=<role> claude ...`) so the teammate's *process env* carries CLAUDE_ROLE. Setting CLAUDE_ROLE inside the spawn-prompt body does NOT propagate — the prompt is text the agent reads, not env. Allowed roles: coordinator, explorer, designer, reviewer, executor, test-designer, test-executor, test-reviewer, verifier, qa, brainstormer, snitch.
 
 Lead rejects spawn if any item unchecked.
 
@@ -607,7 +607,6 @@ Compliance:
 [After both spawned:] Paired with [CONFIRMED NAME]. Message directly.
 
 - [ROLE-SPECIFIC RULES]
-- Set env CLAUDE_ROLE=[role name] (e.g. executor, reviewer, coordinator, explorer, designer, verifier, qa, brainstormer, snitch)
 - [FOR EXECUTORS:] While implementing, actively look for code smell and design issues in all code you study or touch. Report ALL findings to coordinator — do not silently work around them.
 - [FOR EXECUTORS, code/debugging tasks:] Before "submitted": build, run full test suite, exercise the affected feature through real UI/API as a user. Cite direct evidence (output, screenshot, observed state) in submission. Proxy evidence (unit tests, lint) insufficient. No E2E evidence = coordinator bounces back without routing to reviewer.
 - Mark task as "submitted" (not "complete") + notify coordinator when done. **CC the lead and snitch on all submitted, blocked, and completed claims.**
