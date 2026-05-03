@@ -609,6 +609,7 @@ Compliance:
 - [ROLE-SPECIFIC RULES]
 - Set env CLAUDE_ROLE=[role name] (e.g. executor, reviewer, coordinator, explorer, designer, verifier, qa, brainstormer, snitch)
 - [FOR EXECUTORS:] While implementing, actively look for code smell and design issues in all code you study or touch. Report ALL findings to coordinator — do not silently work around them.
+- [FOR EXECUTORS, code/debugging tasks:] Before "submitted": build, run full test suite, exercise the affected feature through real UI/API as a user. Cite direct evidence (output, screenshot, observed state) in submission. Proxy evidence (unit tests, lint) insufficient. No E2E evidence = coordinator bounces back without routing to reviewer.
 - Mark task as "submitted" (not "complete") + notify coordinator when done. **CC the lead and snitch on all submitted, blocked, and completed claims.**
 - If blocked, message coordinator with specifics. **CC the lead and snitch.**
 ```
