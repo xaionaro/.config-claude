@@ -1,6 +1,6 @@
 ---
 name: explore-critique-implement
-description: Use when solving any non-trivial problem where the solution space is uncertain — research options via a separate agent, adversarially critique them via a different agent, then loop (implement → critique) until the critic finds nothing. Skip only for single-line or trivial changes.
+description: Use when solving any non-trivial problem where the solution space is uncertain — research options via a persistent explorer teammate, adversarially critique them via fresh agents, then loop (implement → critique) until the critic finds nothing. Skip only for single-line or trivial changes.
 ---
 
 # Explore-Critique-Implement
@@ -22,14 +22,73 @@ Coding task? Every subagent prompt (explorer, critic, implementer) must include:
 
 ## Engagement marker
 
-The PreToolUse gate `~/.claude/hooks/eci-active-gate.sh` denies direct Edit/Write/MultiEdit on the main thread while engaged. Every code change must flow through a subagent. Subagents (agent_id non-empty) bypass the gate.
+The PreToolUse gate `~/.claude/hooks/eci-active-gate.sh` denies direct Edit/Write/MultiEdit on the main thread while engaged. Every code change must flow through a subagent or teammate. Subagents and teammates write from their own session — the marker is keyed to the orchestrator's session and is absent in theirs, so neither trips this gate. The Stop hook exemption for `eci-implementer` uses a different scope — see `hooks/stop-gate.sh`.
 
 | Step | Command | When |
 |------|---------|------|
 | Engage | `~/.claude/bin/eci-active on "<task + scope>"` | Before Step 1 of the first iteration |
-| Disengage | `~/.claude/bin/eci-active off <disengage-report.md>` | Clean pass landed, hard escalate, or user confirms scope closed |
+| Disengage | See Teardown sequence below | Clean pass landed, hard escalate, or user confirms scope closed |
 
-Do not disengage mid-task to escape the gate — that is the regression this marker exists to catch. If a hand-edit feels necessary, spawn an implementer subagent for it.
+Do not disengage mid-task to escape the gate — that is the regression this marker exists to catch. If a hand-edit feels necessary, SendMessage the persistent `implementer` teammate.
+
+## Team setup
+
+**Teammate** = persistent (TeamCreate + named Agent + SendMessage). **Subagent** = fresh (Agent tool, no `team_name`).
+
+Persistent teammates handle Step 1 (explorer) and Step 3 (implementer) across iterations. Fresh-role work (Step 2 critic, Critic A, Critic B, E2E, brainstormer, loop-breaker) spawns fresh Agent-tool subagents — never SendMessage to a teammate.
+
+Every spawn — persistent or fresh — sets `CLAUDE_ROLE` per the canonical table below. Skip this and the Stop hook won't exempt the session.
+
+### Spawning
+
+| Action | Command |
+|--------|---------|
+| Create team | `TeamCreate eci-<short-task-slug>` |
+| Spawn explorer (persistent) | Agent tool: `team_name=eci-<slug>`, `name=explorer` |
+| Spawn implementer (persistent) | Agent tool: `team_name=eci-<slug>`, `name=implementer` |
+| Spawn fresh-role agent | Agent tool with no `team_name` |
+
+### CLAUDE_ROLE per role (canonical)
+
+Stop-hook role allowlist references this table. Keep `hooks/stop-gate.sh` case statement in sync.
+
+| Role | CLAUDE_ROLE | Persistence |
+|------|-------------|-------------|
+| Explorer | `explorer` | Persistent teammate |
+| Implementer | `eci-implementer` | Persistent teammate |
+| Step 2 critic | `reviewer` | Fresh subagent |
+| Critic A | `reviewer` | Fresh subagent |
+| Critic B | `reviewer` | Fresh subagent |
+| Loop-breaker | `reviewer` | Fresh subagent |
+| E2E agent | `verifier` | Fresh subagent |
+| Brainstormer | `brainstormer` | Fresh subagent |
+
+### Explorer spawn-prompt baseline
+
+Per-message body in Step 1.
+- `name`/`team_name`/`CLAUDE_ROLE` per Team-setup canonical table.
+- "Treat each new task message as a fresh assignment per Step 1 of the ECI skill. Re-read every referenced file each turn — do not trust prior-turn reads."
+
+### Implementer spawn-prompt baseline
+
+Per-message body in Step 3.
+- `name`/`team_name`/`CLAUDE_ROLE` per Team-setup canonical table.
+- "Treat each new task message as a fresh assignment per Step 3 of the ECI skill. Re-read every file you intend to modify each turn."
+- One commit per logical change.
+
+## Teardown sequence
+
+Run in this exact order on disengage. Stopping mid-sequence keeps the gate armed.
+
+1. Write disengage-report markdown (content per **Disengage report** below).
+2. SendMessage `commit any uncommitted work and confirm clean tree` to `implementer`; await ack.
+3. SendMessage `{"type": "shutdown_request"}` to `implementer`, then to `explorer`.
+4. Read incoming turns until both `shutdown_response` received OR 60s elapsed.
+   - If a teammate hasn't responded by 60s → `tmux kill-pane -t <pane>` (ATE harsh-fallback; see ATE Shutdown procedure for pane resolution).
+5. `TeamDelete eci-<slug>`.
+6. `~/.claude/bin/eci-active off <report.md>` (LAST — keeps gate armed if teardown fails partway).
+
+If the orchestrator's next Stop blocks for proof, copy the disengage report to `$PROOF_DIR/proof.md`.
 
 ### Disengage report
 
@@ -60,27 +119,27 @@ Each iteration tackles one change. All four steps run per iteration. Do not adva
 
 | Step | Phase | Actor | Output |
 |------|-------|-------|--------|
-| 1 | Explore | Separate research agent | Ranked options + cited sources |
-| 2 | Critique explorations | Different critic agent | Winner with CONCRETE TEXT |
-| 3 | Implement | Implementer (subagent or main) | One diff |
-| 4 | Review gate (parallel) | Critic A + Critic B + E2E agent | All three run concurrently; wait for all |
+| 1 | Explore | Persistent `explorer` teammate (SendMessage) | Ranked options + cited sources |
+| 2 | Critique explorations | Fresh Agent-tool subagent | Winner with CONCRETE TEXT |
+| 3 | Implement | Persistent `implementer` teammate (SendMessage) | One diff |
+| 4 | Review gate (parallel) | Critic A + Critic B + E2E agent — fresh Agent-tool subagents in parallel | All three run concurrently; wait for all |
 | Exit | Main thread | Apply / commit / report |
 
 Agent separation: see Red Flags. Main thread orchestrates; agents produce.
 
 ## Step 1: Explore
 
-Spawn a separate agent. Prompt must include:
+SendMessage to the persistent `explorer` teammate. Each per-message body must include:
 - The problem/change for THIS iteration, in full context.
 - What's already been tried or ruled out (iterations 2+: include results from prior iterations, current codebase state, and last blocking gate issues verbatim if a prior cycle's gate failed).
-- Exact file paths of existing related code — explorer must read them first to avoid suggesting duplicates.
+- Exact file paths of existing related code — explorer must re-read them this turn to avoid suggesting duplicates. "Re-read referenced files; do not trust prior turn reads."
 - Required output: ranked options, each with {what, why, where it applies, cost, tradeoffs}.
 - Required citations tagged T1-T5 per `claim verification` hierarchy. Primary sources only for T1.
 - Word cap on the report (default: 1000 words).
 
 ## Step 2: Critique explorations
 
-Spawn a DIFFERENT agent — not the explorer, not the main thread.
+Spawn a DIFFERENT agent — not the explorer, not the main thread. Spawn as a fresh Agent-tool subagent. MUST NOT SendMessage to the persistent `explorer` or `implementer` teammate.
 
 The critic's prompt must include:
 - **Original user requirements verbatim.** The critic must verify options against what the user actually asked for, not just technical soundness.
@@ -102,13 +161,19 @@ The critic's prompt must include:
 
 ## Step 3: Implement
 
-One change, one diff. Code tasks: implementer invokes `superpowers:test-driven-development`, `debugging-discipline`, and the applicable `<language>-coding-style` skill.
+SendMessage to the persistent `implementer` teammate. One change, one diff per message. Code tasks: implementer invokes `superpowers:test-driven-development`, `debugging-discipline`, and the applicable `<language>-coding-style` skill on each new task message; re-reads every file it intends to modify.
+
+Each new task message to `implementer` includes:
+- The current iteration's concrete-text from the Step 2 critic (verbatim).
+- Iterations 2+: prior iteration's gate findings (verbatim) and files changed since the last message.
 
 **E2E before submit (code/debugging tasks).** Implementer must, before reporting done: build, run full test suite, exercise the affected feature through real UI/API as a user. Cite direct evidence (output, screenshot, observed state). Proxy evidence (unit tests, lint) insufficient. No E2E evidence in submission = orchestrator bounces back without spawning the gate.
 
+If submission lacks E2E evidence, SendMessage: "Submission lacks E2E evidence — re-run build, test suite, and user-path exercise; cite output. Do not re-submit until evidence is in the message body."
+
 ## Step 4: Review gate (parallel)
 
-Spawn all three agents in a single message (parallel Agent tool calls). Wait for all three to complete before evaluating results. Every reviewer prompt must include the **original user requirements verbatim** — reviewers catch requirement deviations, not just technical issues.
+Spawn all three as fresh Agent-tool subagents in a single message (three parallel Agent tool calls). Each MUST NOT SendMessage to the persistent `explorer` or `implementer` teammate. Wait for all three to complete before evaluating results. Every reviewer prompt must include the **original user requirements verbatim** — reviewers catch requirement deviations, not just technical issues.
 
 ### Issue severity codes
 
@@ -178,6 +243,7 @@ Fresh idea generator — fires on-demand when the cycle stalls. Output is raw id
 
 ### Constraints
 
+- Spawned as fresh Agent-tool subagent; never SendMessage to a persistent teammate.
 - Must NOT be any cycle agent (explorer, Step 2 critic, implementer, Critic A, Critic B, E2E, loop-breaker).
 - Each invocation = distinct fresh agent.
 - Ideas only — the next cycle agent does the filtering.
@@ -204,6 +270,7 @@ A FRESH agent — not any of the cycle agents — gets one chance to break the l
 
 ### Constraints
 
+- Spawned as fresh Agent-tool subagent; never an existing teammate.
 - Must NOT be any of the 6 cycle agents (explorer, Step 2 critic, implementer, Critic A, Critic B, E2E agent).
 - Reads code and issues independently — no reliance on prior agent summaries.
 - One invocation per change. Granted retry fails → escalate to user.
@@ -243,12 +310,15 @@ Cycle limit defined in Escalation table (3 full cycles per change).
 | Winner lacks concrete text | Critic under-specified. Re-spawn with "concrete text required" |
 | No rejected list in Step 2 | Critic is not adversarial. Re-spawn |
 | Brainstormer output filters/judges/picks a winner | Brainstormer is idea-only. Re-spawn with "no filtering, no negatives" |
+| Persistent teammate addressed for any fresh-role work (Step 2 critic, Critic A, Critic B, E2E, brainstormer, loop-breaker) | STOP. Spawn fresh Agent-tool subagent instead. |
+| Disengage without teardown sequence | STOP. Shutdown teammates → TeamDelete → eci-active off, in that order. |
+| Spawn-prompt missing CLAUDE_ROLE | STOP. Re-spawn with CLAUDE_ROLE per Team-setup canonical table. |
 
 ## Relationship to other skills
 
 | Skill | Difference |
 |-------|-----------|
 | `superpowers:brainstorming` | Explores user intent before design. This skill explores solutions after intent is clear. |
-| `agent-teams-execution` | Full multi-role pipeline for large builds. This skill is the medium-task pattern (explore → critique → implement → parallel review gate). Borrow its Snitch rubber-stamp check: critic citing zero issues beyond producer's self-reports = re-spawn with harsher prompt. |
+| `agent-teams-execution` | Full multi-role pipeline for large builds. This skill is the medium-task pattern (explore → critique → implement → parallel review gate). ECI shares the team mechanism (TeamCreate / SendMessage / TeamDelete + harsh-fallback `tmux kill-pane` per ATE Shutdown procedure) for the persistent explorer + implementer. Borrow its Snitch rubber-stamp check: critic citing zero issues beyond producer's self-reports = re-spawn with harsher prompt. |
 | `superpowers:systematic-debugging` | For diagnosing a known bug. This skill is for open-ended improvement/design research. |
 | `proof-driven-development` | Proves correctness of logic. This skill selects which logic to build. |
