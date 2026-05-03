@@ -76,6 +76,12 @@ case "$FILE_PATH" in
     REQUIRED+=("python-coding-style") ;;
 esac
 
+# UI files: ui-design (covers QML/Qt Quick).
+case "$FILE_PATH" in
+  *.qml|*.qmldir|*.qmltypes)
+    REQUIRED+=("ui-design") ;;
+esac
+
 # Harness: anything under ~/.claude/{skills,hooks,CLAUDE.md} or any CLAUDE.md.
 case "$FILE_PATH" in
   "$HOME/.claude/skills/"*|"$HOME/.claude/hooks/"*) REQUIRED+=("harness-tuning") ;;

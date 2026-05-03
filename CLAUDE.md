@@ -86,6 +86,7 @@ Walk through every entry below before starting work. For each, decide: does it a
 8. Medium coding task? (investigation, single-feature impl, "why does X not work?") → `explore-critique-implement`
 9. Large coding task? (productionization, multi-module features, system-wide refactors, "build/productionize X") → `agent-teams-execution`
 10. Writing or editing skills, system prompts, CLAUDE.md? → `harness-tuning`
+11. UI code? (writing, reviewing, modifying *.qml, *.qmldir, *.qmltypes, or any UI surface) → `ui-design`
 
 # Environment
 
