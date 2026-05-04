@@ -372,11 +372,14 @@ auth middleware swap
 | Winner lacks concrete text | Critic under-specified. Re-spawn with "concrete text required" |
 | No rejected list in Step 2 | Critic is not adversarial. Re-spawn |
 | Brainstormer output filters/judges/picks a winner | Brainstormer is idea-only. Re-spawn with "no filtering, no negatives" |
-| Persistent teammate addressed for any fresh-role work (Step 2 critic, Critic A, Critic B, E2E, brainstormer, loop-breaker) | STOP. Spawn fresh Agent-tool subagent instead. |
+| Persistent explorer or implementer teammate addressed for any fresh-role work (Step 2 critic, Critic A, Critic B, E2E, brainstormer, loop-breaker) | STOP. Use a fresh-identity agent — either a new subagent or a new critic teammate. The producer (explorer/implementer) must never act as critic. |
 | Disengage without teardown sequence | STOP. Shutdown teammates → TeamDelete → eci-active off, in that order. |
 | Independent-process teammate launched without `claude-as-role`/`CLAUDE_ROLE=` env prefix | STOP. Stop hook will gate every iteration. Re-launch via `claude-as-role <role>`. |
 | Status report uses task/iteration numbers, or flat-lists nested work | See **Status reports** section. |
 | "Fresh context needed" → spawned fresh Agent-tool subagent for Step 1 or Step 3 | Persistent teammate already provides fresh context per message (spawn-prompt baseline). SendMessage to existing explorer/implementer; do not spawn fresh. |
+| Critic absorbed CONDITIONALs by rewriting option | STOP. Critic tags only — orchestrator folds CONDITIONALs into Step 3 SendMessage body. |
+| Orchestrator forgot to pass Step 2 CONDITIONALs to implementer | STOP. Step 3 message must include verbatim CONDITIONAL fix-list. |
+| Submission accepted with untagged factual claims | STOP. Tag-audit failure = REJECT in current gate (per Critic A/B rule). |
 
 ## Relationship to other skills
 
