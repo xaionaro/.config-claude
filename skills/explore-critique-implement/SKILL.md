@@ -1,6 +1,6 @@
 ---
 name: explore-critique-implement
-description: Use when solving any non-trivial problem where the solution space is uncertain — research options via a persistent explorer teammate, adversarially critique them via fresh agents, then loop (implement → critique) until the critic finds nothing. Skip only for single-line or trivial changes.
+description: Use when solving any non-trivial problem where the solution space is uncertain — research options via a persistent explorer teammate, adversarially critique them via separately-spawned critic teammates, then loop (implement → critique) until the critic finds nothing. Skip only for single-line or trivial changes.
 ---
 
 # Explore-Critique-Implement
@@ -33,15 +33,15 @@ Do not disengage mid-task to escape the gate — that is the regression this mar
 
 ## Team setup
 
-**Teammate** = persistent (TeamCreate + named Agent + SendMessage). **Subagent** = fresh (Agent tool, no `team_name`).
+**Teammate** = persistent (TeamCreate + named Agent + SendMessage). **Subagent** = one-shot Agent tool call without `team_name`. ECI uses teammates for every cycle role; subagents are not used.
 
-Persistent teammates handle Step 1 (explorer) and Step 3 (implementer) across iterations. Fresh-role work (Step 2 critic, Critic A, Critic B, E2E, brainstormer, loop-breaker) spawns fresh Agent-tool subagents — never SendMessage to a teammate.
+Persistent teammates handle Step 1 (explorer) and Step 3 (implementer) across iterations. Critic-role work (Step 2 critic, Critic A, Critic B, brainstormer, loop-breaker) is also done by persistent teammates — not the explorer or implementer, but separately-spawned critic teammates with their own identity. E2E agent is also a teammate. The producer (explorer/implementer) must never act as critic.
 
-**"Persistent" ≠ "carries cross-iteration context".** The persistent teammate's spawn-prompt baseline already forces fresh-assignment treatment each message (re-read referenced files, no prior-turn trust). Spawning a new Agent-tool subagent for Step 1 or Step 3 because "fresh context is needed" defeats the persistent role — SendMessage to the existing teammate already gives that. The fresh-vs-persistent split is about *agent identity for adversarial separation* (critic must not be the producer), not about context staleness.
+**"Persistent" ≠ "carries cross-iteration context".** The persistent teammate's spawn-prompt baseline already forces fresh-assignment treatment each message (re-read referenced files, no prior-turn trust). Spawning a new agent for Step 1 or Step 3 because "fresh context is needed" defeats the persistent role — SendMessage to the existing teammate already gives that. The producer-vs-critic split is about *agent identity for adversarial separation* (critic must not be the producer), not about context staleness.
 
-**Critic teammate alternative.** Step 2 critic, Critic A, Critic B, brainstormer, and loop-breaker can be implemented as either fresh Agent-tool subagents OR as new persistent critic teammates (TeamCreate-spawned with role-suffix names like `critic-r1`, `critic-r2`, `critic-A`, `critic-B`). Each round/cycle requires a new identity (TeamDelete prior + new spawn), satisfying bias-freedom. Both implementations satisfy adversarial separation; choose by orchestration convenience.
+**Critic identity rule.** Step 2 critic, Critic A, Critic B, brainstormer, and loop-breaker are spawned as persistent teammates via the Agent tool with `team_name=eci-<slug>` and a unique role-name (`critic-r<N>`, `critic-A`, `critic-B`, `brainstormer`, `loop-breaker`). Adversarial separation = identity rule (critic ≠ producer). Bias-freedom between rounds/invocations is achieved by either sending `/clear` to the existing teammate (clears its context while preserving identity) or shutting it down and respawning under the same name. Do not rely on persistent-context "carrying over" — each round must start clean. The fresh-Agent-tool-subagent path (no `team_name`) is not used for critic-class roles.
 
-CLAUDE_ROLE must be set in the teammate's *process env* — this only applies to teammates launched as independent claude CLI processes (e.g. ATE-style tmux panes). Use `claude-as-role <role>` (or `CLAUDE_ROLE=<role> claude ...`) when launching. Setting CLAUDE_ROLE inside the spawn-prompt body has no effect — that's text the agent reads, not env. Agent-tool sidechain teammates (`team_name`+`name` to the Agent tool) do NOT fire the Stop hook in current Claude Code, so the env mechanism does not apply to them; only fresh subagents (E2E/critics/brainstormer) which also never fire Stop. The TeamCreate-spawned `team-lead` pseudo-role is the orchestrator's own session — it has no separate Stop hook either; the orchestrator's stop serves as the lead's. The exemption is therefore only load-bearing when ECI teammates are launched as independent claude processes.
+CLAUDE_ROLE must be set in the teammate's *process env* — this only applies to teammates launched as independent claude CLI processes (e.g. ATE-style tmux panes). Use `claude-as-role <role>` (or `CLAUDE_ROLE=<role> claude ...`) when launching. Setting CLAUDE_ROLE inside the spawn-prompt body has no effect — that's text the agent reads, not env. Agent-tool sidechain teammates (`team_name`+`name` to the Agent tool) do NOT fire the Stop hook in current Claude Code, so the env mechanism does not apply to them. The TeamCreate-spawned `team-lead` pseudo-role is the orchestrator's own session — it has no separate Stop hook either; the orchestrator's stop serves as the lead's. The exemption is therefore only load-bearing when ECI teammates are launched as independent claude processes.
 
 ### Spawning
 
@@ -52,9 +52,11 @@ CLAUDE_ROLE must be set in the teammate's *process env* — this only applies to
 | Spawn explorer (persistent, independent process) | tmux pane: `claude-as-role explorer ...` |
 | Spawn implementer (persistent, sidechain) | Agent tool: `team_name=eci-<slug>`, `name=implementer` |
 | Spawn implementer (persistent, independent process) | tmux pane: `claude-as-role eci-implementer ...` |
-| Spawn Step 2 critic (persistent, sidechain) | Agent tool: `team_name=eci-<slug>`, `name=critic-r<N>` (TeamDelete prior critic between rounds) |
+| Spawn Step 2 critic (persistent, sidechain) | Agent tool: `team_name=eci-<slug>`, `name=critic-r<N>` (refresh between rounds via `/clear` or shutdown+respawn) |
 | Spawn Step 4 critic-A / critic-B (persistent, sidechain) | Agent tool: `team_name=eci-<slug>`, `name=critic-A` / `critic-B` |
-| Spawn fresh-role agent | Agent tool with no `team_name` |
+| Spawn E2E agent (persistent, sidechain) | Agent tool: `team_name=eci-<slug>`, `name=e2e-<gate-N>` |
+| Spawn brainstormer (persistent, sidechain) | Agent tool: `team_name=eci-<slug>`, `name=brainstormer` |
+| Spawn loop-breaker (persistent, sidechain) | Agent tool: `team_name=eci-<slug>`, `name=loop-breaker` |
 
 **Teammate `subagent_type` must include team tools** (SendMessage, TaskUpdate, etc.). Use `general-purpose` (or any full-capability type). Read-only types — `feature-dev:code-explorer`, `feature-dev:code-architect`, `feature-dev:code-reviewer`, `Explore`, `Plan` — lack SendMessage and cannot reply to the lead. The teammate will then say it has no SendMessage and the cycle stalls.
 
@@ -66,13 +68,12 @@ Stop-hook role allowlist references this table. Keep `hooks/stop-gate.sh` case s
 |------|-------------|-------------|
 | Explorer | `explorer` | Persistent teammate |
 | Implementer | `eci-implementer` | Persistent teammate |
-| Step 2 critic | `reviewer` | Fresh subagent |
-| Critic A | `reviewer` | Fresh subagent |
-| Critic B | `reviewer` | Fresh subagent |
-| Loop-breaker | `reviewer` | Fresh subagent |
-| Critic teammate (alternative) | `reviewer` | Persistent teammate, single-shot per round/cycle |
-| E2E agent | `verifier` | Fresh subagent |
-| Brainstormer | `brainstormer` | Fresh subagent |
+| Step 2 critic | `reviewer` | Persistent teammate (per-round identity refresh via `/clear` or shutdown+respawn) |
+| Critic A | `reviewer` | Persistent teammate (per-round identity refresh via `/clear` or shutdown+respawn) |
+| Critic B | `reviewer` | Persistent teammate (per-round identity refresh via `/clear` or shutdown+respawn) |
+| Loop-breaker | `reviewer` | Persistent teammate (per-round identity refresh via `/clear` or shutdown+respawn) |
+| E2E agent | `verifier` | Persistent teammate (per-round identity refresh via `/clear` or shutdown+respawn) |
+| Brainstormer | `brainstormer` | Persistent teammate (per-round identity refresh via `/clear` or shutdown+respawn) |
 
 ### Explorer spawn-prompt baseline
 
@@ -132,9 +133,9 @@ Each iteration tackles one change. All four steps run per iteration. Do not adva
 | Step | Phase | Actor | Output |
 |------|-------|-------|--------|
 | 1 | Explore | Persistent `explorer` teammate (SendMessage) | Ranked options + cited sources |
-| 2 | Critique explorations | Fresh Agent-tool subagent | Winner with concrete text + tagged CONDITIONAL/NIT list (one explorer revision round permitted on all-REJECT) |
+| 2 | Critique explorations | Critic teammate (per round, refresh via `/clear` or shutdown+respawn) | Winner with concrete text + tagged CONDITIONAL/NIT list (one explorer revision round permitted on all-REJECT) |
 | 3 | Implement | Persistent `implementer` teammate (SendMessage) | One diff |
-| 4 | Review gate (parallel) | Critic A + Critic B + E2E agent — fresh Agent-tool subagents in parallel | All three run concurrently; wait for all |
+| 4 | Review gate (parallel) | Critic A + Critic B + E2E teammates in parallel | All three run concurrently; wait for all |
 | Exit | Main thread | Apply / commit / report |
 
 Agent separation: see Red Flags. Main thread orchestrates; agents produce.
@@ -151,7 +152,7 @@ SendMessage to the persistent `explorer` teammate. Each per-message body must in
 
 ## Step 2: Critique explorations
 
-Spawn a DIFFERENT agent — not the explorer, not the main thread. The critic identity must differ from explorer, implementer, and the prior round's critic. Spawn the critic as a new persistent teammate via the Agent tool with `team_name=eci-<slug>` and a unique `name=critic-r<N>` (round) or `name=critic-A` / `critic-B` (Step 4). Each new round/cycle requires a fresh identity — TeamDelete the prior critic teammate before spawning the next. MUST NOT reuse the persistent explorer or implementer teammate for critic work, and MUST NOT spawn the critic as a fresh Agent-tool subagent (no `team_name`) — those are not addressable, not trackable in the team task list, and not aligned with the rest of the cycle's mechanics.
+Spawn a DIFFERENT agent — not the explorer, not the main thread. The critic identity must differ from explorer and implementer. Spawn the critic as a persistent teammate via the Agent tool with `team_name=eci-<slug>` and a unique `name=critic-r<N>` (round) or `name=critic-A` / `critic-B` (Step 4). Each new round must start with a clean critic context — either send `/clear` to the existing critic teammate (preserves identity, clears history) or shut it down and respawn under the same name. MUST NOT reuse the persistent explorer or implementer teammate for critic work; critics are teammates.
 
 The critic's prompt must include:
 - **Original user requirements verbatim.** The critic must verify options against what the user actually asked for, not just technical soundness.
@@ -211,7 +212,7 @@ If submission lacks E2E evidence, SendMessage: "Submission lacks E2E evidence �
 
 ## Step 4: Review gate (parallel)
 
-Spawn all three as fresh Agent-tool subagents in a single message (three parallel Agent tool calls). Each MUST NOT SendMessage to the persistent `explorer` or `implementer` teammate. Wait for all three to complete before evaluating results. Every reviewer prompt must include the **original user requirements verbatim** — reviewers catch requirement deviations, not just technical issues.
+Spawn all three as critic teammates in a single message (three parallel Agent tool calls with `team_name=eci-<slug>` and `name=critic-A` / `critic-B` / `e2e-<gate-N>`). Each MUST NOT SendMessage to the persistent `explorer` or `implementer` teammate. Wait for all three to complete before evaluating results. Every reviewer prompt must include the **original user requirements verbatim** — reviewers catch requirement deviations, not just technical issues.
 
 ### Issue severity codes
 
@@ -284,14 +285,14 @@ Fresh idea generator — fires on-demand when the cycle stalls. Output is raw id
 
 ### Constraints
 
-- Spawned as fresh Agent-tool subagent; never SendMessage to a persistent teammate.
-- Must NOT be any cycle agent (explorer, Step 2 critic, implementer, Critic A, Critic B, E2E, loop-breaker).
-- Each invocation = distinct fresh agent.
+- Spawned as critic teammate via Agent tool with `team_name=eci-<slug>`, `name=brainstormer`; never SendMessage to the explorer or implementer teammate.
+- Must NOT be any other cycle agent (explorer, Step 2 critic, implementer, Critic A, Critic B, E2E, loop-breaker).
+- Each invocation refreshes context via `/clear` or shutdown+respawn — start each idea-burst clean.
 - Ideas only — the next cycle agent does the filtering.
 
 ## Loop-breaker
 
-A FRESH agent — not any of the cycle agents — gets one chance to break the loop before escalating to the user.
+A separate teammate — not any of the cycle agents — gets one chance to break the loop before escalating to the user.
 
 **One loop-breaker invocation per change**, regardless of trigger. If the granted retry fails → hard escalate to user.
 
@@ -311,7 +312,7 @@ A FRESH agent — not any of the cycle agents — gets one chance to break the l
 
 ### Constraints
 
-- Spawned as fresh Agent-tool subagent; never an existing teammate.
+- Spawned as critic teammate via Agent tool with `team_name=eci-<slug>`, `name=loop-breaker`; refresh context via `/clear` or shutdown+respawn between invocations.
 - Must NOT be any of the 6 cycle agents (explorer, Step 2 critic, implementer, Critic A, Critic B, E2E agent).
 - Reads code and issues independently — no reliance on prior agent summaries.
 - One invocation per change. Granted retry fails → escalate to user.
@@ -372,11 +373,11 @@ auth middleware swap
 | Winner lacks concrete text | Critic under-specified. Re-spawn with "concrete text required" |
 | No rejected list in Step 2 | Critic is not adversarial. Re-spawn |
 | Brainstormer output filters/judges/picks a winner | Brainstormer is idea-only. Re-spawn with "no filtering, no negatives" |
-| Persistent explorer or implementer teammate addressed for any fresh-role work (Step 2 critic, Critic A, Critic B, E2E, brainstormer, loop-breaker) | STOP. Use a fresh-identity agent — either a new subagent or a new critic teammate. The producer (explorer/implementer) must never act as critic. |
+| Persistent explorer or implementer teammate addressed for any critic-role work (Step 2 critic, Critic A, Critic B, brainstormer, loop-breaker) | STOP. Spawn a separate critic teammate via Agent tool with `team_name`+`name`; the producer (explorer/implementer) must never act as critic. |
 | Disengage without teardown sequence | STOP. Shutdown teammates → TeamDelete → eci-active off, in that order. |
 | Independent-process teammate launched without `claude-as-role`/`CLAUDE_ROLE=` env prefix | STOP. Stop hook will gate every iteration. Re-launch via `claude-as-role <role>`. |
 | Status report uses task/iteration numbers, or flat-lists nested work | See **Status reports** section. |
-| "Fresh context needed" → spawned fresh Agent-tool subagent for Step 1 or Step 3 | Persistent teammate already provides fresh context per message (spawn-prompt baseline). SendMessage to existing explorer/implementer; do not spawn fresh. |
+| "Fresh context needed" → spawned a separate agent for Step 1 or Step 3 instead of SendMessage'ing the existing teammate | The persistent teammate provides fresh context per message via the spawn-prompt baseline. SendMessage to existing explorer/implementer; do not spawn fresh. |
 | Critic absorbed CONDITIONALs by rewriting option | STOP. Critic tags only — orchestrator folds CONDITIONALs into Step 3 SendMessage body. |
 | Orchestrator forgot to pass Step 2 CONDITIONALs to implementer | STOP. Step 3 message must include verbatim CONDITIONAL fix-list. |
 | Submission accepted with untagged factual claims | STOP. Tag-audit failure = REJECT in current gate (per Critic A/B rule). |
