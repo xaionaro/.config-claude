@@ -39,6 +39,8 @@ Persistent teammates handle Step 1 (explorer) and Step 3 (implementer) across it
 
 **"Persistent" ≠ "carries cross-iteration context".** The persistent teammate's spawn-prompt baseline already forces fresh-assignment treatment each message (re-read referenced files, no prior-turn trust). Spawning a new Agent-tool subagent for Step 1 or Step 3 because "fresh context is needed" defeats the persistent role — SendMessage to the existing teammate already gives that. The fresh-vs-persistent split is about *agent identity for adversarial separation* (critic must not be the producer), not about context staleness.
 
+**Critic teammate alternative.** Step 2 critic, Critic A, Critic B, brainstormer, and loop-breaker can be implemented as either fresh Agent-tool subagents OR as new persistent critic teammates (TeamCreate-spawned with role-suffix names like `critic-r1`, `critic-r2`, `critic-A`, `critic-B`). Each round/cycle requires a new identity (TeamDelete prior + new spawn), satisfying bias-freedom. Both implementations satisfy adversarial separation; choose by orchestration convenience.
+
 CLAUDE_ROLE must be set in the teammate's *process env* — this only applies to teammates launched as independent claude CLI processes (e.g. ATE-style tmux panes). Use `claude-as-role <role>` (or `CLAUDE_ROLE=<role> claude ...`) when launching. Setting CLAUDE_ROLE inside the spawn-prompt body has no effect — that's text the agent reads, not env. Agent-tool sidechain teammates (`team_name`+`name` to the Agent tool) do NOT fire the Stop hook in current Claude Code, so the env mechanism does not apply to them; only fresh subagents (E2E/critics/brainstormer) which also never fire Stop. The TeamCreate-spawned `team-lead` pseudo-role is the orchestrator's own session — it has no separate Stop hook either; the orchestrator's stop serves as the lead's. The exemption is therefore only load-bearing when ECI teammates are launched as independent claude processes.
 
 ### Spawning
@@ -50,6 +52,8 @@ CLAUDE_ROLE must be set in the teammate's *process env* — this only applies to
 | Spawn explorer (persistent, independent process) | tmux pane: `claude-as-role explorer ...` |
 | Spawn implementer (persistent, sidechain) | Agent tool: `team_name=eci-<slug>`, `name=implementer` |
 | Spawn implementer (persistent, independent process) | tmux pane: `claude-as-role eci-implementer ...` |
+| Spawn Step 2 critic (persistent, sidechain) | Agent tool: `team_name=eci-<slug>`, `name=critic-r<N>` (TeamDelete prior critic between rounds) |
+| Spawn Step 4 critic-A / critic-B (persistent, sidechain) | Agent tool: `team_name=eci-<slug>`, `name=critic-A` / `critic-B` |
 | Spawn fresh-role agent | Agent tool with no `team_name` |
 
 **Teammate `subagent_type` must include team tools** (SendMessage, TaskUpdate, etc.). Use `general-purpose` (or any full-capability type). Read-only types — `feature-dev:code-explorer`, `feature-dev:code-architect`, `feature-dev:code-reviewer`, `Explore`, `Plan` — lack SendMessage and cannot reply to the lead. The teammate will then say it has no SendMessage and the cycle stalls.
@@ -66,6 +70,7 @@ Stop-hook role allowlist references this table. Keep `hooks/stop-gate.sh` case s
 | Critic A | `reviewer` | Fresh subagent |
 | Critic B | `reviewer` | Fresh subagent |
 | Loop-breaker | `reviewer` | Fresh subagent |
+| Critic teammate (alternative) | `reviewer` | Persistent teammate, single-shot per round/cycle |
 | E2E agent | `verifier` | Fresh subagent |
 | Brainstormer | `brainstormer` | Fresh subagent |
 
@@ -197,6 +202,8 @@ SendMessage to the persistent `implementer` teammate. One change, one diff per m
 Each new task message to `implementer` includes:
 - The current iteration's concrete-text from the Step 2 critic (verbatim).
 - Iterations 2+: prior iteration's gate findings (verbatim) and files changed since the last message.
+- Step 2 CONDITIONAL fix-list (verbatim, if any) — implementer applies these alongside the concrete text.
+- Submission tags every factual claim. Untagged claim → orchestrator bounces back without spawning the gate (parallel to E2E-evidence rule).
 
 **E2E before submit (code/debugging tasks).** Implementer must, before reporting done: build, run full test suite, exercise the affected feature through real UI/API as a user. Cite direct evidence (output, screenshot, observed state). Proxy evidence (unit tests, lint) insufficient. No E2E evidence in submission = orchestrator bounces back without spawning the gate.
 
@@ -216,11 +223,13 @@ Every issue from Critic A and Critic B must carry exactly one code:
 | **CONDITIONAL** | Fix needed, but obvious/trivial enough to trust without re-review | Must be fixed; no re-run needed |
 | **NIT** | Soft recommendation | May be ignored |
 
-Both critics tag every issue per the severity codes table above.
+Both critics tag every issue per the severity codes table above. Same vocabulary as Step 2; Effect differs (re-implement vs. re-explore).
 
 ### Critic A — correctness
 
 Emit only issues affecting correctness, safety, or fidelity to the concrete text. Interface contract fulfillment — does every interface implementation actually work, not just compile? Polish and taste items are NITs at most.
+
+Tag-discipline audit: every factual claim in the implementer's submission must carry a T1-T5 tag per CLAUDE.md Claim Verification protocol. Untagged factual claim = REJECT.
 
 ### Critic B — long-term health
 
@@ -231,6 +240,7 @@ Focus — adversarial, long-term lens:
 - **Coding style**: Load the applicable `<language>-coding-style` skill. Does the diff follow naming, error handling, structure, and idiom conventions?
 - **Code smells**: God methods, feature envy, primitive obsession, duplicated logic, unclear names, missing/premature abstractions. Flag only smells that materially hurt readability or maintainability.
 - **Architectural fit**: Right layer? Respects module boundaries? Code in correct binary/package per its stated purpose?
+- **Tag-discipline**: every factual claim in submission carries T1-T5 per CLAUDE.md Claim Verification. Untagged factual claim = REJECT.
 
 Emit only issues that matter for long-term health. "Would refactor eventually" is not an issue — "will cause bugs or confusion within 3 months" is.
 
@@ -262,7 +272,7 @@ Fresh idea generator — fires on-demand when the cycle stalls. Output is raw id
 | Trigger | Action |
 |---------|--------|
 | Explorer returned zero viable options | Spawn brainstormer → feed ideas into a new explorer |
-| Step 2 critic rejected every option | Spawn brainstormer → feed ideas into a new explorer |
+| Step 2 bounce cap reached (one explorer revision round did not yield a clean option) | Spawn brainstormer → feed ideas into a new explorer |
 | Implementer dead-end inside Step 3 | Spawn brainstormer → feed ideas into a new implementer prompt |
 
 ### Prompt requirements
@@ -315,6 +325,7 @@ Single decision table for all limit hits. One loop-breaker per change total.
 | Gate retry cap | 3 gate retries failed within one cycle | Invoke loop-breaker (if not yet used for this change) | Hard escalate to user |
 | Cycle limit | 3 full cycles failed for one change | Invoke loop-breaker (if not yet used for this change) | Hard escalate to user |
 | Loop-breaker already used | Either limit hit but loop-breaker was consumed by prior trigger | Skip loop-breaker → hard escalate to user immediately | — |
+| Step 2 post-brainstormer all-REJECT | Brainstormer fired and new explorer's options still all-REJECT after one revision | Hard escalate to user | — |
 
 **Hard escalate** = report to user with: (a) original problem, (b) what each cycle tried, (c) loop-breaker's assessment (if invoked), (d) last blocking issue, (e) next-best alternative from explorer's ranking. Silent punts forbidden.
 
