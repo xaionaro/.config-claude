@@ -337,7 +337,7 @@ auth middleware swap
 | Persistent teammate addressed for any fresh-role work (Step 2 critic, Critic A, Critic B, E2E, brainstormer, loop-breaker) | STOP. Spawn fresh Agent-tool subagent instead. |
 | Disengage without teardown sequence | STOP. Shutdown teammates → TeamDelete → eci-active off, in that order. |
 | Independent-process teammate launched without `claude-as-role`/`CLAUDE_ROLE=` env prefix | STOP. Stop hook will gate every iteration. Re-launch via `claude-as-role <role>`. |
-| Status report uses task/iteration numbers, or flat-lists nested work | See **Status reports** below. |
+| Status report uses task/iteration numbers, or flat-lists nested work | See **Status reports** section. |
 
 ## Relationship to other skills
 
