@@ -13,15 +13,13 @@ A handover is a self-contained markdown file. A fresh agent with the file plus r
 |------|-----------|----------|
 | Output destination | Live context (replaces history) | File on disk |
 | Continuation actor | Same session, same agent | Different session, agent, or human |
-| Persistence | Lost on `/clear` or session end | Survives indefinitely |
-| Skills carried forward | Auto-reattached (5k tokens each, 25k combined budget) | Successor must reload skills |
+| Persistence | Lost on `/clear`; bound to originating session | Survives indefinitely |
+| Skills carried forward | Auto-reattached after summarization | Successor must reload skills |
 | Use when | Mid-session, near full | Wrapping session with unfinished work |
-
-If the session can continue, do not write a handover. Use `/compact <focus>` instead.
 
 ## Required sections
 
-Every section is mandatory. Empty section: write `N/A — <one-line reason>`. Never omit.
+Every section is mandatory. Empty section: write `N/A — <one-line reason>`.
 
 | # | Section | Must contain |
 |---|---------|--------------|
@@ -55,13 +53,4 @@ Every section is mandatory. Empty section: write `N/A — <one-line reason>`. Ne
 | Skipping Tried & ruled out | Successor repeats dead ends — defeats the document. |
 | Embedding large logs inline | Link to `/tmp/<log>.txt`; keep handover scannable. |
 | Editorializing ("this was tricky") | Delete. |
-
-## Red flags
-
-| Symptom | Fix |
-|---------|-----|
-| References "this conversation" / "earlier" | Replace with absolute pointers. |
-| Next action lacks success criterion | Rewrite until pass/fail observable. |
-| No Open questions | Force entry or "N/A — explicit reason". |
 | Decisions missing Why | Add — without why, successor cannot judge edge cases. |
-| Handover written when session can continue | Use `/compact <focus>` instead. |
