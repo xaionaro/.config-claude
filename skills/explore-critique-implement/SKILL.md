@@ -37,6 +37,8 @@ Do not disengage mid-task to escape the gate — that is the regression this mar
 
 Persistent teammates handle Step 1 (explorer) and Step 3 (implementer) across iterations. Fresh-role work (Step 2 critic, Critic A, Critic B, E2E, brainstormer, loop-breaker) spawns fresh Agent-tool subagents — never SendMessage to a teammate.
 
+**"Persistent" ≠ "carries cross-iteration context".** The persistent teammate's spawn-prompt baseline already forces fresh-assignment treatment each message (re-read referenced files, no prior-turn trust). Spawning a new Agent-tool subagent for Step 1 or Step 3 because "fresh context is needed" defeats the persistent role — SendMessage to the existing teammate already gives that. The fresh-vs-persistent split is about *agent identity for adversarial separation* (critic must not be the producer), not about context staleness.
+
 CLAUDE_ROLE must be set in the teammate's *process env* — this only applies to teammates launched as independent claude CLI processes (e.g. ATE-style tmux panes). Use `claude-as-role <role>` (or `CLAUDE_ROLE=<role> claude ...`) when launching. Setting CLAUDE_ROLE inside the spawn-prompt body has no effect — that's text the agent reads, not env. Agent-tool sidechain teammates (`team_name`+`name` to the Agent tool) do NOT fire the Stop hook in current Claude Code, so the env mechanism does not apply to them; only fresh subagents (E2E/critics/brainstormer) which also never fire Stop. The TeamCreate-spawned `team-lead` pseudo-role is the orchestrator's own session — it has no separate Stop hook either; the orchestrator's stop serves as the lead's. The exemption is therefore only load-bearing when ECI teammates are launched as independent claude processes.
 
 ### Spawning
@@ -338,6 +340,7 @@ auth middleware swap
 | Disengage without teardown sequence | STOP. Shutdown teammates → TeamDelete → eci-active off, in that order. |
 | Independent-process teammate launched without `claude-as-role`/`CLAUDE_ROLE=` env prefix | STOP. Stop hook will gate every iteration. Re-launch via `claude-as-role <role>`. |
 | Status report uses task/iteration numbers, or flat-lists nested work | See **Status reports** section. |
+| "Fresh context needed" → spawned fresh Agent-tool subagent for Step 1 or Step 3 | Persistent teammate already provides fresh context per message (spawn-prompt baseline). SendMessage to existing explorer/implementer; do not spawn fresh. |
 
 ## Relationship to other skills
 
