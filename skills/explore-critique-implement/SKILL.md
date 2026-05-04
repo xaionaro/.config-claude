@@ -151,7 +151,7 @@ SendMessage to the persistent `explorer` teammate. Each per-message body must in
 
 ## Step 2: Critique explorations
 
-Spawn a DIFFERENT agent — not the explorer, not the main thread. The critic identity must differ from explorer, implementer, and the prior round's critic. Either spawn a fresh Agent-tool subagent OR a new persistent critic teammate (TeamCreate-spawned with a unique name; TeamDelete the prior critic before spawning the next round). Both satisfy adversarial separation and bias-freedom; choose by orchestration convenience. MUST NOT reuse the persistent explorer or implementer teammate for critic work.
+Spawn a DIFFERENT agent — not the explorer, not the main thread. The critic identity must differ from explorer, implementer, and the prior round's critic. Spawn the critic as a new persistent teammate via the Agent tool with `team_name=eci-<slug>` and a unique `name=critic-r<N>` (round) or `name=critic-A` / `critic-B` (Step 4). Each new round/cycle requires a fresh identity — TeamDelete the prior critic teammate before spawning the next. MUST NOT reuse the persistent explorer or implementer teammate for critic work, and MUST NOT spawn the critic as a fresh Agent-tool subagent (no `team_name`) — those are not addressable, not trackable in the team task list, and not aligned with the rest of the cycle's mechanics.
 
 The critic's prompt must include:
 - **Original user requirements verbatim.** The critic must verify options against what the user actually asked for, not just technical soundness.
