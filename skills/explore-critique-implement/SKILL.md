@@ -317,6 +317,7 @@ Cycle limit defined in Escalation table (3 full cycles per change).
 | Persistent teammate addressed for any fresh-role work (Step 2 critic, Critic A, Critic B, E2E, brainstormer, loop-breaker) | STOP. Spawn fresh Agent-tool subagent instead. |
 | Disengage without teardown sequence | STOP. Shutdown teammates → TeamDelete → eci-active off, in that order. |
 | Independent-process teammate launched without `claude-as-role`/`CLAUDE_ROLE=` env prefix | STOP. Stop hook will gate every iteration. Re-launch via `claude-as-role <role>`. |
+| User-facing report uses task/iteration numbers ("task 3 done", "cycle 2 failed") | Numbers mean nothing to user. Name the change instead ("severity codes table done", "auth middleware swap failed"). |
 
 ## Relationship to other skills
 
