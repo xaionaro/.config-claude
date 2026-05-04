@@ -2,8 +2,8 @@
 # PreToolUse admission controller for Edit|Write|MultiEdit|Bash.
 # Opt-in via CLAUDE_EDIT_PRE_REVIEWER (same format as CLAUDE_STOP_REVIEWER).
 # Fires only on the FIRST tool call of the current user turn. Asks an LLM
-# whether the task is non-trivial enough that the agent should delegate or
-# load skills first (per CLAUDE.md Mandatory Skills). On deny, blocks the
+# whether the task is non-trivial enough that the agent should delegate
+# or load skills first (per CLAUDE.md Mandatory Skills). On deny, blocks the
 # call with a PreToolUse-shaped permission decision.
 #
 # Fail-open on every error path: missing transcript, malformed env, LLM
@@ -139,7 +139,7 @@ TOOL_INPUT=$(echo "$INPUT" | jq -c '.tool_input // {}' 2>/dev/null | head -c 400
 SYS=$(mktemp); USR=$(mktemp)
 trap 'rm -f "$SYS" "$USR"' EXIT
 cat > "$SYS" <<'EOF'
-Admission controller for a coding agent. The agent is about to invoke a tool on the first action of a new user turn. Decide: proceed directly, or task is non-trivial and the agent should first delegate to a subagent / load a Mandatory Skill (per CLAUDE.md).
+Admission controller for a coding agent. The agent is about to invoke a tool on the first action of a new user turn. Decide: proceed directly, or task is non-trivial and the agent should first delegate / load a Mandatory Skill (per CLAUDE.md).
 
 CLAUDE.md Mandatory Skills (excerpt):
 - Debugging? -> systematic-debugging + debugging-discipline
@@ -271,7 +271,7 @@ REASON=$(echo "$RESULT" | jq -r '.reason // empty' 2>/dev/null)
 
 case "$VERDICT" in
   deny)
-    MSG=$(printf 'Pre-tool admission controller (CLAUDE_EDIT_PRE_REVIEWER) denied the first tool call of this turn.\n\nReason: %s\n\nLoad the appropriate Mandatory Skill or delegate to a subagent before invoking %s directly.\n\nTo override: touch %s/bypass\n' \
+    MSG=$(printf 'Pre-tool admission controller (CLAUDE_EDIT_PRE_REVIEWER) denied the first tool call of this turn.\n\nReason: %s\n\nLoad the appropriate Mandatory Skill or delegate before invoking %s directly.\n\nTo override: touch %s/bypass\n' \
       "$REASON" "$TOOL" "$STATE_DIR")
     jq -n --arg reason "$MSG" '{
       hookSpecificOutput: {
