@@ -81,6 +81,7 @@ Per-message body in Step 3.
 - `name`/`team_name` per Spawning table. For independent-process teammates, launch via `claude-as-role eci-implementer`.
 - "Treat each new task message as a fresh assignment per Step 3 of the ECI skill. Re-read every file you intend to modify each turn."
 - One commit per logical change.
+- Every factual claim in submission carries a T1-T5 tag per CLAUDE.md Claim Verification protocol. E2E evidence ("tests pass", "build succeeded", screenshots, observed state) cited as T1 with tool output, log path, or screenshot file. Concrete example: "[T1: `go test ./...` exit 0, all 47 pass]" not bare "tests pass". Untagged "all green" = unsubmittable.
 
 ## Teardown sequence
 
@@ -126,7 +127,7 @@ Each iteration tackles one change. All four steps run per iteration. Do not adva
 | Step | Phase | Actor | Output |
 |------|-------|-------|--------|
 | 1 | Explore | Persistent `explorer` teammate (SendMessage) | Ranked options + cited sources |
-| 2 | Critique explorations | Fresh Agent-tool subagent | Winner with CONCRETE TEXT |
+| 2 | Critique explorations | Fresh Agent-tool subagent | Winner with concrete text + tagged CONDITIONAL/NIT list (one explorer revision round permitted on all-REJECT) |
 | 3 | Implement | Persistent `implementer` teammate (SendMessage) | One diff |
 | 4 | Review gate (parallel) | Critic A + Critic B + E2E agent — fresh Agent-tool subagents in parallel | All three run concurrently; wait for all |
 | Exit | Main thread | Apply / commit / report |
@@ -140,30 +141,54 @@ SendMessage to the persistent `explorer` teammate. Each per-message body must in
 - What's already been tried or ruled out (iterations 2+: include results from prior iterations, current codebase state, and last blocking gate issues verbatim if a prior cycle's gate failed).
 - Exact file paths of existing related code — explorer must re-read them this turn to avoid suggesting duplicates. "Re-read referenced files; do not trust prior turn reads."
 - Required output: ranked options, each with {what, why, where it applies, cost, tradeoffs}.
-- Required citations tagged T1-T5 per `claim verification` hierarchy. Primary sources only for T1.
+- Every factual claim in the report must carry a T1-T5 tag per CLAUDE.md Claim Verification protocol. Primary sources only for T1. Untagged factual claims are not allowed.
 - Word cap on the report (default: 1000 words).
 
 ## Step 2: Critique explorations
 
-Spawn a DIFFERENT agent — not the explorer, not the main thread. Spawn as a fresh Agent-tool subagent. MUST NOT SendMessage to the persistent `explorer` or `implementer` teammate.
+Spawn a DIFFERENT agent — not the explorer, not the main thread. The critic identity must differ from explorer, implementer, and the prior round's critic. Either spawn a fresh Agent-tool subagent OR a new persistent critic teammate (TeamCreate-spawned with a unique name; TeamDelete the prior critic before spawning the next round). Both satisfy adversarial separation and bias-freedom; choose by orchestration convenience. MUST NOT reuse the persistent explorer or implementer teammate for critic work.
 
 The critic's prompt must include:
 - **Original user requirements verbatim.** The critic must verify options against what the user actually asked for, not just technical soundness.
 - **"Step 0 — Independent baseline."** Read the source material (target file, existing code, prior art) and write your own 3-5 bullet assessment BEFORE opening the explorer's report. Include this baseline in the critique output.
 - "Assume every suggestion is wrong until you prove otherwise."
 - "Read the current state first" (the file/code/doc the explorer was working on) — verify duplication claims independently.
-- **Cite-verify protocol:**
+- **Cite-verify and tag-discipline protocol:**
+  - Untagged factual claim from explorer = REJECT-tagged issue on the option that depends on it.
   - Fetch every T1/T2 URL via WebFetch; use Read for source-code citations.
   - Unfetchable URL (auth-gated, internal, tool unavailable) → flag "unverified — could not fetch" + state whether dependent claim is load-bearing.
-  - Load-bearing = any citation justifying a KEEP/MODIFY verdict. Load-bearing + unfetchable = issue.
+  - Load-bearing = any citation justifying picking an option as winner, or justifying a REJECT verdict that bounces an option to the explorer. Load-bearing + unfetchable = issue.
   - Quote the exact supporting passage. Flag hallucinated URLs, misquotes, and training-recall mislabeled as T1.
   - Non-load-bearing citations may be skipped if explicitly marked "non-load-bearing: no verdict depends on this source."
   - T3/T4: sample, not exhaustive.
-- Per-option verdict: KEEP / MODIFY / REJECT / DUPLICATE, with evidence-tied justification.
-- **Pick the winner** — one option with CONCRETE TEXT of the proposed change, not "add a section". If no option survives, the iteration ends with no implementation (report to main thread why).
-- Rejected list with per-item reason.
-- Single-option explorations get the same adversarial treatment — one option is not an automatic winner. REJECT is valid.
+- Per-issue severity code (table below). Issues attach to specific options. Aggregate per-option verdict = strongest severity.
+- **DUPLICATE-of-#N marker** (orthogonal to severity): set when one option restates another option's substance.
+- **If at least one option has zero REJECTs**: pick winner from that set with CONCRETE TEXT. Output winner + that option's CONDITIONAL fix-text list (verbatim) + NITs (informational).
+- **If every option has REJECTs**: do not pick. Return REJECT issues verbatim to orchestrator for bounce per Loop-logic table.
+- Single-option explorations get the same adversarial treatment.
 - "Be harsh. Most suggestions are noise. Zero survivors is a valid outcome."
+- Each retry round spawns a fresh-identity critic (parallels Red Flag agent-identity rule).
+
+### Step 2 severity codes
+
+| Code | Meaning | Effect on the option |
+|------|---------|----------------------|
+| **REJECT** | Option is wrong-shaped: violates user requirements, rests on unsound assumption, lacks a critical capability, or is unfixable without re-exploration | Option cannot be the winner. If ALL options have ≥1 REJECT, see Loop-logic. |
+| **CONDITIONAL** | Option is sound; needs a specific tweak the critic spells out as one-or-two lines of fix-text | Option remains viable. Orchestrator folds the fix-text into Step 3 (see below). |
+| **NIT** | Soft preference; doesn't affect viability | May be ignored when picking the winner |
+
+Same vocabulary as Step 4; Effect column differs because receiver/artifact/remediation differ per phase.
+
+### Step 2 loop-logic
+
+| Critic verdict pattern | Action | Output |
+|---|---|---|
+| ≥1 option with zero REJECTs | Pick highest-ranked clean option as winner | Winner + that option's CONDITIONAL fix-text list + NITs |
+| Every option has ≥1 REJECT, round 1 | Bounce verbatim REJECT reasons to explorer; explorer revises; spawn fresh-identity critic for round 2 | Bounce-back |
+| Every option has ≥1 REJECT, round 2 | Trigger brainstormer per Brainstormer trigger row; new explorer round | Escalation per Escalation table |
+| Only NITs across all options | Pick highest-ranked option directly | Winner + NITs |
+
+**Critic emits issues only.** CONDITIONAL absorption happens at the orchestrator's hand-off to Step 3 — orchestrator folds the winner's CONDITIONAL fix-text into the Step 3 implementer SendMessage body. The critic does NOT rewrite options.
 
 ## Step 3: Implement
 
