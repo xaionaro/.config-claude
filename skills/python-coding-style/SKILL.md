@@ -59,6 +59,7 @@ description: Use when writing, reviewing, or modifying Python code (*.py, pyproj
 - `asyncio` for I/O-bound concurrency. `concurrent.futures` for CPU-bound parallelism.
 - Never mix blocking I/O into async code — use `asyncio.to_thread()` or `run_in_executor()`.
 - Async context managers (`async with`) for async resource lifecycle.
+- **Timeouts are a design smell when the event is observable.** Reacting to a `time.sleep`/`asyncio.sleep`/poll-loop to "wait for" something that can be subscribed to (`asyncio.Event`, `asyncio.Condition`, `Future`, `Queue`, `threading.Event`, signal, callback, `inotify`) is a workaround, not a fix. Subscribe to the event. Reserve timeouts for genuinely opaque waits (network round-trip, hardware response, third-party process you cannot instrument) — and even then as an upper bound on top of the event, not a replacement for it.
 
 ## Other patterns
 

@@ -70,6 +70,7 @@ func (n *NodeWithCustomData[C, T]) RemovePushTo(
 - `context.Context` is always the first parameter. Never stored in structs.
 - Goroutines via `observability.Go(ctx, func(ctx context.Context) { ... })`, never raw `go`.
 - Mutex unlock always via `defer`. Prefer small functions that lock/defer-unlock at the top, rather than locking inside complex functions with multiple code paths.
+- **Timeouts are a design smell when the event is observable.** Reacting to a `time.Sleep`/`time.After`/poll-loop to "wait for" something that can be subscribed to (channel, `sync.Cond`, `ctx.Done()`, `fsnotify`, callback, signal) is a workaround, not a fix. Subscribe to the event. Reserve timeouts for genuinely opaque waits (network round-trip, hardware response, third-party process you cannot instrument) — and even then as an upper bound on top of the event, not a replacement for it.
 
 ## Types & Generics
 
