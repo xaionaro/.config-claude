@@ -4,12 +4,22 @@
 
 set -euo pipefail
 
+. "$HOME/.claude/hooks/lib/claude-tmp.sh"
+claude_init_tmp || true
+claude_install_fail_open_trap session-snapshot
+
 INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id')
+TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r 'if (.transcript_path? | type) == "string" then .transcript_path else "" end' 2>/dev/null || true)
 
 if [ -z "$SESSION_ID" ] || [ "$SESSION_ID" = "null" ]; then
   exit 0
 fi
+
+# Ephemeral / side-channel sessions have no transcript_path. Skip
+# baseline save and stale-marker cleanup; the parent session owns that
+# state. Mirrors stop-gate.sh ephemeral skip.
+[ -n "$TRANSCRIPT_PATH" ] || exit 0
 
 PROOF_DIR="$HOME/.cache/claude-proof/$SESSION_ID"
 BASELINE="$PROOF_DIR/baseline_head"

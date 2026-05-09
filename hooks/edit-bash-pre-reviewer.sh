@@ -20,6 +20,9 @@
 
 set -uo pipefail
 
+. "$HOME/.claude/hooks/lib/claude-tmp.sh"
+claude_init_tmp || true
+
 INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 [ -z "$SESSION_ID" ] && exit 0

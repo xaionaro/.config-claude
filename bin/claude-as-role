@@ -39,4 +39,17 @@ case "$ROLE" in
 esac
 
 export CLAUDE_ROLE="$ROLE"
+
+# Propagate the orchestrator's session id to the spawned teammate so the
+# teammate's PreToolUse hooks (validate-edit-write, etc.) recognize the
+# orchestrator as a co-allowed owner of session-scoped files
+# (proof dir, transcript, todos). Claude Code exports
+# CLAUDE_CODE_SESSION_ID into the orchestrator's subprocess env; the
+# spawned `claude` will overwrite it with its own session id, so we
+# capture it now into CLAUDE_PARENT_SESSION_ID. Preserve any existing
+# CLAUDE_PARENT_SESSION_ID for nested-teammate spawns.
+if [ -z "${CLAUDE_PARENT_SESSION_ID:-}" ] && [ -n "${CLAUDE_CODE_SESSION_ID:-}" ]; then
+  export CLAUDE_PARENT_SESSION_ID="$CLAUDE_CODE_SESSION_ID"
+fi
+
 exec "$HOME/.claude/bin/claude" "$@"

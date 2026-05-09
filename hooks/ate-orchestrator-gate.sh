@@ -26,13 +26,16 @@ INPUT=$(cat)
 
 TOOL=$(echo "$INPUT" | jq -r '.tool_name // empty')
 case "$TOOL" in
-  Edit|Write|MultiEdit) ;;
+  Edit|Write|MultiEdit|NotebookEdit) ;;
   *) exit 0 ;;
 esac
 
 # Subagent calls bypass — implementer subagents must be free to write.
+# Two subagent shapes are exempted: Agent-tool spawns carry agent_id;
+# claude --agent-type spawns carry agent_type. Either signal exempts.
 AGENT_ID=$(echo "$INPUT" | jq -r '.agent_id // empty')
-[ -n "$AGENT_ID" ] && exit 0
+AGENT_TYPE=$(echo "$INPUT" | jq -r '.agent_type // empty')
+{ [ -n "$AGENT_ID" ] || [ -n "$AGENT_TYPE" ]; } && exit 0
 
 # Only restrict orchestrator roles. Other ATE roles (executor, test-executor)
 # legitimately edit files. Designer/reviewer roles produce reports through

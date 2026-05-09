@@ -1,0 +1,9 @@
+{
+  "session_id": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "__HOME__/.cache/claude-proof/bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb/project-understanding.md",
+    "old_string": "a",
+    "new_string": "b"
+  }
+}

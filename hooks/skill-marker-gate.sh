@@ -33,13 +33,13 @@ esac
 
 TOOL=$(echo "$INPUT" | jq -r '.tool_name // empty')
 case "$TOOL" in
-  Edit|Write|MultiEdit) ;;
+  Edit|Write|MultiEdit|NotebookEdit) ;;
   *) exit 0 ;;
 esac
 
-# Try multiple plausible keys for file_path (Edit/Write use file_path; MultiEdit
-# documented schema also uses file_path but defensively probe alternates).
-FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.path // .tool_input.target_file // empty')
+# Try multiple plausible keys for file_path (Edit/Write/MultiEdit use file_path;
+# NotebookEdit uses notebook_path; defensively probe path/target_file too).
+FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.notebook_path // .tool_input.path // .tool_input.target_file // empty')
 if [ -z "$FILE_PATH" ]; then
   # Fail-closed on schema mismatch for protected tools — never silently allow.
   # Audit lives outside $PROOF_DIR so it survives the stop-cycle wipe.

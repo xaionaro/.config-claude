@@ -31,18 +31,21 @@ esac
 
 TOOL=$(echo "$INPUT" | jq -r '.tool_name // empty')
 case "$TOOL" in
-  Edit|Write|MultiEdit) ;;
+  Edit|Write|MultiEdit|NotebookEdit) ;;
   *) exit 0 ;;
 esac
 
-# Subagent calls bypass the marker — implementer subagents must be free to write.
+# Subagent calls bypass the marker — implementer subagents must be free to
+# write. Two subagent shapes are exempted: Agent-tool spawns carry agent_id;
+# claude --agent-type spawns carry agent_type. Either signal exempts.
 AGENT_ID=$(echo "$INPUT" | jq -r '.agent_id // empty')
-[ -n "$AGENT_ID" ] && exit 0
+AGENT_TYPE=$(echo "$INPUT" | jq -r '.agent_type // empty')
+{ [ -n "$AGENT_ID" ] || [ -n "$AGENT_TYPE" ]; } && exit 0
 
 # Markdown files (docs, plans, ECI disengage reports) are part of orchestration —
 # allow on the main thread without delegation. The gate exists to force code
 # implementation through subagents, not to block doc/notes work.
-FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.path // .tool_input.target_file // empty')
+FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.notebook_path // .tool_input.path // .tool_input.target_file // empty')
 case "$FILE_PATH" in
   *.md|*.MD|*.markdown) exit 0 ;;
 esac
@@ -52,7 +55,7 @@ MARKER="$HOME/.cache/claude-proof/$SESSION_ID/eci_active"
 
 MARKER_BODY=$(cat "$MARKER" 2>/dev/null || echo "<unreadable>")
 
-REASON=$(printf 'ECI active for this session — main thread must delegate implementation to a subagent.\n\n%s\n\nDelegate via the Agent tool (one diff per implementer). Disengage with `~/.claude/bin/eci-active off <report.md>` only when the user confirms the task/scope is closed.' "$MARKER_BODY")
+REASON=$(printf 'ECI active for this session — main thread must delegate implementation to a subagent.\n\n%s\n\nDelegate via the Agent tool (one diff per implementer). Disengage only with clean-pass or user-closed via `~/.claude/bin/eci-active off <disengage-report.md>`. Hard-escalation does not authorize disengage.' "$MARKER_BODY")
 
 jq -n --arg reason "$REASON" '{
   hookSpecificOutput: {

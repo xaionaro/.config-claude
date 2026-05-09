@@ -1,0 +1,8 @@
+{
+  "session_id": "t00-session",
+  "tool_name": "NotebookEdit",
+  "tool_input": {
+    "notebook_path": "src/foo.py",
+    "new_source": "print('x')"
+  }
+}

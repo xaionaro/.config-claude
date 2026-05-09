@@ -1,0 +1,7 @@
+{
+  "session_id": "t00-sm-missing",
+  "tool_name": "SendMessage",
+  "tool_input": {
+    "team_name": "teamA"
+  }
+}

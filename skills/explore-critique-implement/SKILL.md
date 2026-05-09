@@ -16,6 +16,8 @@ Separate the hand that builds from the hand that tears down. The builder cannot 
 | Correctness is load-bearing | Throwaway experiment |
 | Research would reduce uncertainty | Mechanical rename |
 
+Maintain a project-understanding ledger for every ECI run. Use the `maintaining-context-ledger` skill for storage path, content schema, update timing, and validity rules.
+
 ## Prerequisites
 
 Coding task? Every subagent prompt (explorer, critic, implementer) must include: "Before starting, load the `<language>-coding-style` skill and follow its rules."
@@ -140,6 +142,8 @@ Each iteration tackles one change. All four steps run per iteration. Do not adva
 
 Agent separation: see Red Flags. Main thread orchestrates; agents produce.
 
+Polling cadence: re-check a working teammate at most every 30 minutes; faster polling produces no new signal and burns context.
+
 ## Step 1: Explore
 
 SendMessage to the persistent `explorer` teammate. Each per-message body must include:
@@ -206,9 +210,11 @@ Each new task message to `implementer` includes:
 - Step 2 CONDITIONAL fix-list (verbatim, if any) — implementer applies these alongside the concrete text.
 - Submission tags every factual claim. Untagged claim → orchestrator bounces back without spawning the gate (parallel to E2E-evidence rule).
 
-**E2E before submit (code/debugging tasks).** Implementer must, before reporting done: build, run full test suite, exercise the affected feature through real UI/API as a user. Cite direct evidence (output, screenshot, observed state). Proxy evidence (unit tests, lint) insufficient. No E2E evidence in submission = orchestrator bounces back without spawning the gate.
+**Affected-path E2E before submit.** Apply only when a code/debugging task changes runtime behavior reachable via UI/API/device/CLI. Skip for docs, prompt/skill edits, config-only, tests-only, or pure refactors with no behavior change. If applicable but unavailable, the implementer reports BLOCKED with the exact missing resource. Missing applicable E2E without rationale → orchestrator bounces before Step 4.
 
-If submission lacks E2E evidence, SendMessage: "Submission lacks E2E evidence — re-run build, test suite, and user-path exercise; cite output. Do not re-submit until evidence is in the message body."
+When applicable, implementer must build, run full test suite, exercise the affected feature through real UI/API as a user. Cite direct evidence (output, screenshot, observed state). Proxy evidence (unit tests, lint) insufficient.
+
+If submission lacks E2E evidence (and E2E is applicable), SendMessage: "Submission lacks E2E evidence — re-run build, test suite, and user-path exercise; cite output. Do not re-submit until evidence is in the message body."
 
 ## Step 4: Review gate (parallel)
 
@@ -270,11 +276,13 @@ Gate retry and cycle limits defined in Escalation table.
 
 Fresh idea generator — fires on-demand when the cycle stalls. Output is raw ideas only; never decisions, verdicts, or filtering. Bigger list = better.
 
+**Genuine stall definition.** Brainstormer fires only after the producing agent (explorer or implementer) has attempted obvious resolutions and recorded each with why it failed. Attempt log is part of the trigger evidence, not optional. A bare "I'm stuck" without log → not a stall, push the agent to keep trying.
+
 | Trigger | Action |
 |---------|--------|
-| Explorer returned zero viable options | Spawn brainstormer → feed ideas into a new explorer |
+| Explorer returned zero viable options after documented attempts | Spawn brainstormer → feed ideas into a new explorer |
 | Step 2 bounce cap reached (one explorer revision round did not yield a clean option) | Spawn brainstormer → feed ideas into a new explorer |
-| Implementer dead-end inside Step 3 | Spawn brainstormer → feed ideas into a new implementer prompt |
+| Implementer genuinely blocked inside Step 3 (per Genuine stall definition above) | Spawn brainstormer → feed ideas into a new implementer prompt |
 
 ### Prompt requirements
 
@@ -348,6 +356,8 @@ Reports to user use:
 |------|---------|
 | Human-readable names, not task/iteration numbers | "severity-codes table done", not "task 3 done" / "cycle 2 failed" |
 | Tree structure when work decomposes into sub-issues or nested ECI pipelines | Indent children under parent; never flatten |
+
+- Use `<role label> (<runtime name>)` in every status, wait, or close update; do not use bare runtime nicknames once labeled.
 
 Issue uncovered mid-iteration that spawns its own ECI pipeline → nest under the iteration that found it.
 

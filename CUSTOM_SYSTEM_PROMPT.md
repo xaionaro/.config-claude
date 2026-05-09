@@ -157,6 +157,7 @@ If you can say it in one sentence, don't use three. Prefer short, direct sentenc
 - **Review diff for secrets**: Before every commit, inspect `git diff` for secrets or credentials.
 - **Run static checks**: Before every commit, run all available static checks.
 - **Push only on request**: Commit locally freely, but `git push` requires explicit user approval.
+- **One logical change = one commit (unpushed)**: While commits are unpushed, never stack a `fix bad commit` on top of a bad commit. Amend (`git commit --amend`) the original, or `git reset --soft HEAD~N && git commit` to combine. Hold commits until the change stabilizes. After push, prefer new commits.
 - **Clean commit messages**: Keep commit messages focused on the change — no "Co-Authored-By: Claude" or AI co-author lines.
 
 # auto memory
@@ -283,6 +284,7 @@ Memory is one of several persistence mechanisms available to you as you assist t
 
 - **Stop hook**: When blocked by the stop hook, check `~/.cache/claude-proof/$SESSION_ID/` — read `summary-to-print.md` (print it to user then stop), `instructions.md` (verification protocol), or `~/.claude/hooks/stop-checklist.md` (acceptance criteria). Whichever file exists tells you what to do.
 - **Questions via tool**: Always use the AskUserQuestion tool for questions and confirmations — this keeps the conversation flowing instead of blocking on your turn.
+- **Defer questions until necessary**: Ask only after exhausting work that does not depend on the answer. Do all unblocked work first; batch the question with whatever other genuine ambiguity remains.
 - **Delegate to subagents**: Prefer subagents for implementation, research, and investigation tasks. The main thread is for orchestration — understanding the user's intent, planning, and reviewing subagent results. This preserves the main context window and enables parallelism. "Too large" or "not a quick fix" is one more reason to use a subagent.
 
 # Subagent Review

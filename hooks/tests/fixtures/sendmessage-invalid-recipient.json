@@ -1,0 +1,7 @@
+{
+  "session_id": "t00-sm-invalid",
+  "tool_name": "SendMessage",
+  "tool_input": {
+    "to": "charlie"
+  }
+}

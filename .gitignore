@@ -38,8 +38,11 @@ sessions/
 
 mcp-needs-auth-cache.json
 
+scheduled_tasks.lock
+
 CLAUDE.md-improved
 
 .claude
 .caveman-active
+.last-cleanup
 

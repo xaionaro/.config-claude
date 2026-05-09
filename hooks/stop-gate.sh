@@ -6,51 +6,63 @@
 set -euo pipefail
 
 HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "$HOME/.claude/hooks/lib/claude-proof-state.sh"
+. "$HOME/.claude/hooks/lib/claude-tmp.sh"
+claude_init_tmp || true
+claude_install_fail_open_trap stop-gate
 INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id')
 STOP_ACTIVE=$(echo "$INPUT" | jq -r '.stop_hook_active')
+CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
+[ -z "$CWD" ] && CWD="$PWD"
+TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r 'if (.transcript_path? | type) == "string" then .transcript_path else "" end')
 
 if [ -z "$SESSION_ID" ] || [ "$SESSION_ID" = "null" ]; then
   exit 0
 fi
 
-# Skip stop hook for subordinate team roles. Only the lead/coordinator
+# Ephemeral / side-channel sessions have no transcript_path. They are
+# read-only context-gathering threads; proof accumulation is the parent
+# session's responsibility. Skip the gate entirely.
+if [ -z "$TRANSCRIPT_PATH" ]; then
+  exit 0
+fi
+
+# Subagent exemption. Two real subagent shapes observed in live hook
+# input (captured 2026-05-06):
+#   1. Agent-tool inline spawn — input has .agent_id (UUID).
+#   2. claude --agent-type top-level spawn — input has .agent_type
+#      (e.g. "general-purpose") plus .permission_mode and
+#      .last_assistant_message; NO .agent_id.
+# Both are subagents whose work is verified by the orchestrator that
+# spawned them; neither walks the proof checklist. Treat either signal
+# as exemption. Mirrors hooks/eci-active-gate.sh:39.
+AGENT_ID=$(echo "$INPUT" | jq -r '.agent_id // empty')
+AGENT_TYPE=$(echo "$INPUT" | jq -r '.agent_type // empty')
+if [ -n "$AGENT_ID" ] || [ -n "$AGENT_TYPE" ]; then
+  exit 0
+fi
+
+# Skip stop hook for ALL subordinate team roles — only the team lead
 # (and main-thread sessions with no role) walk the proof checklist.
 #
-# Subordinates report verdicts via messaging or commit their work
-# directly; the lead's stop-gate is the single accountability point.
-#
-# Keep this list in sync with skills/explore-critique-implement/SKILL.md
-# and skills/agent-teams-execution/SKILL.md role tables, plus the
-# `bin/claude-as-role` allowlist.
+# Subordinates (coordinator, snitch, explorer, designer, reviewer,
+# executor, verifier, QA, brainstormer, test-*, eci-implementer, etc.)
+# report verdicts via messaging or commit their work directly; the
+# lead's stop-gate is the single accountability point. Adding new role
+# names to skill rosters does NOT require updating this gate — anything
+# other than empty/lead is exempt.
 case "${CLAUDE_ROLE:-}" in
-  snitch|explorer|brainstormer|designer|reviewer|test-designer|test-reviewer|verifier|qa|eci-implementer|executor|test-executor)
-    exit 0 ;;
+  ""|lead|team-lead|teamlead) ;;  # gated: main thread + team lead
+  *) exit 0 ;;                     # exempt: every other subordinate role
 esac
 
 PROOF_DIR="$HOME/.cache/claude-proof/$SESSION_ID"
 PROOF="$PROOF_DIR/proof.md"
 
-# Skill-controlled bypass: any skill that knows the main thread never
-# implements code can touch this marker on entry and remove it on exit.
-# See ~/.claude/bin/skip-stop for the helper that manages it.
-#
-# Freshness gate: marker must have been touched within the last 60 minutes.
-# Stops the leak class where a prior session's marker (e.g. ATE skill that
-# crashed before `skip-stop off`) silently bypasses verification in a
-# later, unrelated session reusing the same session-id directory.
-if [ -f "$PROOF_DIR/skip_stop" ] && [ -n "$(find "$PROOF_DIR/skip_stop" -mmin -60 -print 2>/dev/null)" ]; then
-  exit 0
-fi
-
-
-# Scope loop detection per agent (subagents share parent session_id)
-AGENT_ID=$(echo "$INPUT" | jq -r '.agent_id // empty')
-if [ -n "$AGENT_ID" ]; then
-  TIMESTAMPS="$PROOF_DIR/stop_timestamps_${AGENT_ID}"
-else
-  TIMESTAMPS="$PROOF_DIR/stop_timestamps"
-fi
+# Scope loop detection per session. (AGENT_ID exempted above, so
+# this branch always uses the unsuffixed timestamps file.)
+TIMESTAMPS="$PROOF_DIR/stop_timestamps"
 
 # Track stop hook invocations for loop detection
 mkdir -p "$PROOF_DIR"
@@ -74,6 +86,318 @@ block() {
   jq -n --arg reason "$1$LOOP_REMINDER" '{"decision": "block", "reason": $reason}'
   exit 0
 }
+
+# --- repo identity + secret-scan helpers (ported from codex) -----------
+# Used by:
+#   - per-repo history-key canonicalisation (freshness oracle)
+#   - run_secret_scan (gitleaks worktree + commit-history scan)
+# Hard-block policy: gitleaks missing → return 2 → block (parity with
+# codex stop-gate.sh:144-147,720-728). This differs from soft-skip.
+
+hash_string() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    printf '%s' "$1" | sha256sum | awk '{print $1}'
+  else
+    printf '%s' "$1" | cksum | awk '{print $1}'
+  fi
+}
+
+canonical_existing_path() {
+  local path="$1"
+  local dir base canonical_dir
+
+  if [ -d "$path" ]; then
+    (cd "$path" 2>/dev/null && pwd -P) || printf '%s\n' "$path"
+    return
+  fi
+
+  dir="$(dirname "$path")"
+  base="$(basename "$path")"
+  if [ -d "$dir" ]; then
+    canonical_dir="$( (cd "$dir" 2>/dev/null && pwd -P) || printf '%s' "$dir" )"
+    printf '%s/%s\n' "$canonical_dir" "$base"
+  else
+    printf '%s\n' "$path"
+  fi
+}
+
+git_common_dir() {
+  local repo="$1"
+  local common top
+
+  common="$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+  if [ -n "$common" ]; then
+    canonical_existing_path "$common"
+    return
+  fi
+
+  common="$(git -C "$repo" rev-parse --git-common-dir 2>/dev/null || true)"
+  top="$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null || true)"
+  case "$common" in
+    /*) canonical_existing_path "$common" ;;
+    *) canonical_existing_path "${top:-$repo}/$common" ;;
+  esac
+}
+
+repo_identity() {
+  local repo="$1"
+  local top common
+
+  if git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    top="$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null || printf '%s\n' "$repo")"
+    top="$(canonical_existing_path "$top")"
+    common="$(git_common_dir "$repo")"
+    printf 'git:%s:%s\n' "$top" "$common"
+  else
+    printf 'nogit:%s\n' "$(claude_canonical_cwd "$repo")"
+  fi
+}
+
+format_gitleaks_findings() {
+  local report="$1"
+
+  jq -r '
+    .[] |
+    "\(.File // "<unknown>"):\((.StartLine // "?") | tostring) \(.RuleID // "unknown") \(.Description // "possible secret")"
+  ' "$report" 2>/dev/null
+}
+
+run_gitleaks_command() {
+  local report="$1"
+  shift
+  local out rc
+
+  out=$("$@" 2>&1)
+  rc=$?
+  case "$rc" in
+    0) return 0 ;;
+    1) return 1 ;;
+    *)
+      printf '%s\n' "$out" >"${report}.err"
+      return 2
+      ;;
+  esac
+}
+
+run_secret_scan() {
+  local repo="$1"
+  local baseline="$2"
+  local proof_dir="$3"
+  local report="$proof_dir/gitleaks-report.json"
+  local findings="$proof_dir/gitleaks-findings.txt"
+  local worktree_report="$proof_dir/gitleaks-worktree-report.json"
+  local commit_report="$proof_dir/gitleaks-commit-report.json"
+  local tmp_index base findings_count worktree_dirty commit_changed scan_rc errors=""
+  local -a reports
+
+  rm -f "$report" "$findings" "$worktree_report" "$commit_report" \
+    "${worktree_report}.err" "${commit_report}.err"
+
+  if ! command -v gitleaks >/dev/null 2>&1; then
+    printf '%s\n' "gitleaks not found on PATH" >"$findings"
+    return 2
+  fi
+
+  worktree_dirty=false
+  if [ -n "$(git -C "$repo" status --porcelain 2>/dev/null || true)" ]; then
+    worktree_dirty=true
+  fi
+
+  commit_changed=false
+  if [ -s "$baseline" ]; then
+    base=$(cat "$baseline" 2>/dev/null || true)
+    if [ -n "$base" ] && git -C "$repo" cat-file -e "$base^{commit}" 2>/dev/null &&
+      ! git -C "$repo" diff --quiet "$base"..HEAD -- 2>/dev/null; then
+      commit_changed=true
+    fi
+  fi
+
+  if [ "$worktree_dirty" = "true" ]; then
+    tmp_index=$(mktemp "$proof_dir/gitleaks-index.XXXXXX")
+    rm -f "$tmp_index"
+    if GIT_INDEX_FILE="$tmp_index" git -C "$repo" read-tree HEAD >/dev/null 2>&1; then
+      GIT_INDEX_FILE="$tmp_index" git -C "$repo" add -N -- . >/dev/null 2>&1 || true
+      scan_rc=0
+      GIT_INDEX_FILE="$tmp_index" run_gitleaks_command "$worktree_report" \
+        gitleaks protect --source "$repo" --redact --no-banner --log-level error \
+          --report-format json --report-path "$worktree_report" || scan_rc=$?
+      case "$scan_rc" in
+        0|1)
+          [ -f "$worktree_report" ] || errors="$errors worktree"
+          ;;
+        *) errors="$errors worktree" ;;
+      esac
+    else
+      printf '%s\n' "could not prepare temporary git index for worktree scan" >"${worktree_report}.err"
+      errors="$errors worktree"
+    fi
+    rm -f "$tmp_index"
+  fi
+
+  if [ "$commit_changed" = "true" ]; then
+    scan_rc=0
+    run_gitleaks_command "$commit_report" \
+      gitleaks detect --source "$repo" --log-opts "$base..HEAD" --redact --no-banner \
+        --log-level error --report-format json --report-path "$commit_report" || scan_rc=$?
+    case "$scan_rc" in
+      0|1)
+        [ -f "$commit_report" ] || errors="$errors commits"
+        ;;
+      *) errors="$errors commits" ;;
+    esac
+  fi
+
+  reports=()
+  [ -f "$worktree_report" ] && reports+=("$worktree_report")
+  [ -f "$commit_report" ] && reports+=("$commit_report")
+  if [ "${#reports[@]}" -gt 0 ]; then
+    jq -s 'add' "${reports[@]}" >"$report" 2>/dev/null || cp "${reports[0]}" "$report"
+  else
+    printf '[]\n' >"$report"
+  fi
+
+  if [ -n "$errors" ]; then
+    {
+      printf '%s\n' "gitleaks failed for:$errors"
+      [ -s "${worktree_report}.err" ] && cat "${worktree_report}.err"
+      [ -s "${commit_report}.err" ] && cat "${commit_report}.err"
+    } >"$findings"
+    return 2
+  fi
+
+  findings_count=$(jq 'length' "$report" 2>/dev/null || printf '0')
+  if [ "${findings_count:-0}" -gt 0 ]; then
+    format_gitleaks_findings "$report" >"$findings"
+    return 1
+  fi
+
+  rm -f "$findings" "$worktree_report" "$commit_report"
+  return 0
+}
+# -----------------------------------------------------------------------
+
+# --- ECI / skip / ATE / activity-empty ordering ------------------------
+# Mirror of codex stop-gate.sh:396-426. Order matters: ECI is the strongest
+# claim on the session, skip-stop is a deliberate bypass (only honored
+# after the ECI check), ATE blocks unless awaiting_user/closed, and the
+# activity-empty fast-continue lets stops through when there is genuinely
+# nothing in flight.
+
+# 1. ECI active → hard block.
+ECI_ACTIVE=$(claude_existing_state_file eci eci_active "$SESSION_ID" "$CWD" 2>/dev/null || true)
+if [ -n "$ECI_ACTIVE" ] && [ -f "$ECI_ACTIVE" ]; then
+  claude_note_state_session_id "$ECI_ACTIVE" "$SESSION_ID" || true
+  block "ECI is active for this session. Continue the ECI task, update the project-understanding ledger, or report a blocker requiring user input. Disengage only with clean-pass or user-closed via ~/.claude/bin/eci-active off <disengage-report.md>."
+fi
+
+# 2. Skip-stop bypass (relocated): only honored after the ECI check.
+# Skill-controlled bypass: any skill that knows the main thread never
+# implements code can touch this marker on entry and remove it on exit.
+# See ~/.claude/bin/skip-stop for the helper that manages it.
+#
+# Freshness gate: marker must have been touched within the last 60 minutes.
+# Stops the leak class where a prior session's marker (e.g. ATE skill that
+# crashed before `skip-stop off`) silently bypasses verification in a
+# later, unrelated session reusing the same session-id directory.
+if [ -f "$PROOF_DIR/skip_stop" ] && [ -n "$(find "$PROOF_DIR/skip_stop" -mmin -60 -print 2>/dev/null)" ]; then
+  exit 0
+fi
+
+# 3. ATE active → block unless phase is awaiting_user or closed.
+ATE_ACTIVE=$(claude_existing_state_file ate ate_active "$SESSION_ID" "$CWD" 2>/dev/null || true)
+if [ -n "$ATE_ACTIVE" ] && [ -f "$ATE_ACTIVE" ]; then
+  ATE_PHASE=$(claude_state_value "$ATE_ACTIVE" phase || true)
+  case "$ATE_PHASE" in
+    awaiting_user|closed) ;;
+    *)
+      claude_note_state_session_id "$ATE_ACTIVE" "$SESSION_ID" || true
+      block "ATE coordinator is active. Continue the workstream, hand off, or close it via the lifecycle. Phase: ${ATE_PHASE:-<unset>}."
+      ;;
+  esac
+fi
+
+# 4. Activity-empty fast-continue. If there is no proof, no git change, no
+# task_active marker, no activity markers, and no Claude-tool activity in
+# the transcript since the last real user message → allow stop.
+#
+# Read-only tools (Read, Glob, Grep, WebSearch, ToolSearch, Skill, WebFetch)
+# are intentionally excluded from the activity regex below — they don't
+# count as work. The regex only references Claude tool names; foreign
+# harness tool names are intentionally absent.
+transcript_has_activity_since_last_user() {
+  local transcript="$1"
+
+  [ -n "$transcript" ] && [ -f "$transcript" ] || return 1
+  jq -e -s '
+    def response_item_type($e):
+      $e.payload.type // $e.payload.item.type // "";
+    def content_of($e):
+      $e.message.content // $e.payload.message.content // $e.payload.item.content // $e.payload.content // "";
+    def event_role($e):
+      if $e.type == "user" then "user"
+      elif $e.type == "assistant" then "assistant"
+      elif $e.type == "response_item" then
+        if response_item_type($e) == "function_call" then "assistant"
+        elif response_item_type($e) == "function_call_output" then "tool_result"
+        else ($e.payload.role // $e.payload.item.role // "") end
+      elif $e.type == "message" then ($e.role // "")
+      else "" end;
+    def is_real_user($e):
+      event_role($e) == "user"
+      and ((content_of($e) | type) == "string")
+      and ((content_of($e) | test("^[[:space:]]*<(hook_prompt|subagent_notification|turn_aborted)"; "i")) | not)
+      and (($e.isMeta // $e.message.isMeta // false) | not);
+    def call_records($e):
+      if $e.type == "response_item" and response_item_type($e) == "function_call" then
+        [{
+          name: ($e.payload.name // $e.payload.item.name // ""),
+          arguments: (($e.payload.arguments // $e.payload.item.arguments // "") | tostring)
+        }]
+      else
+        (content_of($e) as $c
+        | if ($c | type) == "array" then
+          [$c[] | select(.type == "tool_use" or .type == "function_call")
+            | {name: (.name // ""), arguments: ((.input // .arguments // "") | tostring)}]
+        else [] end)
+      end;
+    def active_call($c):
+      (($c.name // "") | test("(^|\\.)(Bash|Edit|Write|MultiEdit|Agent|SendMessage|Monitor|TaskCreate|TaskUpdate|TaskStop|TaskGet|TaskList|TaskOutput|EnterWorktree|ExitWorktree|EnterPlanMode|ExitPlanMode|RemoteTrigger|PushNotification|TeamCreate|TeamDelete|CronCreate|CronDelete)$"))
+      or
+      (($c.name // "") == "multi_tool_use.parallel"
+        and (($c.arguments // "") | test("functions\\.(Bash|Edit|Write|MultiEdit|Agent|SendMessage)")));
+    . as $all
+    | ([ $all | to_entries[] | select(is_real_user(.value)) | .key ] | last // -1) as $last_user
+    | $last_user >= 0 and
+      ([ $all | to_entries[]
+        | select(.key > $last_user and event_role(.value) == "assistant")
+        | call_records(.value)[]
+        | select(active_call(.)) ] | length) > 0
+  ' "$transcript" >/dev/null 2>&1
+}
+
+ACTIVITY_FOUND=""
+for _act_marker in shell edit subagent; do
+  _f=$(claude_existing_state_file activity "$_act_marker" "$SESSION_ID" "$CWD" 2>/dev/null || true)
+  if [ -n "$_f" ]; then
+    ACTIVITY_FOUND="$ACTIVITY_FOUND $_act_marker"
+  fi
+done
+
+TASK_ACTIVE=$(claude_existing_state_file active-task task_active "$SESSION_ID" "$CWD" 2>/dev/null || true)
+
+GIT_CHANGE_FOUND=""
+if [ -n "$(git -C "$CWD" status --porcelain 2>/dev/null)" ]; then
+  GIT_CHANGE_FOUND=1
+fi
+
+if [ ! -f "$PROOF" ] && \
+   [ -z "$GIT_CHANGE_FOUND" ] && \
+   [ -z "$TASK_ACTIVE" ] && \
+   [ -z "$ACTIVITY_FOUND" ] && \
+   ! transcript_has_activity_since_last_user "$TRANSCRIPT_PATH"; then
+  exit 0
+fi
+# -----------------------------------------------------------------------
 
 # --- Reviewer-backed gate ----------------------------------------------
 # When the reviewer backend is reachable, it is THE gate. On verdict=fail
@@ -148,7 +472,9 @@ if [ ! -f "$REVIEWER_BYPASS" ] && [ "$REVIEWER_REACHABLE" = "1" ]; then
       fi
     fi
     if [ "$RESET" = "0" ]; then
-      rm -rf "$PROOF_DIR" 2>/dev/null || true
+      # Ledger-preserving cleanup: keep project-understanding*.md across stop
+      # cycles, clear everything else (proof.md, baseline_head, etc.).
+      [ -d "$PROOF_DIR" ] && find "$PROOF_DIR" -mindepth 1 -maxdepth 1 ! -name 'project-understanding*.md' -exec rm -rf {} + 2>/dev/null || true
       exit 0
     fi
     # Fall through to reviewer call below.
@@ -296,8 +622,15 @@ if [ -f "$PROOF" ]; then
     if [ -z "$SESSION_ID_SAFE" ]; then
       : # skip freshness oracle when session id is unsafe
     else
-    HISTORY_DIR="$HOME/.cache/claude-proof/history"
+    # Per-repo history-key canonicalisation: scope freshness state to the
+    # actual git work tree (or canonical cwd for non-git roots) so two
+    # sessions in different repos cannot collide. Layout:
+    #   ~/.cache/claude-proof/history/<sha-of-repo-id>/<session>.log
+    HISTORY_IDENTITY="$(repo_identity "$CWD")"
+    HISTORY_KEY="$(hash_string "$HISTORY_IDENTITY")"
+    HISTORY_DIR="$HOME/.cache/claude-proof/history/$HISTORY_KEY"
     mkdir -p "$HISTORY_DIR"
+    printf '%s\n' "$HISTORY_IDENTITY" >"$HISTORY_DIR/repo_identity"
     HISTORY_FILE="$HISTORY_DIR/${SESSION_ID_SAFE}.log"
 
     # Fingerprint the audit section bytes.
@@ -326,7 +659,12 @@ if [ -f "$PROOF" ]; then
         # Unchanged repo + identical audit: require a re-scan gesture naming
         # ≥3 sources (same bar as clean-scan), with CLAUDE.md among them.
         # Check only within the audit section (avoid rescan: lines elsewhere bypassing the gate).
-        RESCAN_LINE=$(printf %s "$AUDIT_SECTION" | grep -iE '^[[:space:]]*rescanned:[[:space:]]+' | head -n1)
+        # `|| true`: under `set -euo pipefail`, a no-match grep returns 1
+        # and pipefail propagates that to the assignment, exiting the script
+        # silently before the byte-identical-audit block can fire. The empty
+        # fallback is the intended behavior — no rescanned line means
+        # RESCAN_LINE stays empty and the block at the next check fires.
+        RESCAN_LINE=$(printf %s "$AUDIT_SECTION" | grep -iE '^[[:space:]]*rescanned:[[:space:]]+' | head -n1 || true)
         RESCAN_OK=0
         if [ -n "$RESCAN_LINE" ]; then
           RESCAN_OK=$(printf %s "$RESCAN_LINE" | awk '
@@ -378,12 +716,56 @@ if [ -f "$PROOF" ]; then
     cat "$REVIEWER_LAST" >> "$SUMMARY"
   fi
   rm -f "$PROOF" "$PROOF_DIR/baseline_head"
+
+  # Activity-marker cleanup at proof acceptance: clear session-scoped
+  # activity markers and task_active so the next stop sees a clean slate.
+  # Mirrors codex stop-gate.sh:662-665. Cwd-scoped markers are also cleared
+  # so the activity-empty fast-continue at the top of the next invocation
+  # is not falsely tripped by stale markers.
+  _act_session_dir=$(claude_session_state_dir activity "$SESSION_ID" 2>/dev/null || true)
+  [ -n "$_act_session_dir" ] && rm -rf "$_act_session_dir" 2>/dev/null || true
+  _act_cwd_dir=$(claude_cwd_state_dir activity "$CWD" 2>/dev/null || true)
+  [ -n "$_act_cwd_dir" ] && rm -rf "$_act_cwd_dir" 2>/dev/null || true
+  _task_session_dir=$(claude_session_state_dir active-task "$SESSION_ID" 2>/dev/null || true)
+  [ -n "$_task_session_dir" ] && rm -f "$_task_session_dir/task_active" 2>/dev/null || true
+  _task_cwd_dir=$(claude_cwd_state_dir active-task "$CWD" 2>/dev/null || true)
+  [ -n "$_task_cwd_dir" ] && rm -f "$_task_cwd_dir/task_active" 2>/dev/null || true
+
+  # After proof accepted: capture git status. If dirty, block stop and write
+  # summary so the agent must commit owned changes or state unrelated blockers
+  # before stopping. Mirrors codex stop-gate.sh:667-674.
+  if [ -d "$PWD/.git" ] || git -C "$PWD" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    dirty="$(git -C "$PWD" status --porcelain 2>/dev/null)"
+    if [ -n "$dirty" ]; then
+      {
+        printf 'git status at proof acceptance — %s\n' "$(date -u +%FT%TZ)"
+        printf 'cwd: %s\n\n' "$PWD"
+        git -C "$PWD" status --porcelain
+      } > "$PROOF_DIR/git-status-at-accept.txt"
+      block "Verification proof accepted, but git state is still dirty. Read $PROOF_DIR/git-status-at-accept.txt; relay relevant results, commit owned completed changes or state unrelated blockers, then stop."
+    fi
+  fi
+
   block "Checking stop criteria."
 fi
 
 # 2. Already sent back (proof printed or no proof written) → allow + cleanup
 if [ "$STOP_ACTIVE" = "true" ]; then
-  rm -rf "$PROOF_DIR" 2>/dev/null || true
+  # Ledger-preserving cleanup: keep project-understanding*.md across stop
+  # cycles, clear everything else.
+  [ -d "$PROOF_DIR" ] && find "$PROOF_DIR" -mindepth 1 -maxdepth 1 ! -name 'project-understanding*.md' -exec rm -rf {} + 2>/dev/null || true
+
+  # Activity-marker cleanup mirrors the proof-acceptance path so the next
+  # stop sees a clean slate when the agent is genuinely idle.
+  _act_session_dir=$(claude_session_state_dir activity "$SESSION_ID" 2>/dev/null || true)
+  [ -n "$_act_session_dir" ] && rm -rf "$_act_session_dir" 2>/dev/null || true
+  _act_cwd_dir=$(claude_cwd_state_dir activity "$CWD" 2>/dev/null || true)
+  [ -n "$_act_cwd_dir" ] && rm -rf "$_act_cwd_dir" 2>/dev/null || true
+  _task_session_dir=$(claude_session_state_dir active-task "$SESSION_ID" 2>/dev/null || true)
+  [ -n "$_task_session_dir" ] && rm -f "$_task_session_dir/task_active" 2>/dev/null || true
+  _task_cwd_dir=$(claude_cwd_state_dir active-task "$CWD" 2>/dev/null || true)
+  [ -n "$_task_cwd_dir" ] && rm -f "$_task_cwd_dir/task_active" 2>/dev/null || true
+
   exit 0
 fi
 
@@ -428,7 +810,33 @@ INSTEOF
   block "Checking stop criteria."
 fi
 
-# 5. Code changed, no proof → block and send verification protocol
+# 5. Code changed, no proof → run secret scan, then block and send verification protocol.
+#
+# Secret scan placement mirrors codex stop-gate.sh:715-728: we are in the
+# "changes exist, no proof yet" branch, so we run gitleaks on both the
+# dirty worktree (via gitleaks protect on a temp index) and the new
+# commit range (baseline..HEAD via gitleaks detect).
+#
+# Hard-block policy (parity with codex :144-147,720-728): if gitleaks is
+# missing from PATH, we block with a "install gitleaks" message rather
+# than soft-skip. Required dependency, advertised in CLAUDE.md.
+SECRET_SCAN_RC=0
+run_secret_scan "$CWD" "$BASELINE_FILE" "$PROOF_DIR" || SECRET_SCAN_RC=$?
+case "$SECRET_SCAN_RC" in
+  0) ;;
+  1)
+    block "Automated secret scan found possible secrets. Read $PROOF_DIR/gitleaks-findings.txt, remove or explicitly remediate them, then stop again."
+    ;;
+  *)
+    if [ -s "$PROOF_DIR/gitleaks-findings.txt" ] && \
+       grep -q "gitleaks not found on PATH" "$PROOF_DIR/gitleaks-findings.txt"; then
+      block "Automated secret scan could not complete because gitleaks is not on PATH. Install gitleaks (apt install gitleaks or equivalent) or document divergence. See ~/.claude/CLAUDE.md # Environment for the dependency note."
+    else
+      block "Automated secret scan could not complete. Read $PROOF_DIR/gitleaks-findings.txt, fix the scanner failure, then stop again."
+    fi
+    ;;
+esac
+
 #    Write a session-specific instructions file with the proof path baked in
 INSTRUCTIONS="$PROOF_DIR/instructions.md"
 mkdir -p "$PROOF_DIR"

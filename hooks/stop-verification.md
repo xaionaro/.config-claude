@@ -48,6 +48,10 @@ Your fix addresses one instance. Is it part of a broader class?
 
 Skip this step only if the fix is purely configuration or environment-specific with no code pattern to generalize.
 
+### Step 2.7 — Project understanding ledger
+
+If ECI or ATE was used, update the session project-understanding ledger per the `maintaining-context-ledger` skill and verify it passes that skill's validity rules.
+
 ### Step 3 — Objective proof
 
 If there are production changes but no witness (test or repro script), create one that exercises the changed code.

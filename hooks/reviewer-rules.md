@@ -18,7 +18,9 @@ the specific rules live in the sources, not here:
 - **Output-form** — how the agent must end its turn, what tool to use for
   questions, formatting constraints, prohibited content shapes.
 - **Completion-evidence** — what objective proof must accompany "done"
-  claims; what counts as verified vs. unverified.
+  claims; what counts as verified vs. unverified. Reviewer rejects
+  "done" claims that lack affected-path E2E evidence when the change
+  touches runtime behavior.
 - **Tool-use mandates** — required tools for specific actions; forbidden
   tools or tool inputs.
 - **Cross-session memory** — commitments the agent has made before that

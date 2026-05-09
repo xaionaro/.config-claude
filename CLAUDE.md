@@ -16,6 +16,8 @@ New rules only when existing ones can't be sharpened. Save to memory if applicab
 
 **Memory hygiene:** Before adding a memory, check if an existing one covers it (update, don't duplicate). When memory count exceeds 20, consolidate: merge related entries, delete obsolete ones, promote recurring patterns into skills or CLAUDE.md rules (then delete the memories). Rules baked into code/skills/prompts don't need a memory.
 
+Active memory overlay is primary input; flag conflicts with CLAUDE.md rules before acting.
+
 # Information Density
 
 Maximize information per word. E.g.: rule first, not reasoning; tables over prose; no filler; define once; one idea per sentence.
@@ -69,6 +71,7 @@ GOOD: [fetches JNI spec] "[T1: JNI spec Section X, high] The specification says:
 - **Review diff for secrets**: Before every commit, inspect `git diff` for secrets or credentials.
 - **Run static checks**: Before every commit, run all available static checks.
 - **Push only on request**: Commit locally freely, but `git push` requires explicit user approval.
+- **One logical change = one commit (unpushed)**: While commits are unpushed, never stack a `fix bad commit` on top of a bad commit. Amend (`git commit --amend`) the original, or `git reset --soft HEAD~N && git commit` to combine. Hold commits until the change stabilizes. After push, prefer new commits.
 - **Clean commit messages**: Keep commit messages focused on the change — no "Co-Authored-By: Claude" or AI co-author lines.
 
 # Mandatory Skills
@@ -87,11 +90,14 @@ Walk through every entry below before starting work. For each, decide: does it a
 9. Large coding task? (productionization, multi-module features, system-wide refactors, "build/productionize X") → `agent-teams-execution`
 10. Writing or editing skills, system prompts, CLAUDE.md? → `harness-tuning`
 11. UI code? (writing, reviewing, modifying *.qml, *.qmldir, *.qmltypes, or any UI surface) → `ui-design`
+12. Writing a status update / sitrep / progress report? → `writing-status-reports`
+13. Project-understanding ledger / context ledger / ECI/ATE ledger updates? → `maintaining-context-ledger`
 
 # Environment
 
 - **Qt**: Qt is installed in ~/Qt
 - **Android**: Android SDK/NDK is installed in ~/Android
+- **Gitleaks**: Required at `/usr/bin/gitleaks` (or PATH); stop-gate hard-blocks if absent.
 
 # Infrastructure
 
@@ -99,11 +105,13 @@ Walk through every entry below before starting work. For each, decide: does it a
 - **Accessing this environment by other devices**: Other devices in LAN may connect to this environment using IP-address 192.168.0.131 and ports 7000-7019 (that are DNAT-ed to this environment).
 - **OLLAMA**: There is a MacBook M4 Max 128GB Ollama available by address 192.168.0.171:11434.
 - **Bluetooth**: Bluetooth is available as hci1/hci2 thanks to `DBUS_SYSTEM_BUS_ADDRESS=unix:path=/run/bluez-proxy/system_bus_socket`
+- **Scratch storage**: Never put large files/objects in `/tmp` when it is tmpfs; use `~/tmp/`.
 
 # Execution
 
 - **Stop hook**: When blocked by the stop hook, check `~/.cache/claude-proof/$SESSION_ID/` — read `summary-to-print.md` (print it to user then stop), `instructions.md` (verification protocol), or `~/.claude/hooks/stop-checklist.md` (acceptance criteria). Whichever file exists tells you what to do.
 - **Questions via tool**: Always use the AskUserQuestion tool for questions and confirmations — this keeps the conversation flowing instead of blocking on your turn.
+- **Defer questions until necessary**: Ask only after exhausting work that does not depend on the answer. Do all unblocked work first; batch the question with whatever other genuine ambiguity remains.
 - **Delegate to subagents**: Prefer subagents for implementation, research, and investigation tasks. The main thread is for orchestration — understanding the user's intent, planning, and reviewing subagent results. This preserves the main context window and enables parallelism. "Too large" or "not a quick fix" is one more reason to use a subagent.
 
 # Subagent Review
@@ -118,3 +126,5 @@ Assume every subagent result is wrong until you have independently verified it. 
 - **Reject incomplete work.** If a subagent punts with "needs further investigation", "left as TODO", or "out of scope" — that is not done. Either finish it yourself or send it back.
 - **Never relay unverified subagent output to the user.** You are the last line of defense. If you pass along a subagent's false claim, it's your error.
 - **Cancel implementors gracefully, never kill mid-edit.** Stopping an active implementor: send a cancel-and-revert message ("stop, revert your changes, leave the tree clean") and let it finish. Hard-killing strands partial edits as untracked working-tree state — the orchestrator's mess to clean up.
+- Give every spawned or resumed subagent a current role label. Print or update the roster immediately after spawn, resume, reassignment, or scope change: `<role label>: <runtime name> [type]`.
+- In every wait/status/close update, use `<role label> (<runtime name> [type])`; do not use bare runtime nicknames once labeled.

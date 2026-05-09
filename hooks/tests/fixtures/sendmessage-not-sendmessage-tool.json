@@ -1,0 +1,9 @@
+{
+  "session_id": "t00-sm-other-tool",
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "/tmp/x",
+    "old_string": "a",
+    "new_string": "b"
+  }
+}

@@ -19,6 +19,9 @@
 
 set -uo pipefail
 
+. "$HOME/.claude/hooks/lib/claude-tmp.sh"
+claude_init_tmp || true
+
 # Invocation log set up FIRST so even early-exit failures (malformed env,
 # missing config) get a record. Lives outside $PROOF_DIR so it survives
 # the stop-cycle wipe.

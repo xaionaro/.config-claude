@@ -1,0 +1,10 @@
+{
+  "session_id": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",
+  "tool_name": "MultiEdit",
+  "tool_input": {
+    "file_path": "__HOME__/.claude/todos/bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb-agent-cccccccc-cccc-4ccc-cccc-cccccccccccc.json",
+    "edits": [
+      {"old_string": "old", "new_string": "new"}
+    ]
+  }
+}

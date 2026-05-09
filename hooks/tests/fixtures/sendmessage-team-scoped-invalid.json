@@ -1,0 +1,8 @@
+{
+  "session_id": "t00-sm-team-invalid",
+  "tool_name": "SendMessage",
+  "tool_input": {
+    "to": "alice",
+    "team_name": "teamB"
+  }
+}

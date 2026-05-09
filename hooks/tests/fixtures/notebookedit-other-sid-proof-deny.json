@@ -1,0 +1,8 @@
+{
+  "session_id": "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",
+  "tool_name": "NotebookEdit",
+  "tool_input": {
+    "notebook_path": "__HOME__/.cache/claude-proof/bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb/foo.ipynb",
+    "new_source": "x = 1"
+  }
+}

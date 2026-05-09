@@ -22,6 +22,11 @@ Before stopping, verify ALL of the following. If any check fails → continue wo
 - All Active tasks resolved this turn. (In the reviewer prompt's `## TASKS`, only items under `### Active` count toward the no-open-tasks-at-stop violation.) Tasks the user accepted as out-of-scope → rename subject to `[DEFERRED <reason>] <original subject>` via TaskUpdate. Tasks waiting on user input or an external dependency → rename to `[BLOCKED on <thing>] <original subject>`. Stale tasks (idle > 24h with no prefix) → confirm and resolve, cancel, or relabel.
 - BLOCKED on user input → report (what, exact questions, exact next commands) using the AskUserQuestion tool. Do not stop to ask. Keep working.
 
+## Project Understanding Ledger
+
+- If ECI or ATE was used, update the session project-understanding ledger per the `maintaining-context-ledger` skill before stopping.
+- If no ledger update is needed, state why.
+
 ## Root cause
 
 - Assume the bug is in our code. Blaming a library or tool requires reproducing the issue in isolation with evidence.
