@@ -29,6 +29,10 @@
           {
             "type": "command",
             "command": "$HOME/.claude/hooks/prompt-task-reminder.sh"
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/eci-pending-clear.sh"
           }
         ]
       }
@@ -75,6 +79,15 @@
           {
             "type": "command",
             "command": "$HOME/.claude/hooks/edit-bash-pre-reviewer.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|SendMessage|Monitor",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/eci-pending-set.sh"
           }
         ]
       }

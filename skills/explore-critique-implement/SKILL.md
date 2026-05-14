@@ -26,6 +26,10 @@ Coding task? Every subagent prompt (explorer, critic, implementer) must include:
 
 The PreToolUse gate `~/.claude/hooks/eci-active-gate.sh` denies direct Edit/Write/MultiEdit on the main thread while engaged. Every code change must flow through a subagent or teammate. Subagents and teammates write from their own session — the marker is keyed to the orchestrator's session and is absent in theirs, so neither trips this gate. The Stop hook exemption for `eci-implementer` uses a different scope — see `hooks/stop-gate.sh`.
 
+The Stop hook hard-blocks idle stops while ECI is active, with one auto-release: when the orchestrator dispatches `Agent` / `SendMessage` / `Monitor`, `hooks/eci-pending-set.sh` arms `$PROOF_DIR/eci_teammate_pending` and subsequent stops release silently until the teammate reply (which clears the marker via `hooks/eci-pending-clear.sh`).
+
+If the block fires while a teammate IS still working (e.g. the user sent a mid-flight message that cleared the marker), confirm the teammate is still running via TaskList/TaskGet or Agent status, then arm the marker manually: `touch $PROOF_DIR/eci_teammate_pending`. Do not blindly arm — verify first.
+
 | Step | Command | When |
 |------|---------|------|
 | Engage | `~/.claude/bin/eci-active on "<task + scope>"` | Before Step 1 of the first iteration |

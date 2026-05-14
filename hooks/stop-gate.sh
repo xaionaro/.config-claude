@@ -283,11 +283,17 @@ run_secret_scan() {
 # activity-empty fast-continue lets stops through when there is genuinely
 # nothing in flight.
 
-# 1. ECI active → hard block.
+# 1. ECI active → hard block, unless teammate-pending marker is set.
+#    Marker touched by hooks/eci-pending-set.sh on Agent/SendMessage/Monitor;
+#    cleared by hooks/eci-pending-clear.sh on next user/teammate message.
+#    Lets the orchestrator idle-wait without spinning the stop loop.
 ECI_ACTIVE=$(claude_existing_state_file eci eci_active "$SESSION_ID" "$CWD" 2>/dev/null || true)
 if [ -n "$ECI_ACTIVE" ] && [ -f "$ECI_ACTIVE" ]; then
+  if [ -f "$PROOF_DIR/eci_teammate_pending" ]; then
+    exit 0
+  fi
   claude_note_state_session_id "$ECI_ACTIVE" "$SESSION_ID" || true
-  block "ECI is active for this session. Continue the ECI task, update the project-understanding ledger, or report a blocker requiring user input. Disengage only with clean-pass or user-closed via ~/.claude/bin/eci-active off <disengage-report.md>."
+  block "Stop blocked: ECI active and no teammate awaited (marker \$PROOF_DIR/eci_teammate_pending absent). If a teammate IS still working (marker may have been cleared by a recent user prompt or message), verify via TaskList/TaskGet or Agent status, then arm it with \`touch \$PROOF_DIR/eci_teammate_pending\` so idle stops release until the reply. Otherwise continue the ECI task — Agent/SendMessage/Monitor dispatch auto-arms the marker. If genuinely stuck, surface the blocker via AskUserQuestion (do not stop to ask). Disengage only on clean-pass or user-closed via ~/.claude/bin/eci-active off <disengage-report.md>."
 fi
 
 # 2. Skip-stop bypass (relocated): only honored after the ECI check.
