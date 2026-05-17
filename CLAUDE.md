@@ -71,7 +71,10 @@ GOOD: [fetches JNI spec] "[T1: JNI spec Section X, high] The specification says:
 - **Review diff for secrets**: Before every commit, inspect `git diff` for secrets or credentials.
 - **Run static checks**: Before every commit, run all available static checks.
 - **Push only on request**: Commit locally freely, but `git push` requires explicit user approval.
-- **One logical change = one commit (unpushed)**: While commits are unpushed, never stack a `fix bad commit` on top of a bad commit. Amend (`git commit --amend`) the original, or `git reset --soft HEAD~N && git commit` to combine. Hold commits until the change stabilizes. After push, prefer new commits.
+- **Reset gate**: Never reset a repo's state unless the reset gate is complete.
+- **Before reset**: Inspect `git status` and all uncommitted diffs, confirm nothing useful would be lost, then create `.git-reset-approved-once` in the repo root with `date:`, `reason:`, and `command: <exact Bash command>` lines.
+- **One reset only**: A reset approval marker permits one matching Bash command only. The Bash hook deletes `.git-reset-approved-once` before allowing that command; any later reset requires rerunning the gate and creating a new marker.
+- **One logical change = one commit (unpushed)**: While commits are unpushed, never stack a `fix bad commit` on top of a bad commit. Amend (`git commit --amend`) the original when possible. Use reset only after the reset gate. Hold commits until the change stabilizes. After push, prefer new commits.
 - **Clean commit messages**: Keep commit messages focused on the change — no "Co-Authored-By: Claude" or AI co-author lines.
 
 # Mandatory Skills

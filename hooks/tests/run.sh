@@ -1090,6 +1090,67 @@ test_validate_bash_allows_main_eci_active_off() {
   expect_no_output "$out"
 }
 
+test_validate_bash_blocks_git_reset_without_marker() {
+  local repo input out cmd
+  repo="$TMP_ROOT/git-reset-without-marker"
+  mkdir -p "$repo" || return 1
+  git -C "$repo" init -q || return 1
+  cmd="git -C $repo reset --hard HEAD"
+  input="$TMP_ROOT/bash-git-reset-without-marker.json"
+  jq -n --arg cwd "$ROOT" --arg cmd "$cmd" \
+    '{session_id:"t00-session",cwd:$cwd,tool_name:"Bash",tool_input:{command:$cmd}}' >"$input"
+  out="$TMP_ROOT/bash-git-reset-without-marker.out"
+
+  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input"
+  is_pretool_deny "$out" &&
+    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "git reset denied"
+}
+
+test_validate_bash_consumes_git_reset_marker() {
+  local repo marker input out cmd
+  repo="$TMP_ROOT/git-reset-with-marker"
+  mkdir -p "$repo" || return 1
+  git -C "$repo" init -q || return 1
+  cmd="git -C $repo reset --hard HEAD"
+  marker="$repo/.git-reset-approved-once"
+  {
+    printf 'date: 2026-05-17\n'
+    printf 'reason: hook test\n'
+    printf 'command: %s\n' "$cmd"
+  } >"$marker"
+  input="$TMP_ROOT/bash-git-reset-with-marker.json"
+  jq -n --arg cwd "$ROOT" --arg cmd "$cmd" \
+    '{session_id:"t00-session",cwd:$cwd,tool_name:"Bash",tool_input:{command:$cmd}}' >"$input"
+  out="$TMP_ROOT/bash-git-reset-with-marker.out"
+
+  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input"
+  expect_no_output "$out" &&
+    [ ! -e "$marker" ]
+}
+
+test_validate_bash_blocks_git_reset_marker_mismatch() {
+  local repo marker input out cmd
+  repo="$TMP_ROOT/git-reset-marker-mismatch"
+  mkdir -p "$repo" || return 1
+  git -C "$repo" init -q || return 1
+  cmd="git -C $repo reset --hard HEAD"
+  marker="$repo/.git-reset-approved-once"
+  {
+    printf 'date: 2026-05-17\n'
+    printf 'reason: hook test\n'
+    printf 'command: git -C %s reset --soft HEAD~1\n' "$repo"
+  } >"$marker"
+  input="$TMP_ROOT/bash-git-reset-marker-mismatch.json"
+  jq -n --arg cwd "$ROOT" --arg cmd "$cmd" \
+    '{session_id:"t00-session",cwd:$cwd,tool_name:"Bash",tool_input:{command:$cmd}}' >"$input"
+  out="$TMP_ROOT/bash-git-reset-marker-mismatch.out"
+
+  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input"
+  is_pretool_deny "$out" &&
+    [ -e "$marker" ] &&
+    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "does not match"
+}
+
 # ---- validate-edit-write activity marking ----
 
 test_validate_edit_write_marks_edit_activity() {
@@ -1927,6 +1988,12 @@ run_case "validate-bash blocks subagent eci-active off" \
   test_validate_bash_blocks_subagent_eci_active_off
 run_case "validate-bash allows main eci-active off" \
   test_validate_bash_allows_main_eci_active_off
+run_case "validate-bash blocks git reset without marker" \
+  test_validate_bash_blocks_git_reset_without_marker
+run_case "validate-bash consumes git reset marker" \
+  test_validate_bash_consumes_git_reset_marker
+run_case "validate-bash blocks git reset marker mismatch" \
+  test_validate_bash_blocks_git_reset_marker_mismatch
 
 # validate-edit-write activity
 run_case "validate-edit-write marks edit activity for main thread" \

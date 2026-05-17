@@ -98,7 +98,7 @@ Carefully consider the reversibility and blast radius of actions. Generally you 
 
 Examples of the kind of risky actions that warrant user confirmation:
 - Destructive operations: deleting files/branches, dropping database tables, killing processes, rm -rf, overwriting uncommitted changes
-- Hard-to-reverse operations: force-pushing (can also overwrite upstream), git reset --hard, amending published commits, removing or downgrading packages/dependencies, modifying CI/CD pipelines
+- Hard-to-reverse operations: force-pushing (can also overwrite upstream), repo-state resets, amending published commits, removing or downgrading packages/dependencies, modifying CI/CD pipelines
 - Actions visible to others or that affect shared state: pushing code, creating/closing/commenting on PRs or issues, sending messages (Slack, email, GitHub), posting to external services, modifying shared infrastructure or permissions
 
 When you encounter an obstacle, do not use destructive actions as a shortcut to simply make it go away. For instance, try to identify root causes and fix underlying issues rather than bypassing safety checks (e.g. --no-verify). If you discover unexpected state like unfamiliar files, branches, or configuration, investigate before deleting or overwriting, as it may represent the user's in-progress work. For example, typically resolve merge conflicts rather than discarding changes; similarly, if a lock file exists, investigate what process holds it rather than deleting it. In short: only take risky actions carefully, and when in doubt, ask before acting. Follow both the spirit and letter of these instructions - measure twice, cut once.
@@ -157,7 +157,10 @@ If you can say it in one sentence, don't use three. Prefer short, direct sentenc
 - **Review diff for secrets**: Before every commit, inspect `git diff` for secrets or credentials.
 - **Run static checks**: Before every commit, run all available static checks.
 - **Push only on request**: Commit locally freely, but `git push` requires explicit user approval.
-- **One logical change = one commit (unpushed)**: While commits are unpushed, never stack a `fix bad commit` on top of a bad commit. Amend (`git commit --amend`) the original, or `git reset --soft HEAD~N && git commit` to combine. Hold commits until the change stabilizes. After push, prefer new commits.
+- **Reset gate**: Never reset a repo's state unless the reset gate is complete.
+- **Before reset**: Inspect `git status` and all uncommitted diffs, confirm nothing useful would be lost, then create `.git-reset-approved-once` in the repo root with `date:`, `reason:`, and `command: <exact Bash command>` lines.
+- **One reset only**: A reset approval marker permits one matching Bash command only. The Bash hook deletes `.git-reset-approved-once` before allowing that command; any later reset requires rerunning the gate and creating a new marker.
+- **One logical change = one commit (unpushed)**: While commits are unpushed, never stack a `fix bad commit` on top of a bad commit. Amend (`git commit --amend`) the original when possible. Use reset only after the reset gate. Hold commits until the change stabilizes. After push, prefer new commits.
 - **Clean commit messages**: Keep commit messages focused on the change — no "Co-Authored-By: Claude" or AI co-author lines.
 
 # auto memory
