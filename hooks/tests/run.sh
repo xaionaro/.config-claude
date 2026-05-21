@@ -1670,6 +1670,43 @@ test_stop_gate_continues_clean_inactive_turn() {
   ! is_stop_block "$out" || json_field_contains "$out" '.reason // empty' "Verification proof accepted"
 }
 
+# Regression for the cleanup that runs at PROOF_DIR on every stop. The
+# maintaining-context-ledger skill mandates BOTH project-understanding.md and
+# high_level_log.md persist across stops; everything else (proof.md, baseline_head,
+# scratch dirs, etc.) must be cleared. Extracts the live find cleanup line(s)
+# from stop-gate.sh, substitutes PROOF_DIR for a scratch dir, and asserts
+# dual-sided behavior. Also asserts both occurrences of the cleanup line are
+# byte-identical so a single check covers both.
+test_stop_gate_cleanup_preserves_ledger_files() {
+  local dir lines uniq line cmd
+  lines=$(grep -F '[ -d "$PROOF_DIR" ] && find "$PROOF_DIR" -mindepth 1 -maxdepth 1' "$ROOT/hooks/stop-gate.sh" || true)
+  [ -n "$lines" ] || return 1
+  [ "$(printf '%s\n' "$lines" | wc -l)" -ge 2 ] || return 1
+  uniq=$(printf '%s\n' "$lines" | sed 's/^[[:space:]]*//' | sort -u | wc -l)
+  [ "$uniq" -eq 1 ] || return 1
+
+  dir="$TMP_ROOT/stop-cleanup-ledger"
+  rm -rf "$dir"
+  mkdir -p "$dir/research"
+  printf 'ledger\n' >"$dir/project-understanding.md"
+  printf 'history\n' >"$dir/high_level_log.md"
+  printf 'scratch\n' >"$dir/baseline_head"
+  printf 'p\n' >"$dir/proof.md"
+  printf 'r\n' >"$dir/research/r1.md"
+
+  line=$(printf '%s\n' "$lines" | head -n1 | sed 's/^[[:space:]]*//')
+  cmd=${line//\$PROOF_DIR/$dir}
+  bash -c "$cmd" || true
+
+  # Good behavior IS happening: both ledger files preserved.
+  [ -f "$dir/project-understanding.md" ] || return 1
+  [ -f "$dir/high_level_log.md" ] || return 1
+  # Bad behavior is NOT happening: non-ledger entries cleared.
+  [ ! -e "$dir/baseline_head" ] || return 1
+  [ ! -e "$dir/proof.md" ] || return 1
+  [ ! -e "$dir/research" ] || return 1
+}
+
 test_stop_gate_blocks_dirty_git_state() {
   local home repo input out
   home="$(fresh_home stop-dirty)"
@@ -2088,6 +2125,8 @@ run_case "stop gate accepts identical audit with rescanned" \
   test_stop_gate_accepts_identical_audit_with_rescanned
 run_case "stop gate continues clean inactive turn" \
   test_stop_gate_continues_clean_inactive_turn
+run_case "stop gate cleanup preserves both ledger files and removes everything else" \
+  test_stop_gate_cleanup_preserves_ledger_files
 run_case "stop gate blocks dirty git state" \
   test_stop_gate_blocks_dirty_git_state
 # DROPPED: stop gate blocks committed state without proof — semantic difference,
