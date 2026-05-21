@@ -148,6 +148,12 @@ Agent separation: see Red Flags. Main thread orchestrates; agents produce.
 
 Polling cadence: re-check a working teammate at most every 30 minutes; faster polling produces no new signal and burns context.
 
+### Bug-discovery routing
+
+If any ECI teammate, gate, or user followup discovers a concrete bug (failure, flake, perf regression, or incorrect behavior), route the bug through a debugging iteration or nested ECI pipeline. Main thread only coordinates.
+
+Map `debugging-discipline` to separate delegated ECI roles: repro → `repro` teammate; RCA → explorer; critic → Step 2 critic; fix → implementer; review → Critic A/B + E2E gate. Every bug prompt says: "Load `debugging-discipline`; follow its repro/RCA-critic/fix-review loop. Do not submit until root cause is falsifiable and the fix is proven on the real failing path."
+
 ## Step 1: Explore
 
 SendMessage to the persistent `explorer` teammate. Each per-message body must include:
@@ -212,13 +218,12 @@ Each new task message to `implementer` includes:
 - The current iteration's concrete-text from the Step 2 critic (verbatim).
 - Iterations 2+: prior iteration's gate findings (verbatim) and files changed since the last message.
 - Step 2 CONDITIONAL fix-list (verbatim, if any) — implementer applies these alongside the concrete text.
+- Code/debugging submissions include root-cause rationale. A fix must identify and repair the mechanism that causes the failure. No causal link may remain unexplained. Any change that only alters the failure's frequency, timing, visibility, or blast radius is mitigation unless containment was explicitly requested.
 - Submission tags every factual claim. Untagged claim → orchestrator bounces back without spawning the gate (parallel to E2E-evidence rule).
 
-**Affected-path E2E before submit.** Apply only when a code/debugging task changes runtime behavior reachable via UI/API/device/CLI. Skip for docs, prompt/skill edits, config-only, tests-only, or pure refactors with no behavior change. If applicable but unavailable, the implementer reports BLOCKED with the exact missing resource. Missing applicable E2E without rationale → orchestrator bounces before Step 4.
+**Affected-path E2E before submit.** Runtime behavior reachable via UI/API/device/CLI: build, run full tests, exercise affected user path, cite output/screenshot/state. Proxy evidence alone insufficient. Skip docs, prompts, config-only, tests-only, pure refactors. If E2E unavailable, report BLOCKED with the exact missing resource; missing E2E/rationale → bounce before Step 4.
 
-When applicable, implementer must build, run full test suite, exercise the affected feature through real UI/API as a user. Cite direct evidence (output, screenshot, observed state). Proxy evidence (unit tests, lint) insufficient.
-
-If submission lacks E2E evidence (and E2E is applicable), SendMessage: "Submission lacks E2E evidence — re-run build, test suite, and user-path exercise; cite output. Do not re-submit until evidence is in the message body."
+If applicable E2E evidence is missing, SendMessage: "Missing E2E evidence — build, run full suite, exercise user path, cite output/screenshot/state. Do not resubmit without evidence."
 
 ## Step 4: Review gate (parallel)
 
@@ -235,6 +240,10 @@ Every issue from Critic A and Critic B must carry exactly one code:
 | **NIT** | Soft recommendation | May be ignored |
 
 Both critics tag every issue per the severity codes table above. Same vocabulary as Step 2; Effect differs (re-implement vs. re-explore).
+
+For every REJECT or CONDITIONAL, reviewers must also tag `impact: trivial` or `impact: substantive` with a one-line rationale. `substantive` means non-trivial, major, API-changing, contract-changing, architecture-changing, security-sensitive, persistence-affecting, concurrency-affecting, or requiring a design tradeoff. Missing impact tag = REJECT against the review output; re-prompt that reviewer before evaluating the gate.
+
+Both critics critique the implementer's root-cause rationale. Unknown causal link or symptom-only change = REJECT unless containment was explicitly requested.
 
 ### Critic A — correctness
 
@@ -258,11 +267,12 @@ Emit only issues that matter for long-term health. "Would refactor eventually" i
 ### E2E agent — end-to-end verification
 
 **Code/debugging tasks only.** Skip for non-code tasks (docs, config, design).
+E2E capacity bottlenecked (device/browser/env slots, credentials, long setup): batch only then. While waiting, debug via shortest faithful repro (unit/API/CLI/log replay/component) before full E2E. Wait briefly for imminent tasks only if no slot idles; keep healthy batches running; queue late arrivals; report per-task verdicts.
 
-1. Build the project. Compilation failure = issue.
-2. Run full test suite. Failures = issue.
-3. Exercise the affected feature through real UI or API as a user would. Verify observable outcomes (output, screenshots, state). Proxy evidence (unit tests pass, linter clean) alone insufficient — direct evidence required.
-4. Confirm no regressions in related features.
+1. Build; failure = issue.
+2. Run full suite; failure = issue.
+3. Exercise affected user path through real UI/API; cite output/screenshot/state. Proxy evidence alone insufficient.
+4. Check related regressions.
 
 ### Evaluating results
 

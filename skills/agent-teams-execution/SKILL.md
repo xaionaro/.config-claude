@@ -23,6 +23,8 @@ Only the team lead's stop goes through the standard stop-checklist proof flow. C
 
 **Autonomy principle.** Drive the pipeline to QA verdict without user input. Teammates decide within their role; coordinator routes within the pipeline; lead enforces rules. Exhaust internal unblocking before escalating: blockers run the Blocker Resolution Protocol (brainstormer + explorer) first, rejections run their full loop budget first. Escalate to user only when those are exhausted, plus: QA verdict to report, user followup arrived. Otherwise proceed — never ask permission for the next obvious step.
 
+**Mission Completion Guard.** Blocker, QA rejection, escalation label, protocol limit, and subagent stop are routing input, not terminal states. The main thread, coordinator, and lead do not stop, final-answer, declare done, or shut down teammates while the user's mission has solvable work. Keep unblocking, reassigning, re-scoping, and verifying until objective mission criteria are met and the user explicitly confirms closure.
+
 <CRITICAL>
 **You MUST create an AGENT TEAM -- do NOT use subagents.**
 
@@ -133,6 +135,7 @@ Executors invoke coding style + `proof-driven-development` + `superpowers:test-d
 - Package/binary scope: code belongs in the binary whose stated purpose matches the code's function. A standalone CLI tool must not contain code requiring a running daemon.
 - Clean solution over hack, always. Reviewers reject shortcuts, workarounds, and "good enough for now."
 - Interface implementation is a contract: "I fulfill this interface." An always-erroring implementation is a false claim — same as naming a function Save that doesn't save. Stub implementations that always error must not exist in production code.
+- Root cause first. A fix must identify and repair the mechanism that causes the failure. No causal link may remain unexplained. Any change that only alters the failure's frequency, timing, visibility, or blast radius is mitigation; reviewers reject it unless containment was explicitly requested.
 
 ### Task States
 
@@ -165,7 +168,7 @@ Executors invoke coding style + `proof-driven-development` + `superpowers:test-d
 | blocked → unblocking | Coordinator launches brainstormer + explorer simultaneously per Blocker Resolution Protocol |
 | unblocking → in_progress | Feasible solution found and assigned. Blocker resolved |
 | unblocking → blocked | No feasible solution found. Escalate to user |
-| in_progress → submitted | All claims tagged `[T<tier>: source, confidence]`. Critique log produced (3+ problems found/fixed). Code tasks: all changes committed, hard proof that the solution works (test output, command output, screenshots). CC lead + snitch |
+| in_progress → submitted | All claims tagged `[T<tier>: source, confidence]`. Critique log produced (3+ problems found/fixed). Code/debugging tasks: root-cause rationale explains the cause chain and why the diff repairs it, all changes committed, hard proof that the solution works (test output, command output, screenshots). CC lead + snitch |
 | submitted → in_progress | Coordinator bounces back: submission checklist failed |
 | submitted → in_review | Coordinator verifies submission checklist passes. Routes to paired reviewer |
 | in_review → in_progress | Reviewer rejected. Routes back to executor with feedback |
@@ -342,6 +345,7 @@ Phase 2 design **must include**:
 - **Test designer** writes specs covering all applicable test types: integration tests (cross-task boundaries), full E2E tests (entire user-facing flows), and UI tests (screen manipulation, interaction sequences) when the project has a UI.
 - Every cross-task interface must have at least one test on the real call path (no mocks at boundaries).
 - E2E tests exercise complete workflows as a user would, including UI manipulation when applicable.
+- E2E capacity bottlenecked: batch only then. While waiting, debug via shortest faithful repro (unit/API/CLI/log replay/component) before full E2E. Wait briefly for imminent tasks only if no slot idles; keep healthy batches running; queue late arrivals; report per-task verdicts.
 - **Failure routing:** cross-task boundary bug → executor pair. Design flaw → research/design.
 
 ## Feedback Loops
@@ -365,11 +369,14 @@ Paired roles communicate **directly**. All other feedback routes through coordin
 
 Applies: bug fix, build failure, flake, perf regression, any task whose deliverable is fixing observed broken behavior.
 
+- Any discovered bug enters Debug Mode: user followup, teammate finding, test failure, reviewer finding, or QA rejection. Coordinator/lead never debug or patch directly.
+- Delegate `debugging-discipline` roles to separate agents: repro → test executor/verifier; RCA → explorer; critic → independent reviewer; fix → executor; review → paired reviewer + final QA. Every bug-task prompt says: "Load `superpowers:systematic-debugging` and `debugging-discipline`; follow their repro/RCA-critic/fix-review loop. Do not submit until root cause is falsifiable and the fix is proven on the real failing path."
 - Executor iterates candidate fixes without per-attempt reviewer gate. No `submitted`/`in_review` transition while still hunting the fix.
 - Each candidate fix CCed to reviewer for **async advice only**. Reviewer cannot reject. Executor does not wait for reviewer reply. Reviewer advice is incorporated if useful, otherwise ignored.
-- Proof = working mitigation: failing repro → passing on real path.
-- After mitigation works, task → `submitted` → `in_review`. Reviewer's job at this stage: improve (cleanup, hardening, semantic correctness, removing the hacky parts). Only stage where reviewer rejection counts.
-- Loop limit (10 rounds) counts post-mitigation review rounds only. Pre-mitigation attempts are uncounted.
+- Proof while hunting = failing repro → passing on real path.
+- Before `submitted`, executor provides root-cause rationale: cause chain, evidence, and why the diff repairs the cause. Unknown "why" = not submitted.
+- After the candidate fix works, task → `submitted` → `in_review`. Reviewer's job at this stage: critique the rationale, reject mitigation, and improve cleanup, hardening, and semantic correctness. Only stage where reviewer rejection counts.
+- Loop limit (10 rounds) counts post-candidate-fix review rounds only. Pre-submission attempts are uncounted.
 - Bug-fix pipeline in User Followups still applies — Debug Mode only changes the executor↔reviewer semantics inside the Execution stage.
 
 ### Loop Limits
@@ -443,11 +450,12 @@ After brainstormer finishes, coordinator launches a second explorer to validate 
 **Reviewers report, never fix.** No editing code, designs, or tests. Describe the problem and suggest a fix direction. The paired executor implements all changes.
 
 0. **Does it work?** Before evaluating quality, verify code fulfills its stated purpose. If it doesn't — REJECT.
-1. **Assume wrong.** Find errors. Look for what's missing.
-2. **Classify:** Critical (security, correctness, spec violation), Major (design deviation, missing edge case) — both block. Minor (doesn't block), Nit (never blocks).
-3. **Outcomes:** APPROVED (no Critical/Major, with evidence). CONDITIONAL (Minor/Nit listed — main task completes; coordinator opens follow-up tasks per Priority Discipline; do NOT bounce executor back). REJECTED (Critical/Major cited with fix direction). Every Critical/Major must cite `file:line`. Fix direction must name the exact symbol changed. Vague findings ("refactor this function", "clean this up") are inadmissible. Rejections must enumerate reasons before any approval statement — no mixed verdicts.
-4. **Check against:** design doc, coding style skill (semantic integrity, naming, typing, no shortcuts — every rule), OWASP top 10, edge cases, error handling, requirements, claim tags, critique log. No coding style invocation = reject. Untagged factual claims = reject. T5 claims not promoted = reject. No critique log = reject.
-5. **Max 10 rounds** then escalate.
+1. **Root cause first.** Critique the executor's rationale. Unknown causal link or symptom-only change = REJECT unless containment was explicitly requested.
+2. **Assume wrong.** Find errors. Look for what's missing.
+3. **Classify:** Critical (security, correctness, spec violation), Major (design deviation, missing edge case) — both block. Minor (doesn't block), Nit (never blocks).
+4. **Outcomes:** APPROVED (no Critical/Major, with evidence). CONDITIONAL (Minor/Nit listed — main task completes; coordinator opens follow-up tasks per Priority Discipline; do NOT bounce executor back). REJECTED (Critical/Major cited with fix direction). Every Critical/Major must cite `file:line`. Fix direction must name the exact symbol changed. Vague findings ("refactor this function", "clean this up") are inadmissible. Rejections must enumerate reasons before any approval statement — no mixed verdicts.
+5. **Check against:** design doc, coding style skill (semantic integrity, naming, typing, no shortcuts — every rule), root-cause rationale, OWASP top 10, edge cases, error handling, requirements, claim tags, critique log. No coding style invocation = reject. Untagged factual claims = reject. T5 claims not promoted = reject. No critique log = reject.
+6. **Max 10 rounds** then escalate.
 
 Design creates a type/component but defers making it work = reject. Valid deferral: don't create it yet. Invalid deferral: create a broken version.
 
@@ -467,6 +475,7 @@ Extends the general Reviewer Protocol above (which already covers OWASP, edge ca
 - [ ] Load the `<language>-coding-style` skill via Skill tool. Check every rule.
 - [ ] Requirements coverage — each user requirement → code
 - [ ] Design compliance — implementation matches architecture + interface contracts (error modes, pre/postconditions, invariants, thread safety)
+- [ ] Root-cause rationale — cause chain complete; diff repairs the cause, not only symptoms
 - [ ] Code location — files in correct binary per purpose map
 - [ ] Shared concerns register — no reimplementation (REJECT); missed abstraction (CONDITIONAL)
 
@@ -501,6 +510,7 @@ Review independently first — no reading peer findings before writing your own.
 - [ ] Integration tests pass (run them — direct)
 - [ ] All unit tests pass (run them — proxy, still required)
 - [ ] End-to-end flows verified (direct — run the program as a user)
+- [ ] Root-cause rationale reviewed; no unexplained causal link or symptom-only mitigation
 - [ ] No uncommitted changes, no secrets in diffs
 - [ ] Static checks pass
 - [ ] Mandatory skills invoked by all teammates
@@ -515,6 +525,8 @@ Review independently first — no reading peer findings before writing your own.
 
 **PAIR INVARIANT (hard rule):** Every executor MUST have its paired reviewer spawned and confirmed BEFORE the executor receives any task. Never assign new work to the same executor whose previous submission is unreviewed — assign it to a different executor/reviewer pair instead. Sequence per pair: spawn reviewer -> confirm alive -> spawn executor -> executor implements -> reviewer reviews -> loop until approved -> only then may this executor receive next task. While a pair is in review, other pairs work in parallel. Violating this invariant is a skill violation equivalent to writing code.
 
+**Proof waits:** Coordinator may wait on any proof only when the task records {question, cheapest faithful environment, rejected cheaper-environment reasons, active owner} and that owner is running the proof now. Missing record -> record before waiting; missing active owner -> assign one. Coordinator records and routes; teammates investigate. Each status cycle classifies every waiting lane as running proof, reassigned, closed, or blocked with failed unblock attempts.
+
 1. **Track EVERYTHING as tasks.** Every deliverable, sub-task, blocker = task. Task list is single source of truth.
 2. **Request spawns from lead.** Coordinator determines who is needed and when; lead creates the agent team and spawns teammates.
 3. **Tasks with dependencies first**, then request lead to spawn teammates to claim them. Every task description must include: "Tag all factual claims: `[T<tier>: source, confidence]`."
@@ -522,7 +534,7 @@ Review independently first — no reading peer findings before writing your own.
 5. **Route feedback** between unpaired roles. When receiving findings from any agent: do NOT acknowledge with praise. Identify what's missing, what could be wrong, what needs verification. Route findings to a second agent for independent verification before acting on them.
 6. **Monitor progress.** Stale task = investigate per Crash Recovery: check for active process and file/git activity in their worktree. If confirmed unresponsive, follow the respawn sequence.
 7. **Handle "submitted" tasks.** When a task is submitted: verify Stop Checklist items (changes committed, claims tagged, critique log exists). Bounce back immediately if incomplete — don't waste reviewer time. If checklist passes, route to paired reviewer. After reviewer approves, route to test pipeline (code tasks) or verifier (non-code tasks).
-8. **Drive per-task pipelines.** When a task's code is approved + its test specs are ready → immediately spawn test executor/reviewer pair for that task. Do not wait for other tasks. After ALL tasks tested → spawn QA. Record checkpoint per task: what was produced, who approved, git SHA. Update ledger per top-of-skill rule.
+8. **Drive per-task pipelines.** When a task's code is approved + its test specs are ready → immediately spawn test executor/reviewer pair for that task. Do not wait for other tasks except bottlenecked E2E batches under Testing Protocol. After ALL tasks tested → spawn QA. Record checkpoint per task: what was produced, who approved, git SHA. Update ledger per top-of-skill rule.
 9. **Budget context** -- summaries, not raw output (see below).
 10. **Enforce loop limits.** Escalate on 11th rejection / 3rd QA re-entry.
 11. **Crash recovery** -- detect unresponsive teammates, request lead to re-spawn. For executors: review changes before re-spawning. Max 2 re-spawns.
