@@ -478,11 +478,11 @@ if [ ! -f "$REVIEWER_BYPASS" ] && [ "$REVIEWER_REACHABLE" = "1" ]; then
       fi
     fi
     if [ "$RESET" = "0" ]; then
-      # Ledger-preserving cleanup: keep project-understanding*.md and
-      # high_level_log*.md across stop cycles (both mandated by the
-      # maintaining-context-ledger skill), clear everything else
-      # (proof.md, baseline_head, etc.).
-      [ -d "$PROOF_DIR" ] && find "$PROOF_DIR" -mindepth 1 -maxdepth 1 ! \( -name 'project-understanding*.md' -o -name 'high_level_log*.md' \) -exec rm -rf {} + 2>/dev/null || true
+      # Ledger-preserving cleanup: keep project-understanding*.md,
+      # high_level_log*.md, and latest-status-report*.md across stop
+      # cycles (all mandated by the maintaining-context-ledger skill),
+      # clear everything else (proof.md, baseline_head, etc.).
+      [ -d "$PROOF_DIR" ] && find "$PROOF_DIR" -mindepth 1 -maxdepth 1 ! \( -name 'project-understanding*.md' -o -name 'high_level_log*.md' -o -name 'latest-status-report*.md' \) -exec rm -rf {} + 2>/dev/null || true
       exit 0
     fi
     # Fall through to reviewer call below.
@@ -759,10 +759,11 @@ fi
 
 # 2. Already sent back (proof printed or no proof written) → allow + cleanup
 if [ "$STOP_ACTIVE" = "true" ]; then
-  # Ledger-preserving cleanup: keep project-understanding*.md and
-  # high_level_log*.md across stop cycles (both mandated by the
-  # maintaining-context-ledger skill), clear everything else.
-  [ -d "$PROOF_DIR" ] && find "$PROOF_DIR" -mindepth 1 -maxdepth 1 ! \( -name 'project-understanding*.md' -o -name 'high_level_log*.md' \) -exec rm -rf {} + 2>/dev/null || true
+  # Ledger-preserving cleanup: keep project-understanding*.md,
+  # high_level_log*.md, and latest-status-report*.md across stop
+  # cycles (all mandated by the maintaining-context-ledger skill),
+  # clear everything else.
+  [ -d "$PROOF_DIR" ] && find "$PROOF_DIR" -mindepth 1 -maxdepth 1 ! \( -name 'project-understanding*.md' -o -name 'high_level_log*.md' -o -name 'latest-status-report*.md' \) -exec rm -rf {} + 2>/dev/null || true
 
   # Activity-marker cleanup mirrors the proof-acceptance path so the next
   # stop sees a clean slate when the agent is genuinely idle.

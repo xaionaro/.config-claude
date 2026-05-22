@@ -5,14 +5,15 @@ description: Use when writing or verifying project-understanding ledgers, contex
 
 # Maintaining Context Ledgers
 
-Two files, side by side, both required:
+Three files, side by side, all required:
 
 | File | Role | Edit mode |
 |------|------|-----------|
 | `project-understanding.md` (the **ledger**) | Current-state snapshot | Rewrite in place; stale entries deleted |
 | `high_level_log.md` (the **log**) | Append-only history of every material change | Append only; never edit, never delete past entries |
+| `latest-status-report.md` (the **report**) | Latest status report per `writing-status-reports` | Overwrite in place each refresh |
 
-The ledger answers *what is true now*. The log answers *what happened, in order, and why we believe what's now in the ledger*. They are not redundant — the ledger has no history; the log has no synthesis.
+The ledger answers *what is true now*. The log answers *what happened, in order, and why we believe what's now in the ledger*. The report answers *the most recent status update*, ready to relay to the user without recomputation. They are not redundant — the ledger has no history; the log has no synthesis; the report has no detail beyond the status-report categories.
 
 ## Core Rule
 
@@ -22,14 +23,18 @@ A fresh agent reading only the ledger (no transcript, no memory) must reach the 
 
 ## Storage
 
-For ECI/ATE, both files live at:
+For ECI/ATE, all three files live at:
 
 ```text
 ~/.cache/claude-proof/$SESSION_ID/project-understanding.md   # the ledger
 ~/.cache/claude-proof/$SESSION_ID/high_level_log.md          # the log
+~/.cache/claude-proof/$SESSION_ID/latest-status-report.md    # the report
 ```
 
-Do not store either file in the project/repo.
+Do not store any of these files in the project/repo. The stop hook's
+`PROOF_DIR` cleanup preserves all three filename patterns
+(`project-understanding*.md`, `high_level_log*.md`, `latest-status-report*.md`)
+across stop cycles; any other filename in `$PROOF_DIR` is wiped.
 
 ## High-Level Log
 
@@ -53,6 +58,20 @@ Suggested entry shape (adapt as needed, but keep timestamp + change + reason + e
 - Evidence: <commit | report path | command output reference>.
 - Agent: <runtime name / role>.
 ```
+
+## Latest Status Report
+
+`latest-status-report.md` holds the single most recent status report, written per the `writing-status-reports` skill. It is the handoff snapshot the next agent or user reads first.
+
+| Rule | Detail |
+|------|--------|
+| One file, overwrite | Each refresh replaces the file. No history kept here — that is the log's job. |
+| Same skill, same format | Content follows `writing-status-reports` (state, progress, decisions, blockers/risks, verification, next focus; multi-lane table when applicable). |
+| Lead with UTC timestamp | First line: `# Status — <UTC ISO8601>`. Stale reports without a timestamp are rejected. |
+| Refresh triggers | After every ledger update, after every material change, before user-waiting stops, before shutdown, and whenever the user asks for status. |
+| No copying the ledger | Report changed state plus next focus; do not duplicate ledger structure. Cross-reference instead. |
+
+A ledger update without a matching report refresh is a defect, same as a missing log append.
 
 ## Current State, Not History
 
@@ -116,6 +135,8 @@ Structure must evolve with the project. A frozen schema that no longer fits is i
 
 Then **append to `high_level_log.md`** one entry per material change made this turn. Every passed-around fact the stale pass deleted or rewrote becomes a log entry — that is where the history lives now.
 
+Finally **overwrite `latest-status-report.md`** with a fresh status report (per `writing-status-reports`) reflecting the just-updated ledger. Skip only when this turn produced no ledger or log change.
+
 ## Invalid Ledger
 
 Reject the ledger if any holds:
@@ -134,4 +155,5 @@ Reject the ledger if any holds:
 - A line packs multiple facts into a long bullet or run-on sentence (semicolon chains, "and"-joined clauses, multi-clause stuffing) where sub-bullets, labeled lines, or one row/line per fact would scan.
 - Headings no longer fit the content (facts shoehorned under a name that does not cover them, subsections that have grown into topics of their own, empty sections kept after their concern is gone).
 - The high-level log is missing, was edited or truncated in place, lacks entries for ledger changes made this session, or duplicates the ledger's current-state synthesis instead of recording change history.
+- The latest status report is missing, lacks a UTC timestamp, predates the last ledger update, fails `writing-status-reports` coverage (state, progress, decisions, blockers/risks, verification, next focus), or duplicates ledger structure instead of summarizing changed state.
 - Secrets, credentials, or unnecessary personal data are recorded.
