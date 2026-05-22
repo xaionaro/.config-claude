@@ -164,6 +164,16 @@ SendMessage to the persistent `explorer` teammate. Each per-message body must in
 - Every factual claim in the report must carry a T1-T5 tag per CLAUDE.md Claim Verification protocol. Primary sources only for T1. Untagged factual claims are not allowed.
 - Word cap on the report (default: 1000 words).
 
+### Proof of Concept Requirement
+
+Any proposed option whose core mechanism is unproven-in-practice (not a well-known pattern, not already shipped in this codebase, not a documented vendor API used as documented) ships with a minimal PoC alongside the proposal:
+
+- Strip every concern not needed to exercise the core mechanism — no error handling, no edge cases, no production polish, no scaffolding beyond what the demo requires.
+- Run end-to-end on one real input; produce the observable behavior the mechanism claims.
+- Explorer attaches the PoC to the option in Step 1. Missing PoC on an unproven option = Step 2 REJECT.
+
+Proven-in-practice mechanisms need no PoC. State "proven by <link/citation>" when claiming exemption.
+
 ## Step 2: Critique explorations
 
 Spawn a DIFFERENT agent — not the explorer, not the main thread. The critic identity must differ from explorer and implementer. Spawn the critic as a persistent teammate via the Agent tool with `team_name=eci-<slug>` and a unique `name=critic-r<N>` (round) or `name=critic-A` / `critic-B` (Step 4). Each new round must start with a clean critic context — either send `/clear` to the existing critic teammate (preserves identity, clears history) or shut it down and respawn under the same name. MUST NOT reuse the persistent explorer or implementer teammate for critic work; critics are teammates.

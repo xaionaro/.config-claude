@@ -69,7 +69,7 @@ After the team reports a QA verdict, the user may send followups (bug reports, t
 | **Coordinator** | 1 | all | Task assignment, routing, phase management. Requests spawns from lead. **Never implements.** |
 | **Lead** | 1 | all | Spawns teammates. Audits coordinator's rule compliance. Reminds coordinator when it forgets enforcement. **Never implements.** |
 | **Explorer** | 1+ | 1 | Gather facts. Tag sources. Challenge each other. |
-| **Designer** | 1 | 2 | Architect from findings. Produce file ownership map. |
+| **Designer** | 1 | 2 | Architect from findings. Produce file ownership map. Ship a minimal proof-of-concept implementation for any unproven-in-practice mechanism the design relies on — see Designer PoC Requirement. |
 | **Design Reviewer** | 1+ | 2 | Adversarial design review against the design itself. Report only, never edit design. 2+ for large tasks. |
 | **Fundamentals Design Reviewer** | 1 | 2 | Runs in parallel with Design Reviewer. Challenges design fundamentals, not surface issues. Spawns 3 subagents via Agent tool: (1) brainstormer — list possible fundamental issues (premise, problem framing, architectural axioms, hidden assumptions, scope, alternatives); (2) reviewer — investigate design against each listed issue and report; (3) meta-reviewer — critically review the reviewer's report for missed angles, weak evidence, rubber-stamping. Report only, never edit design. |
 | **Executor** | 1+ | 3 | Implement assigned task + unit tests. One per independent unit of work. Actively look for code smell and design issues in code they study/touch, report all to coordinator. Broken infra or resorting to a workaround = notify coordinator before proceeding. |
@@ -458,6 +458,16 @@ After brainstormer finishes, coordinator launches a second explorer to validate 
 6. **Max 10 rounds** then escalate.
 
 Design creates a type/component but defers making it work = reject. Valid deferral: don't create it yet. Invalid deferral: create a broken version.
+
+### Designer — Proof of Concept Requirement
+
+Any design whose core mechanism is unproven-in-practice (not a well-known pattern, not already shipped in this codebase, not a documented vendor API used as documented) ships with a minimal PoC:
+
+- Strip every concern not needed to exercise the core mechanism — no error handling, no edge cases, no production polish, no scaffolding beyond what the demo requires.
+- Run end-to-end on one real input; produce the observable behavior the mechanism claims.
+- Hand off the PoC with the design. Missing PoC for an unproven mechanism = REJECT.
+
+Proven-in-practice mechanisms need no PoC. State "proven by <link/citation>" when claiming exemption.
 
 ### Design Reviewer — Additional Rejection Criteria
 
