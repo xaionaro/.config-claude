@@ -468,6 +468,16 @@ REJECT if any are missing or incomplete:
 - Enriched interface contracts (item 4) — error modes, pre/postconditions, invariants, thread safety
 - File ownership map contradicts binary/service purpose map (items 2 vs 3)
 
+### Fundamentals Design Reviewer — Verdict
+
+| Verdict | When |
+|---------|------|
+| **REJECT** | A substantive fundamental flaw — falsifies a load-bearing part of the design; cannot be patched without rethinking premise, framing, scope, or another foundational decision. |
+| **CONDITIONAL** | No fundamental flaw, but a significant issue remains. Main task completes; coordinator opens follow-up tasks. |
+| **NIT** | Only minor or non-substantive issues. Never blocks. |
+
+The reviewer is not constrained to any fixed taxonomy of flaw types; the test for REJECT is impact, not category.
+
 ### Execution Reviewer Checklist
 
 Extends the general Reviewer Protocol above (which already covers OWASP, edge cases, error handling, claim tags, critique log). Execution reviewers additionally check:
