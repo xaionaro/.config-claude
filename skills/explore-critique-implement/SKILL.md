@@ -154,6 +154,8 @@ If any ECI teammate, gate, or user followup discovers a concrete bug (failure, f
 
 Map `debugging-discipline` to separate delegated ECI roles: repro → `repro` teammate; RCA → explorer; critic → Step 2 critic; fix → implementer; review → Critic A/B + E2E gate. Every bug prompt says: "Load `debugging-discipline`; follow its repro/RCA-critic/fix-review loop. Do not submit until root cause is falsifiable and the fix is proven on the real failing path."
 
+PoC Fix Falsification (see "PoC Fix Falsification" section in `debugging-discipline`) applies — RCA must emit BEFORE/AFTER repro evidence before submitting a confirmed root cause. The downstream proper fix is produced by the ECI implementer (Step 3) plus the Critic A/B + E2E gate (Step 4); see the canonical rule for the "PoC shipped as final fix" exemption and certification protocol.
+
 ## Step 1: Explore
 
 SendMessage to the persistent `explorer` teammate. Each per-message body must include:

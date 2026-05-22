@@ -43,6 +43,17 @@ Reproduce the issue before investigating. No reproduction = no understanding. Sl
 - Before testing a hypothesis, state at least one alternative explanation. If you can't, you don't understand the problem yet.
 - A hypothesis becomes "confirmed root cause" only when you have tested a prediction that would have DISPROVED it if wrong, and it survived.
 
+## PoC Fix Falsification
+
+A hypothesis is confirmed only by a PoC fix proven on the real failing path. The PoC fix IS the falsification test.
+
+- **PoC-quality only.** Strip every concern not needed to demonstrate the cause is removed: no error handling, no edge cases, no production polish, no scaffolding beyond what removes the failure.
+- **Run on the real failing path.** Apply PoC; rerun the shortest faithful repro. Failure gone → hypothesis confirmed. Failure remains → hypothesis falsified; back to RCA loop.
+- **Confirmed-issue report.** RCA reports to coordinator (per the existing Root-cause reporting requirement): confirmed issue list (one line each), cause chain, PoC diff (or essential mechanism), repro evidence BEFORE PoC (failure observed) and AFTER PoC (failure gone), unresolved alternatives. Every factual claim carries a T1-T5 tag per CLAUDE.md.
+- **PoC is not the deliverable.** The downstream `loop(fix, review)` still runs and must produce the proper fix: hardening, edge cases, cleanup, regression tests. Reviewer REJECTS "PoC shipped as final fix" unless the PoC IS the proper fix (e.g. one-character typo) — exemption stated explicitly in the rationale; reviewer still verifies cleanup and regression coverage.
+- **Exemption requires reviewer certification.** Reviewer must affirmatively certify: (a) the PoC fully repairs the cause with no further hardening possible, (b) regression coverage exists. Implementer-claimed exemption without reviewer certification = REJECT.
+- **No PoC = not confirmed.** RCA may not transition from HYPOTHESIS to confirmed root cause without the BEFORE/AFTER repro evidence. Reasoning alone, log inspection alone, or static analysis alone does not confirm.
+
 ## Logging
 
 - When you can't diagnose → add logging + auto-tests to gather info/reproduce.

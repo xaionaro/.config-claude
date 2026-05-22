@@ -378,6 +378,10 @@ Applies: bug fix, build failure, flake, perf regression, any task whose delivera
 - After the candidate fix works, task → `submitted` → `in_review`. Reviewer's job at this stage: critique the rationale, reject mitigation, and improve cleanup, hardening, and semantic correctness. Only stage where reviewer rejection counts.
 - Loop limit (10 rounds) counts post-candidate-fix review rounds only. Pre-submission attempts are uncounted.
 - Bug-fix pipeline in User Followups still applies — Debug Mode only changes the executor↔reviewer semantics inside the Execution stage.
+- PoC fix falsification (see "PoC Fix Falsification" section in `debugging-discipline` for the full rule, exemption clause, and certification protocol):
+    - The executor's candidate fix is the falsification probe.
+    - Required submission evidence: BEFORE repro (failure observed) and AFTER repro (failure gone) on the real failing path. No BEFORE/AFTER = not `submitted`.
+    - PoC is not the deliverable — the post-candidate-fix reviewer and final QA still demand hardening, edge cases, cleanup, regression tests.
 
 ### Loop Limits
 
