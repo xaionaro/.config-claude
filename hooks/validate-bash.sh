@@ -26,6 +26,123 @@ deny() {
   exit 0
 }
 
+# Detect any `git push` invocation across pipes/subshells/bash -c. Prints `1`
+# when a push is found. Falls back to a substring check if python3 is absent
+# or the command cannot be tokenized.
+detect_git_push() {
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$COMMAND" <<'PY'
+import os, shlex, sys
+
+cmd = sys.argv[1]
+OPS = {';', '&', '&&', '|', '||', '(', ')'}
+GIT_KV = {'-c', '--config-env', '--exec-path', '--git-dir',
+          '--namespace', '--super-prefix', '--work-tree'}
+GIT_KV_EQ = tuple(a + '=' for a in GIT_KV if a.startswith('--'))
+
+def tokenize(s):
+    try:
+        lex = shlex.shlex(s, posix=True, punctuation_chars=True)
+        lex.whitespace_split = True
+        return list(lex), True
+    except ValueError:
+        return [], False
+
+def segments(toks):
+    out, start = [], 0
+    for i, t in enumerate(toks + [';']):
+        if t in OPS:
+            if start < i:
+                out.append(toks[start:i])
+            start = i + 1
+    return out
+
+def is_assign(t):
+    n, s, _ = t.partition('=')
+    return bool(s) and bool(n) and n.replace('_', 'A').isalnum() and not n[0].isdigit()
+
+def cmd_start(seg):
+    i = 0
+    while i < len(seg) and is_assign(seg[i]):
+        i += 1
+    while i < len(seg):
+        n = os.path.basename(seg[i])
+        if n in ('command', 'builtin', 'exec'):
+            i += 1
+            continue
+        if n == 'env':
+            i += 1
+            while i < len(seg):
+                t = seg[i]
+                if is_assign(t):
+                    i += 1; continue
+                if t in ('-i', '-0') or t.startswith('-u'):
+                    i += 1; continue
+                if t in ('-C', '-S') and i + 1 < len(seg):
+                    i += 2; continue
+                if t.startswith('-'):
+                    i += 1; continue
+                break
+            continue
+        if n in ('sudo', 'doas'):
+            i += 1
+            while i < len(seg) and seg[i].startswith('-'):
+                i += 1
+            continue
+        return i
+    return i
+
+def check_seg(seg, depth=0):
+    i = cmd_start(seg)
+    if i >= len(seg):
+        return False
+    n = os.path.basename(seg[i])
+    if n in ('bash', 'sh', 'zsh', 'dash'):
+        j = i + 1
+        while j < len(seg):
+            if seg[j] == '-c' and j + 1 < len(seg):
+                return check_command(seg[j + 1], depth + 1)
+            j += 1
+        return False
+    if n != 'git':
+        return False
+    j = i + 1
+    while j < len(seg):
+        t = seg[j]
+        if t == '-C' and j + 1 < len(seg):
+            j += 2; continue
+        if t.startswith('-C') and len(t) > 2:
+            j += 1; continue
+        if t in GIT_KV and j + 1 < len(seg):
+            j += 2; continue
+        if any(t.startswith(p) for p in GIT_KV_EQ):
+            j += 1; continue
+        if t.startswith('-'):
+            j += 1; continue
+        return t == 'push'
+    return False
+
+def check_command(s, depth=0):
+    if depth > 3:
+        return 'git push' in s
+    toks, ok = tokenize(s)
+    if not ok:
+        return 'git push' in s
+    for seg in segments(toks):
+        if check_seg(seg, depth):
+            return True
+    return False
+
+if check_command(cmd):
+    print('1')
+PY
+  else
+    case "$COMMAND" in
+    *"git push"*) printf '1\n' ;;
+    esac
+  fi
+}
+
 # Detect `eci-active off` invocation (any form: full path, bare, separators).
 command_invokes_eci_off() {
   printf '%s' "$1" |
@@ -197,8 +314,8 @@ enforce_git_reset_gate() {
   local reset_dir repo_root marker marker_command
 
   case "$COMMAND" in
-    *reset*) ;;
-    *) return 0 ;;
+  *reset*) ;;
+  *) return 0 ;;
   esac
 
   if ! command -v python3 >/dev/null 2>&1; then
@@ -252,7 +369,7 @@ command_is_read_only() {
   scrubbed="$(printf '%s' "$1" | sed -E 's/[[:space:]][0-9]*>>?[[:space:]]*\/dev\/null([[:space:]]|$)/ /g')"
 
   case "$scrubbed" in
-    *'`'*|*'$('*|*'>'*|*'<'*) return 1 ;;
+  *'`'* | *'$('* | *'>'* | *'<'*) return 1 ;;
   esac
 
   printf '%s\n' "$scrubbed" |
@@ -372,6 +489,11 @@ command_is_read_only() {
     '
 }
 
+# Block all git push invocations. No task requires git push in this environment.
+if [ -n "$COMMAND" ] && [ "$(detect_git_push 2>/dev/null)" = "1" ]; then
+  deny 'git push is blocked. No task in this environment requires git push, and no task is blocked by its absence. If you believe push is needed, that judgment is wrong — commit locally and proceed.'
+fi
+
 # Block subagents from disengaging ECI via `eci-active off`.
 if claude_hook_is_subagent_context "$INPUT" && command_invokes_eci_off "$COMMAND"; then
   deny 'Only the main thread/orchestrator may disengage ECI with eci-active off. Subagents must report completion or blockers to the orchestrator while ECI remains active.'
@@ -391,8 +513,8 @@ fi
 
 # go test specific checks (preserved from prior validation).
 case "$INPUT" in
-  *"go test"*) ;;
-  *) exit 0 ;;
+*"go test"*) ;;
+*) exit 0 ;;
 esac
 
 # Match `go test` as a word (avoids false-positive on `goconfig test`,
