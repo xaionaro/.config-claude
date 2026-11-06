@@ -7,7 +7,6 @@
 #
 # Usage:
 #   hooks/check-audit-sync.sh          # run directly
-#   git diff --cached | hooks/check-audit-sync.sh  # pipe from pre-commit hook
 #
 # Exit 0 = in sync. Exit 1 = drift detected (prints what drifted).
 
@@ -23,10 +22,10 @@ if [ ! -f "$VER" ] || [ ! -f "$CHK" ]; then
 fi
 
 FAIL=0
+CHECKED=0
 check_phrase() {
   local phrase="$1"
-  local normed_phrase
-  normed_phrase=$(printf '%s' "$phrase" | tr -s ' \n\t' ' ' | xargs)
+  CHECKED=$((CHECKED + 1))
   if ! grep -qF "$phrase" "$VER"; then
     echo "DRIFT: '$phrase' missing from stop-verification.md"
     FAIL=1
@@ -54,6 +53,10 @@ check_phrase "Violation:"
 # Correction required (the two files phrase this slightly differently; use a common substring)
 check_phrase "correction marker"
 
+# Self-audit section heading and rescan marker
+check_phrase "Rule-compliance self-audit"
+check_phrase "rescanned:"
+
 # Both must have the sync comment pointing to the other file
 if ! grep -q "Keep in sync" "$VER"; then
   echo "DRIFT: stop-verification.md is missing its '<!-- Keep in sync -->' marker"
@@ -65,6 +68,6 @@ if ! grep -q "Keep in sync" "$CHK"; then
 fi
 
 if [ "$FAIL" -eq 0 ]; then
-  echo "check-audit-sync: OK (6 phrases verified in both files)"
+  echo "check-audit-sync: OK ($CHECKED phrases verified in both files)"
 fi
 exit "$FAIL"
