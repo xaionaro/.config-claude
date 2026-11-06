@@ -2973,6 +2973,14 @@ run_case "subagent denied: x=\$(eci-active off r.md) (command substitution)" \
   expect_subagent_bash_denied sub-deny-39 sub-uuid 'x=$(~/.claude/bin/eci-active off r.md)'
 run_case "subagent denied: x=\`eci-active off r.md\` (backtick substitution)" \
   expect_subagent_bash_denied sub-deny-40 sub-uuid 'x=`~/.claude/bin/eci-active off r.md`'
+run_case "subagent denied: \$'eci-active' \$'off' r.md (ANSI-C quoted command word and subcommand)" \
+  expect_subagent_bash_denied sub-deny-41 sub-uuid "\$'eci-active' \$'off' r.md"
+run_case "subagent denied: eci-active \$'off' r.md (ANSI-C quoted subcommand)" \
+  expect_subagent_bash_denied sub-deny-42 sub-uuid "eci-active \$'off' r.md"
+run_case "subagent denied: eci-active \$\"off\" r.md (locale-quoted subcommand)" \
+  expect_subagent_bash_denied sub-deny-43 sub-uuid 'eci-active $"off" r.md'
+run_case "main thread forwarded: \$'eci-active' \$'off' r.md (guard is subagent-only)" \
+  expect_bash_forwarded main-fwd-06 '' "\$'eci-active' \$'off' r.md"
 run_case "subagent allowed: eci-active status" \
   expect_bash_forwarded sub-fwd-11 sub-uuid '~/.claude/bin/eci-active status'
 run_case "subagent allowed: eci-active on \"task x\"" \
