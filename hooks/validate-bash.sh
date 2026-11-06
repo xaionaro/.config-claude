@@ -1,19 +1,49 @@
 #!/bin/bash
 # PreToolUse hook: validates Bash commands before execution.
+#
+# Order: (1) git push deny, (2) subagent `eci-active off` deny, (3) git reset
+# gate, (4) ECI command plan from the Codex planner. Steps 1-3 are the Claude
+# guards from CLAUDE.md. Step 4 is codex parity with one divergence: when an
+# ECI marker is active and the planner cannot run or exits non-zero, the hook
+# denies (fail closed). Without a marker it fails open with a stderr advisory,
+# as the Codex shim does.
 
 set -euo pipefail
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HOOK_DIR/lib/claude-proof-state.sh"
 . "$HOOK_DIR/lib/claude-tmp.sh"
+. "$HOOK_DIR/lib/claude-python.sh"
 claude_init_tmp || true
 claude_install_fail_open_trap validate-bash
 
-INPUT=$(cat)
+# Stage the hook input as exact bytes (no $(cat) newline stripping); the planner
+# reads the same file. With no temp file, the input stays in memory and step 4
+# applies eci_planner_unavailable.
+INPUT=''
+tmp="$(mktemp "${TMPDIR:-${HOME:-}/tmp}/validate-bash.XXXXXX" 2>/dev/null)" || tmp=''
+if [ -n "$tmp" ]; then
+  trap 'rm -f -- "$tmp" "$tmp.out"' EXIT
+  cat >"$tmp"
+else
+  INPUT="$(cat)"
+fi
 
-SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || true)
-CWD=$(echo "$INPUT" | jq -r '.cwd // empty' 2>/dev/null || true)
-COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
+# One field of the hook input, read from the staged file when present.
+json_query() {
+  if [ -n "$tmp" ]; then
+    jq -r "$1" "$tmp" 2>/dev/null || true
+  else
+    printf '%s' "$INPUT" | jq -r "$1" 2>/dev/null || true
+  fi
+}
+
+SESSION_ID="$(json_query '.session_id // empty')"
+CWD="$(json_query '.cwd // empty')"
+COMMAND="$(json_query '.tool_input.command // empty')"
+AGENT_ID="$(json_query '.agent_id // empty')"
+PROOF_ROOT="${CLAUDE_PROOF_ROOT:-${HOME:-}/.cache/claude-proof}"
+ECI_MARKER="$PROOF_ROOT/$SESSION_ID/eci_active"
 
 deny() {
   jq -n --arg reason "$1" '{
@@ -26,22 +56,531 @@ deny() {
   exit 0
 }
 
-# Detect `eci-active off` invocation (any form: full path, bare, separators).
+# The ECI planner cannot run. Active ECI marker: deny (fail closed). No marker:
+# advisory on stderr and exit 0 (fail open, codex parity).
+eci_planner_unavailable() {
+  if [ -e "$ECI_MARKER" ]; then
+    deny "ECI planner unavailable while ECI is active ($ECI_MARKER): $1. Bash is denied until the Codex command planner is restored."
+  fi
+  printf 'ECI planner unavailable: %s\n' "$1" >&2
+  exit 0
+}
+
+# Detect any `git push` invocation across pipes/subshells/bash -c. Prints `1`
+# when a push is found. Falls back to a substring check if "$PYTHON3" is absent
+# or exits non-zero (fails closed for push).
+detect_git_push() {
+  if command -v "$PYTHON3" >/dev/null 2>&1; then
+    if "$PYTHON3" - "$COMMAND" <<'PY'
+import os, shlex, sys
+
+cmd = sys.argv[1]
+OPS = {';', '&', '&&', '|', '||', '(', ')'}
+GIT_KV = {'-c', '--config-env', '--exec-path', '--git-dir',
+          '--namespace', '--super-prefix', '--work-tree'}
+GIT_KV_EQ = tuple(a + '=' for a in GIT_KV if a.startswith('--'))
+
+def tokenize(s):
+    try:
+        lex = shlex.shlex(s, posix=True, punctuation_chars=True)
+        lex.whitespace_split = True
+        return list(lex), True
+    except ValueError:
+        return [], False
+
+def segments(toks):
+    out, start = [], 0
+    for i, t in enumerate(toks + [';']):
+        if t in OPS:
+            if start < i:
+                out.append(toks[start:i])
+            start = i + 1
+    return out
+
+def is_assign(t):
+    n, s, _ = t.partition('=')
+    return bool(s) and bool(n) and n.replace('_', 'A').isalnum() and not n[0].isdigit()
+
+def cmd_start(seg):
+    i = 0
+    while i < len(seg) and is_assign(seg[i]):
+        i += 1
+    while i < len(seg):
+        n = os.path.basename(seg[i])
+        if n in ('command', 'builtin', 'exec'):
+            i += 1
+            continue
+        if n == 'env':
+            i += 1
+            while i < len(seg):
+                t = seg[i]
+                if is_assign(t):
+                    i += 1; continue
+                if t in ('-i', '-0') or t.startswith('-u'):
+                    i += 1; continue
+                if t in ('-C', '-S') and i + 1 < len(seg):
+                    i += 2; continue
+                if t.startswith('-'):
+                    i += 1; continue
+                break
+            continue
+        if n in ('sudo', 'doas'):
+            i += 1
+            while i < len(seg) and seg[i].startswith('-'):
+                i += 1
+            continue
+        return i
+    return i
+
+def check_seg(seg, depth=0):
+    i = cmd_start(seg)
+    if i >= len(seg):
+        return False
+    n = os.path.basename(seg[i])
+    if n in ('bash', 'sh', 'zsh', 'dash'):
+        j = i + 1
+        while j < len(seg):
+            if seg[j] == '-c' and j + 1 < len(seg):
+                return check_command(seg[j + 1], depth + 1)
+            j += 1
+        return False
+    if n != 'git':
+        return False
+    j = i + 1
+    while j < len(seg):
+        t = seg[j]
+        if t == '-C' and j + 1 < len(seg):
+            j += 2; continue
+        if t.startswith('-C') and len(t) > 2:
+            j += 1; continue
+        if t in GIT_KV and j + 1 < len(seg):
+            j += 2; continue
+        if any(t.startswith(p) for p in GIT_KV_EQ):
+            j += 1; continue
+        if t.startswith('-'):
+            j += 1; continue
+        return t == 'push'
+    return False
+
+def check_command(s, depth=0):
+    if depth > 3:
+        return 'git push' in s
+    toks, ok = tokenize(s)
+    if not ok:
+        return 'git push' in s
+    for seg in segments(toks):
+        if check_seg(seg, depth):
+            return True
+    return False
+
+if check_command(cmd):
+    print('1')
+PY
+    then
+      return 0
+    fi
+  fi
+  case "$COMMAND" in
+  *"git push"*) printf '1\n' ;;
+  esac
+}
+
+# Detect `eci-active off` at the argv head of a simple command (subagent guard).
+# Quoted text, heredoc bodies and arguments never count. The scanner splits on
+# ; & | ( ) ` $( and newlines outside quotes, skips redirections and leading
+# NAME=value words, and matches when the first word is eci-active or a path
+# ending in /eci-active and the next word is off. Not covered: nested shells
+# (bash -c "...") and wrappers (env, command, exec).
 command_invokes_eci_off() {
   printf '%s' "$1" |
-    tr "\"';&|()" '       ' |
     awk '
-      {
-        for (i = 1; i < NF; i++) {
-          token = $i
-          sub(/^.*\//, "", token)
-          if (token == "eci-active" && $(i + 1) == "off") {
+      BEGIN {
+        SQ = sprintf("%c", 39)
+        BQ = sprintf("%c", 96)
+        BS = sprintf("%c", 92)
+      }
+      function end_word() {
+        if (!inword) {
+          return
+        }
+        if (want_delim) {
+          ndelim++
+          delim[ndelim] = word
+          delim_strip[ndelim] = strip_next
+          want_delim = 0
+          strip_next = 0
+        } else if (redirect_next) {
+          redirect_next = 0
+        } else {
+          nwords++
+          words[nwords] = word
+        }
+        word = ""
+        inword = 0
+      }
+      function end_segment(   h, base) {
+        end_word()
+        h = 1
+        while (h <= nwords && words[h] ~ /^[A-Za-z_][A-Za-z0-9_]*=/) {
+          h++
+        }
+        if (h < nwords) {
+          base = words[h]
+          sub(/^.*\//, "", base)
+          if (base == "eci-active" && words[h + 1] == "off") {
             found = 1
           }
         }
+        nwords = 0
+        redirect_next = 0
+        want_delim = 0
+        strip_next = 0
       }
-      END { exit found ? 0 : 1 }
+      {
+        if (skipping) {
+          line = $0
+          if (delim_strip[1]) {
+            sub(/^\t+/, "", line)
+          }
+          if (line == delim[1]) {
+            for (k = 1; k < ndelim; k++) {
+              delim[k] = delim[k + 1]
+              delim_strip[k] = delim_strip[k + 1]
+            }
+            ndelim--
+          }
+          if (ndelim == 0) {
+            skipping = 0
+          }
+          next
+        }
+        n = length($0)
+        for (i = 1; i <= n; i++) {
+          c = substr($0, i, 1)
+          nx = substr($0, i + 1, 1)
+          if (sq) {
+            if (c == SQ) {
+              sq = 0
+            } else {
+              word = word c
+            }
+            continue
+          }
+          if (esc) {
+            esc = 0
+            word = word c
+            inword = 1
+            continue
+          }
+          if (dq) {
+            if (c == "\"") {
+              dq = 0
+            } else if (c == BS && (nx == "\"" || nx == BS || nx == "$" || nx == BQ)) {
+              word = word nx
+              i++
+            } else if (c == "$" && nx == "(") {
+              end_segment()
+              i++
+            } else if (c == BQ) {
+              end_segment()
+            } else {
+              word = word c
+            }
+            continue
+          }
+          if (c == BS) {
+            esc = 1
+            inword = 1
+            continue
+          }
+          if (c == SQ) {
+            sq = 1
+            inword = 1
+            continue
+          }
+          if (c == "\"") {
+            dq = 1
+            inword = 1
+            continue
+          }
+          if (c == " " || c == "\t") {
+            end_word()
+            continue
+          }
+          if (c == "$" && nx == "(") {
+            end_segment()
+            i++
+            continue
+          }
+          if (c == BQ || c == "(" || c == ")" || c == ";") {
+            end_segment()
+            continue
+          }
+          if (c == "&" && nx == ">") {
+            end_word()
+            redirect_next = 1
+            i++
+            if (substr($0, i + 1, 1) == ">") {
+              i++
+            }
+            continue
+          }
+          if (c == "|" || c == "&") {
+            end_segment()
+            if (nx == c) {
+              i++
+            }
+            continue
+          }
+          if (c == "<" && nx == "<") {
+            if (substr($0, i + 2, 1) == "<") {
+              end_word()
+              redirect_next = 1
+              i += 2
+              continue
+            }
+            end_word()
+            want_delim = 1
+            i++
+            if (substr($0, i + 1, 1) == "-") {
+              strip_next = 1
+              i++
+            }
+            continue
+          }
+          if (c == "<" || c == ">") {
+            if (inword && word ~ /^[0-9]+$/) {
+              word = ""
+              inword = 0
+            } else {
+              end_word()
+            }
+            redirect_next = 1
+            if (nx == ">" || nx == "&" || nx == "|") {
+              i++
+            }
+            continue
+          }
+          word = word c
+          inword = 1
+        }
+        if (esc) {
+          esc = 0
+        } else if (!sq && !dq) {
+          end_segment()
+          if (ndelim > 0) {
+            skipping = 1
+          }
+        }
+      }
+      END {
+        end_segment()
+        exit(found ? 0 : 1)
+      }
     '
+}
+
+git_reset_dirs() {
+  "$PYTHON3" - "$COMMAND" "${CWD:-$PWD}" <<'PY'
+import os
+import shlex
+import sys
+
+command = sys.argv[1]
+cwd = sys.argv[2] or os.getcwd()
+
+try:
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    tokens = list(lexer)
+except ValueError:
+    sys.exit(2)
+
+operators = {";", "&", "&&", "|", "||", "(", ")"}
+
+
+def basename(token):
+    return os.path.basename(token)
+
+
+def is_assignment(token):
+    name, sep, _ = token.partition("=")
+    return bool(sep) and bool(name) and name.replace("_", "A").isalnum() and not name[0].isdigit()
+
+
+def resolve(path, base):
+    path = os.path.expanduser(path)
+    if os.path.isabs(path):
+        return os.path.normpath(path)
+    return os.path.normpath(os.path.join(base, path))
+
+
+def skip_env(segment, index):
+    index += 1
+    while index < len(segment):
+        token = segment[index]
+        if is_assignment(token):
+            index += 1
+            continue
+        if token in {"-i", "-0"} or token.startswith("-u"):
+            index += 1
+            continue
+        if token in {"-C", "-S"} and index + 1 < len(segment):
+            index += 2
+            continue
+        if token.startswith("-"):
+            index += 1
+            continue
+        break
+    return index
+
+
+def command_index(segment):
+    index = 0
+    while index < len(segment) and is_assignment(segment[index]):
+        index += 1
+    while index < len(segment):
+        name = basename(segment[index])
+        if name in {"command", "builtin", "exec"}:
+            index += 1
+            continue
+        if name == "env":
+            index = skip_env(segment, index)
+            continue
+        if name in {"sudo", "doas"}:
+            index += 1
+            while index < len(segment) and segment[index].startswith("-"):
+                index += 1
+            continue
+        return index
+    return index
+
+
+def git_reset_dir(segment, index, base_dir):
+    git_dir = base_dir
+    arg_takes_value = {
+        "-c",
+        "--config-env",
+        "--exec-path",
+        "--git-dir",
+        "--namespace",
+        "--super-prefix",
+        "--work-tree",
+    }
+    arg_takes_value_eq = {arg + "=" for arg in arg_takes_value if arg.startswith("--")}
+    index += 1
+    while index < len(segment):
+        token = segment[index]
+        if token == "-C" and index + 1 < len(segment):
+            git_dir = resolve(segment[index + 1], base_dir)
+            index += 2
+            continue
+        if token.startswith("-C") and len(token) > 2:
+            git_dir = resolve(token[2:], base_dir)
+            index += 1
+            continue
+        if token in arg_takes_value and index + 1 < len(segment):
+            index += 2
+            continue
+        if any(token.startswith(prefix) for prefix in arg_takes_value_eq):
+            index += 1
+            continue
+        if token.startswith("-"):
+            index += 1
+            continue
+        if token == "reset":
+            return git_dir
+        return None
+    return None
+
+
+segments = []
+start = 0
+for index, token in enumerate(tokens + [";"]):
+    if token in operators:
+        if start < index:
+            segments.append(tokens[start:index])
+        start = index + 1
+
+current_dir = cwd
+reset_dirs = []
+for segment in segments:
+    index = command_index(segment)
+    if index >= len(segment):
+        continue
+    name = basename(segment[index])
+    if name == "cd" and index + 1 < len(segment):
+        current_dir = resolve(segment[index + 1], current_dir)
+        continue
+    if name in {"bash", "sh"} and "-c" in segment[index + 1 :]:
+        script_index = segment.index("-c", index + 1) + 1
+        if script_index < len(segment) and "git reset" in segment[script_index]:
+            print("!shell-c")
+        continue
+    if name != "git":
+        continue
+    reset_dir = git_reset_dir(segment, index, current_dir)
+    if reset_dir:
+        reset_dirs.append(reset_dir)
+
+for reset_dir in reset_dirs:
+    print(reset_dir)
+PY
+}
+
+enforce_git_reset_gate() {
+  local reset_dirs=()
+  local reset_dir repo_root marker marker_command reset_out
+
+  case "$COMMAND" in
+  *reset*) ;;
+  *) return 0 ;;
+  esac
+
+  if ! command -v "$PYTHON3" >/dev/null 2>&1; then
+    deny 'git reset denied: python3 is required to validate the one-time reset marker.'
+  fi
+
+  # Capture status explicitly: a failing git_reset_dirs must deny, not allow.
+  if ! reset_out="$(git_reset_dirs)"; then
+    deny 'git reset denied: reset validator failed or could not parse the shell command safely.'
+  fi
+
+  [ -n "$reset_out" ] || return 0
+  mapfile -t reset_dirs <<<"$reset_out"
+
+  [ "${#reset_dirs[@]}" -gt 0 ] || return 0
+
+  if [ "${#reset_dirs[@]}" -gt 1 ]; then
+    deny 'git reset denied: run only one git reset per Bash tool call.'
+  fi
+
+  reset_dir="${reset_dirs[0]}"
+  if [ "$reset_dir" = "!shell-c" ]; then
+    deny 'git reset denied: run git reset directly, not through bash -c or sh -c.'
+  fi
+
+  if ! repo_root="$(git -C "$reset_dir" rev-parse --show-toplevel 2>/dev/null)"; then
+    deny "git reset denied: could not identify the target repo for '$reset_dir'."
+  fi
+
+  marker="$repo_root/.git-reset-approved-once"
+  if [ ! -f "$marker" ]; then
+    deny "git reset denied: create $marker with date, reason, and command: $COMMAND after inspecting uncommitted changes."
+  fi
+
+  marker_command="$(awk '/^command: / { print substr($0, 10); found = 1; exit } END { if (!found) exit 1 }' "$marker" 2>/dev/null || true)"
+  if [ -z "$marker_command" ]; then
+    deny "git reset denied: $marker must contain a command: <exact Bash command> line."
+  fi
+
+  if [ "$marker_command" != "$COMMAND" ]; then
+    deny "git reset denied: $marker command does not match this Bash command."
+  fi
+
+  if ! rm -f -- "$marker"; then
+    deny "git reset denied: could not consume $marker."
+  fi
 }
 
 # Determine whether a command is purely read-only (no writes, no side effects).
@@ -173,10 +712,18 @@ command_is_read_only() {
     '
 }
 
-# Block subagents from disengaging ECI via `eci-active off`.
-if claude_hook_is_subagent_context "$INPUT" && command_invokes_eci_off "$COMMAND"; then
+# Block all git push invocations. CLAUDE.md: push only on request.
+if [ -n "$COMMAND" ] && [ "$(detect_git_push 2>/dev/null)" = "1" ]; then
+  deny 'git push is blocked. No task in this environment requires git push, and no task is blocked by its absence. If you believe push is needed, that judgment is wrong — commit locally and proceed.'
+fi
+
+# Block subagents from disengaging ECI via `eci-active off`. Same test as
+# claude_hook_is_subagent_context: a non-empty agent_id.
+if [ -n "$AGENT_ID" ] && command_invokes_eci_off "$COMMAND"; then
   deny 'Only the main thread/orchestrator may disengage ECI with eci-active off. Subagents must report completion or blockers to the orchestrator while ECI remains active.'
 fi
+
+enforce_git_reset_gate
 
 read_only=false
 if command_is_read_only "$COMMAND"; then
@@ -184,21 +731,34 @@ if command_is_read_only "$COMMAND"; then
 fi
 
 # Mark shell activity for non-subagent, non-read-only commands.
-if ! claude_hook_is_subagent_context "$INPUT" && [ "$read_only" != true ]; then
+if [ -z "$AGENT_ID" ] && [ "$read_only" != true ]; then
   claude_mark_activity "$SESSION_ID" "$CWD" shell || true
 fi
 
-# ECI command plan: the Codex planner decides (codex parity). Every skip path
-# fails open (exit 0). The planner owns git reset, git push and go test policy.
-AGENT_ID=$(printf '%s' "$INPUT" | jq -r '.agent_id // empty' 2>/dev/null || true)
+# ECI command plan: the Codex planner decides (codex parity). Its output and
+# exit code pass through unchanged unless the fail-closed rules below apply.
 unset CODEX_HOOK_IS_SUBAGENT
 [ -n "$AGENT_ID" ] && export CODEX_HOOK_IS_SUBAGENT=1
-export CODEX_PROOF_ROOT="${CLAUDE_PROOF_ROOT:-$HOME/.cache/claude-proof}"
-case "${HOME:-}" in ''|/*) ;; *) exit 0 ;; esac
+export CODEX_PROOF_ROOT="$PROOF_ROOT"
+[ -n "$tmp" ] || eci_planner_unavailable "cannot stage hook input (mktemp under ${TMPDIR:-${HOME:-}/tmp} failed)"
+case "${HOME:-}" in
+  /*) ;;
+  *) eci_planner_unavailable "HOME is empty or not absolute ('${HOME:-}')" ;;
+esac
 root="$HOME/.codex"
-[ -d "$root" ] || { echo "ECI planner unavailable: $root missing" >&2; exit 0; }
-. "$root/hooks/lib/eci-runtime-sync.sh" || exit 0
-bin="$(eci_runtime_artifact_path codex eci-command-plan)" || exit 0
-eci_runtime_binary_is_native "$bin" || eci_runtime_build_missing "$root" eci-command-plan || exit 0
-eci_runtime_binary_is_native "$bin" || exit 0
-exec "$bin" --hook <<<"$INPUT"
+[ -d "$root" ] || eci_planner_unavailable "planner root missing: $root"
+. "$root/hooks/lib/eci-runtime-sync.sh" || eci_planner_unavailable "cannot source $root/hooks/lib/eci-runtime-sync.sh"
+bin="$(eci_runtime_artifact_path codex eci-command-plan)" || eci_planner_unavailable "no artifact path for eci-command-plan under $root"
+eci_runtime_binary_is_native "$bin" || eci_runtime_build_missing "$root" eci-command-plan || eci_planner_unavailable "rebuild of $bin failed"
+eci_runtime_binary_is_native "$bin" || eci_planner_unavailable "planner binary missing or not native: $bin"
+
+# `|| rc=$?` and not `set +e`: the ERR trap from claude_install_fail_open_trap
+# fires on any failed command outside a ||, && or if condition, even with
+# errexit off, and would turn a planner exit code into a silent fail-open.
+rc=0
+"$bin" --hook <"$tmp" >"$tmp.out" || rc=$?
+if [ "$rc" -ne 0 ] && [ -e "$ECI_MARKER" ]; then
+  deny "ECI planner exited $rc while ECI is active ($ECI_MARKER). Bash is denied until the Codex command planner is restored."
+fi
+cat -- "$tmp.out"
+exit "$rc"
