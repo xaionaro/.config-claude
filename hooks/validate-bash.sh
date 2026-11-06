@@ -2,11 +2,11 @@
 # PreToolUse hook: validates Bash commands before execution.
 #
 # Order: (1) git push deny, (2) subagent `eci-active off` deny, (3) git reset
-# gate, (4) ECI command plan from the Codex planner. Steps 1-3 are the Claude
-# guards from CLAUDE.md. Step 4 is codex parity with one divergence: when an
-# ECI marker is active and the planner cannot run or exits non-zero, the hook
-# denies (fail closed). Without a marker it fails open with a stderr advisory,
-# as the Codex shim does.
+# gate, (4) ECI command plan from the Codex planner. Steps 1 and 3 are the
+# CLAUDE.md git rules; step 2 is a Claude-only subagent guard. Step 4 is codex
+# parity with one divergence: when an ECI marker is active and the planner
+# cannot run or exits non-zero, the hook denies (fail closed). Without a marker
+# it fails open with a stderr advisory, as the Codex shim does.
 
 set -euo pipefail
 
