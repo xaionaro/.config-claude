@@ -2119,7 +2119,7 @@ test_stop_gate_blocks_eci_active_state() {
   out="$TMP_ROOT/stop-eci-active.out"
   run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" HOME="$home" CLAUDE_STOP_REVIEWER=""
   is_stop_block "$out" &&
-    json_field_contains "$out" '.reason // empty' "ECI is active"
+    json_field_contains "$out" '.reason // empty' "ECI active and no teammate awaited"
 }
 
 test_stop_gate_allows_session_skip_state() {
