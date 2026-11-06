@@ -182,8 +182,8 @@ claude_lexical_hook_path() {
   if command -v realpath >/dev/null 2>&1 &&
      lexical_path="$(realpath -ms -- "$path" 2>/dev/null)"; then
     printf '%s\n' "$lexical_path"
-  elif command -v python3 >/dev/null 2>&1; then
-    python3 - "$cwd" "$path" <<'PY'
+  elif command -v /usr/bin/python3 >/dev/null 2>&1; then
+    /usr/bin/python3 - "$cwd" "$path" <<'PY'
 import os
 import sys
 cwd, path = sys.argv[1:3]
