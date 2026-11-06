@@ -6,6 +6,7 @@ set -euo pipefail
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HOOK_DIR/lib/claude-proof-state.sh"
 . "$HOOK_DIR/lib/claude-tmp.sh"
+. "$HOOK_DIR/lib/claude-python.sh"
 claude_init_tmp || true
 claude_install_fail_open_trap validate-bash
 
@@ -27,11 +28,11 @@ deny() {
 }
 
 # Detect any `git push` invocation across pipes/subshells/bash -c. Prints `1`
-# when a push is found. Falls back to a substring check if python3 is absent
-# or the command cannot be tokenized.
+# when a push is found. Falls back to a substring check if "$PYTHON3" is absent
+# or exits non-zero (fails closed for push).
 detect_git_push() {
-  if command -v python3 >/dev/null 2>&1; then
-    python3 - "$COMMAND" <<'PY'
+  if command -v "$PYTHON3" >/dev/null 2>&1; then
+    if "$PYTHON3" - "$COMMAND" <<'PY'
 import os, shlex, sys
 
 cmd = sys.argv[1]
@@ -136,11 +137,13 @@ def check_command(s, depth=0):
 if check_command(cmd):
     print('1')
 PY
-  else
-    case "$COMMAND" in
-    *"git push"*) printf '1\n' ;;
-    esac
+    then
+      return 0
+    fi
   fi
+  case "$COMMAND" in
+  *"git push"*) printf '1\n' ;;
+  esac
 }
 
 # Detect `eci-active off` invocation (any form: full path, bare, separators).
@@ -162,7 +165,7 @@ command_invokes_eci_off() {
 }
 
 git_reset_dirs() {
-  python3 - "$COMMAND" "${CWD:-$PWD}" <<'PY'
+  "$PYTHON3" - "$COMMAND" "${CWD:-$PWD}" <<'PY'
 import os
 import shlex
 import sys
@@ -311,20 +314,24 @@ PY
 
 enforce_git_reset_gate() {
   local reset_dirs=()
-  local reset_dir repo_root marker marker_command
+  local reset_dir repo_root marker marker_command reset_out
 
   case "$COMMAND" in
   *reset*) ;;
   *) return 0 ;;
   esac
 
-  if ! command -v python3 >/dev/null 2>&1; then
+  if ! command -v "$PYTHON3" >/dev/null 2>&1; then
     deny 'git reset denied: python3 is required to validate the one-time reset marker.'
   fi
 
-  if ! mapfile -t reset_dirs < <(git_reset_dirs); then
-    deny 'git reset denied: could not parse the shell command safely.'
+  # Capture status explicitly: a failing git_reset_dirs must deny, not allow.
+  if ! reset_out="$(git_reset_dirs)"; then
+    deny 'git reset denied: reset validator failed or could not parse the shell command safely.'
   fi
+
+  [ -n "$reset_out" ] || return 0
+  mapfile -t reset_dirs <<<"$reset_out"
 
   [ "${#reset_dirs[@]}" -gt 0 ] || return 0
 

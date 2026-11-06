@@ -19,6 +19,8 @@
 #             echoed back unchanged so the caller never has to worry
 #             about losing data on a bad parse.
 
+. "$(dirname "${BASH_SOURCE[0]}")/claude-python.sh"
+
 # Resolve the rule corpus path once. Override-able via env for tests.
 : "${REVIEWER_FILTER_CORPUS_FILES:=$HOME/.claude/CLAUDE.md $HOME/.claude/hooks/stop-checklist.md $HOME/.claude/projects/-home-streaming--claude/memory/MEMORY.md}"
 
@@ -38,10 +40,10 @@ filter_violations() {
   # shellcheck disable=SC2086 # word-split intentional: paths are space-separated
   corpus_text=$(cat $REVIEWER_FILTER_CORPUS_FILES 2>/dev/null)
 
-  # Pure-Python implementation (python3 verified present in env). On any
+  # Pure-Python implementation ("$PYTHON3", see lib/claude-python.sh). On any
   # parse failure or missing python, fall back to the unmodified input.
   local filtered
-  filtered=$(printf '%s' "$result_json" | python3 -c '
+  filtered=$(printf '%s' "$result_json" | "$PYTHON3" -c '
 import sys, json, re
 corpus = sys.argv[1].lower()
 threshold = float(sys.argv[2])
