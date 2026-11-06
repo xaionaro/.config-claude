@@ -5,7 +5,7 @@ description: Use when porting code, features, or capabilities from one codebase/
 
 # Code Porting
 
-Port code between codebases through exhaustive extraction, adversarial critique, and gated implementation. Every step is a separate subagent. Main thread orchestrates only.
+Port code between codebases through exhaustive extraction, adversarial critique, and gated implementation. When ECI or ATE owns the current work, route agent-owned phases through that protocol. Outside ECI/ATE, use standard subagents (spawn a subagent) only when higher-priority instructions (system prompt, CLAUDE.md) allow delegation and the user explicitly requests subagents, parallel agents, delegated work, or dedicated agents. Do not launch Claude agents through shell wrappers (~/.claude/bin/claude, claude-as-role).
 
 ## When to use
 
@@ -18,9 +18,10 @@ Port code between codebases through exhaustive extraction, adversarial critique,
 
 ## Agent separation
 
-Every numbered phase below runs as a separate subagent. No agent serves dual roles. Main thread never implements — it spawns, reviews, and routes.
+Every numbered phase below has a separate role and artifact. No role serves dual purposes. When ECI or ATE owns the current work, route those roles through that protocol. Outside ECI/ATE, run phases as separate standard subagents only after explicit user delegation; otherwise perform them locally while preserving role boundaries and critique gates. If the user explicitly requires dedicated agents and standard agent tools are unavailable, hard-escalate instead of substituting local artifacts.
 
 Propagate **original user requirements verbatim** to every subagent prompt.
+Every subagent prompt must include: Follow any Stop-hook prompt in that session, including required proof/checklist files. Fix blockers within assigned scope. Report to the orchestrator only when recovery needs out-of-scope changes, unrelated user work, credentials, or approval.
 
 When combined phase outputs exceed 6000 words, main thread summarizes before spawning the next agent. Preserve: all feature names, all verdicts with one-line reasoning, all MISSING/OVERTURN entries in full. Never silently drop features.
 
@@ -28,7 +29,7 @@ When combined phase outputs exceed 6000 words, main thread summarizes before spa
 
 | Phase | Actor | Input | Output |
 |-------|-------|-------|--------|
-| 0 | Main thread | User request | Plan mode entered |
+| 0 | Main thread | User request | Plan/checklist established |
 | 1 | Extraction agent | Source codebase + user scope | Feature inventory |
 | 2 | Gap agent | Feature inventory + target codebase | Gap analysis |
 | 3 | Critique agent | Inventory + gap analysis | Pruned/corrected list |
@@ -39,13 +40,13 @@ When combined phase outputs exceed 6000 words, main thread summarizes before spa
 | 6 | Main thread | Final plan → user | User-approved plan |
 | 7 | Per-task | `explore-critique-implement` per porting task | Landed changes |
 
-## Phase 0: Enter plan mode
+## Phase 0: Establish plan
 
-Main thread enters plan mode before any work begins. All phases 1–5 execute within plan mode. Exit plan mode at Phase 6 for user review.
+Create a visible plan/checklist before adaptation work begins. Phases 1-5 are analysis/design work. Phase 6 is the user-facing review point before implementation when approval is needed.
 
 ## Phase 1: Feature extraction
 
-Spawn extraction agent. Prompt must include:
+Spawn an extraction subagent. Prompt must include:
 
 - Source codebase paths and user-specified scope.
 - "List AS MUCH AS POSSIBLE. Err on over-listing. The critique phases prune — you do not."
@@ -104,7 +105,7 @@ Word cap: 2000 words.
 
 ## Phase 3: Critique the list
 
-Spawn a DIFFERENT agent — not the extractor or gap analyzer.
+Spawn a DIFFERENT dedicated critic agent — not the extractor or gap analyzer. The critic starts by reading source/target material and writing an independent baseline before reading prior artifacts.
 
 Prompt must include:
 
@@ -124,7 +125,7 @@ Word cap: 2000 words.
 
 ## Phase 4: Critique the critique
 
-Spawn a DIFFERENT agent — not any prior agent.
+Spawn a DIFFERENT dedicated critic agent — not any prior agent. The meta-critic starts by reading source/target material and writing an independent baseline before reading prior artifacts.
 
 Purpose: prevent single-critic bias. The Phase 3 critic may be too aggressive (pruning real features) or too lenient (rubber-stamping).
 
@@ -172,7 +173,7 @@ Word cap: 3000 words.
 
 ### Phase 5b: Plan critic
 
-Spawn a DIFFERENT agent — not the plan designer.
+Spawn a DIFFERENT dedicated plan critic agent — not the plan designer. The critic starts by reading source/target material and writing an independent baseline before reading the plan.
 
 Prompt must include:
 
@@ -210,7 +211,7 @@ Proceed only with user-approved tasks.
 
 ## Phase 7: Implementation
 
-For each approved task, invoke `explore-critique-implement`. Each task goes through the full explore→critique→implement→review gate loop independently.
+Route each approved task through ECI's full explore→critique→implement→review loop as a separate iteration. If ECI is the outer workflow, use that workflow. If ATE is outer, ATE routes each bounded task through ECI and remains outer.
 
 Per-task prompt must include:
 
@@ -221,11 +222,11 @@ Per-task prompt must include:
 - Dependencies on prior completed tasks and their outcomes.
 - "This is a porting task. Read the source implementation before exploring options."
 
-`explore-critique-implement` handles coding-style loading per its own prerequisites.
+`explore-critique-implement` handles coding skill loading per its own prerequisites.
 
 Task ordering from Phase 5 is mandatory — do not parallelize tasks with dependencies.
 
-Independent tasks (no dependency relationship) may run in parallel via `agent-teams-execution`.
+When ATE is outer, it may run independent tasks in parallel while routing each bounded task through ECI.
 
 ## Escalation
 
@@ -240,7 +241,8 @@ Independent tasks (no dependency relationship) may run in parallel via `agent-te
 
 | Symptom | Fix |
 |---------|-----|
-| Main thread implementing instead of spawning agents | Stop. Main thread orchestrates only |
+| Shell-launched Claude process used for a phase | Stop. Use a standard subagent (Agent tool); hard-escalate if unavailable |
+| Main thread implements agent-owned work | Route it through the owning ECI/ATE workflow; outside those workflows, spawn only under the generic delegation rule. |
 | Same agent doing extraction + gap analysis | Banned. Separate agents per phase |
 | Feature list suspiciously short (<5 entries for non-trivial source) | Re-spawn extractor with "you are under-listing" |
 | Critique agrees with everything | Re-spawn with harsher prompt: "zero survivors is valid" |
@@ -254,8 +256,8 @@ Independent tasks (no dependency relationship) may run in parallel via `agent-te
 
 | Skill | Relationship |
 |-------|-------------|
-| `explore-critique-implement` | Phase 7 delegates each porting task to this skill. Full review gate per change. |
-| `agent-teams-execution` | Use for parallel independent porting tasks in Phase 7. |
+| `explore-critique-implement` | Each Phase 7 task is a full ECI iteration. Under ATE, ECI is bounded and nested. |
+| `agent-teams-execution` | Starts only on explicit user request; when already outer, routes each bounded Phase 7 task through ECI and remains outer. |
 | `harness-tuning` | Apply when the porting target is a skill file, system prompt, or CLAUDE.md. |
-| `superpowers:brainstorming` | Use before this skill if user intent is unclear (what to port, why). |
+| `brainstorming` | Use before this skill if user intent is unclear (what to port, why). |
 | `proof-driven-development` | Invoked inside `explore-critique-implement` for logic-bearing ported code. |
