@@ -16,10 +16,10 @@
 
 . "${BASH_SOURCE[0]%/*}/claude-eci-control.sh"
 
-# Codex: codex-proof-state.sh:78
+# Codex: codex_eci_marker_max_bytes
 claude_eci_marker_max_bytes=4096
 
-# Codex: codex-proof-state.sh:83-102
+# Codex: codex_eci_marker_file_is_bounded
 claude_eci_marker_file_is_bounded() {
   local marker="$1" prefix="" old_lc="" had_lc=0 within=false
   [ -f "$marker" ] && [ ! -L "$marker" ] || return 1
@@ -41,7 +41,7 @@ claude_eci_marker_file_is_bounded() {
   [ "$within" = true ]
 }
 
-# Codex: codex-proof-state.sh:246-260
+# Codex: codex_session_dir_is_safe
 claude_session_dir_is_safe() {
   local root="$1"
   local session_id="$2"
@@ -58,7 +58,7 @@ claude_session_dir_is_safe() {
   return 0
 }
 
-# Codex: codex-proof-state.sh:1452-1462
+# Codex: codex_state_file_owner_is_valid
 claude_state_file_owner_is_valid() {
   local file="$1" require_unique="${2:-true}" owner links expected
   case "$require_unique" in
@@ -71,14 +71,14 @@ claude_state_file_owner_is_valid() {
   [ "$owner" = "$expected" ] && { [ "$require_unique" = false ] || [ "$links" = 1 ]; }
 }
 
-# Codex: codex-proof-state.sh:1464-1468
+# Codex: codex_eci_aggregate_repo_id_is_valid
 # Aggregate repository IDs are path-component-safe selectors.  The plan, not
 # a command-line path, maps one such ID to its canonical Git worktree.
 claude_eci_aggregate_repo_id_is_valid() {
   [[ "${1:-}" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$ ]]
 }
 
-# Codex: codex-proof-state.sh:1904-1957
+# Codex: codex_eci_marker_metadata_is_valid
 # Parse the four-line active marker with shell builtins.  Stop callbacks use
 # this bounded record check; avoid grep/awk/sed process fan-out on every active
 # callback while retaining the same path, owner, cwd, and control-byte rules.
@@ -134,7 +134,7 @@ claude_eci_marker_metadata_is_valid() {
   fi
 }
 
-# Codex: codex-proof-state.sh:2019-2025
+# Codex: codex_eci_marker_path_owner_is_valid
 # Validate the ownership encoded by a marker path without applying cwd
 # ownership.  Discovery uses this before deciding whether a marker belongs to
 # the current callback; a path/record mismatch is unsafe control state, not an
@@ -143,7 +143,7 @@ claude_eci_marker_path_owner_is_valid() {
   claude_eci_marker_metadata_is_valid "$1"
 }
 
-# Codex: codex-proof-state.sh:2027-2035
+# Codex: codex_eci_marker_is_valid_for_cwd
 # Return only ECI markers whose path owner and embedded session_id agree.  The
 # ordinary direct-session marker and the reserved legacy marker namespace are
 # checked together so callers can detect duplicate active owners instead of
