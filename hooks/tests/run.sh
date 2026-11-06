@@ -576,7 +576,8 @@ test_validate_bash_allows_write_into_submodule() {
   input="$TMP_ROOT/bash-submod.json"
   jq -n --arg cmd "echo y > $sub/file.go" '{tool_name:"Bash",tool_input:{command:$cmd}}' >"$input"
   out="$TMP_ROOT/bash-submod.out"
-  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input"
+  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" \
+    CLAUDE_PROOF_ROOT="$(fresh_proof_root bash-submod)"
   decision=$(jq -r '.hookSpecificOutput.permissionDecision // "no-decision"' <"$out" 2>/dev/null)
   [ -z "$decision" ] && decision="no-decision"
 
@@ -595,7 +596,8 @@ test_validate_bash_allows_write_to_singular_import_dir() {
 {"tool_name":"Bash","tool_input":{"command":"echo x > wingout/import/ffstream/main.go"}}
 EOF
   out="$TMP_ROOT/bash-singular-import.out"
-  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input"
+  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" \
+    CLAUDE_PROOF_ROOT="$(fresh_proof_root bash-singular-import)"
   decision=$(jq -r '.hookSpecificOutput.permissionDecision // "no-decision"' <"$out" 2>/dev/null)
   [ -z "$decision" ] && decision="no-decision"
 
@@ -1308,55 +1310,65 @@ test_validate_edit_write_allows_remote_multiedit_gomod_replace() {
 }
 
 # ---- validate-bash ----
+# validate-bash delegates the ECI command plan to the Codex planner (codex parity).
+# Tests that reach the planner pin CLAUDE_PROOF_ROOT to a fresh dir so live ECI
+# markers cannot change an expectation.
 
 test_validate_bash_allows_redirect_to_vendor_path() {
   local out
   out="$TMP_ROOT/bash-vendor-redir.out"
-  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$FIXTURES/validate-bash-vendor-redirect.json"
+  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$FIXTURES/validate-bash-vendor-redirect.json" \
+    CLAUDE_PROOF_ROOT="$(fresh_proof_root bash-vendor-redir)"
   expect_no_output "$out"
 }
 
 test_validate_bash_allows_in_place_imports_path() {
   local out
   out="$TMP_ROOT/bash-imports-sed.out"
-  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$FIXTURES/validate-bash-imports-sed.json"
+  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$FIXTURES/validate-bash-imports-sed.json" \
+    CLAUDE_PROOF_ROOT="$(fresh_proof_root bash-imports-sed)"
   expect_no_output "$out"
 }
 
 test_validate_bash_allows_vendor_test_with_tmp_redirect() {
   local out
   out="$TMP_ROOT/bash-vendor-test.out"
-  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$FIXTURES/validate-bash-vendor-go-test.json"
+  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$FIXTURES/validate-bash-vendor-go-test.json" \
+    CLAUDE_PROOF_ROOT="$(fresh_proof_root bash-vendor-test)"
   expect_no_output "$out"
 }
 
-test_validate_bash_blocks_bare_go_test() {
+# Planner allows bare go test: the Claude capture rule was dropped (codex parity).
+test_validate_bash_allows_bare_go_test() {
   local out
   out="$TMP_ROOT/bash-go-test-bare.out"
-  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$FIXTURES/validate-bash-go-test-bare.json"
-  is_pretool_deny "$out" &&
-    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "captured to a file"
+  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$FIXTURES/validate-bash-go-test-bare.json" \
+    CLAUDE_PROOF_ROOT="$(fresh_proof_root bash-go-test-bare)"
+  expect_no_output "$out"
 }
 
-test_validate_bash_blocks_go_test_count_one() {
+# Planner allows -count=1: the Claude cache rule was dropped (codex parity).
+test_validate_bash_allows_go_test_count_one() {
   local out
   out="$TMP_ROOT/bash-go-test-count.out"
-  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$FIXTURES/validate-bash-go-test-count.json"
-  is_pretool_deny "$out" &&
-    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "-count=1"
+  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$FIXTURES/validate-bash-go-test-count.json" \
+    CLAUDE_PROOF_ROOT="$(fresh_proof_root bash-go-test-count)"
+  expect_no_output "$out"
 }
 
 test_validate_bash_allows_redirected_go_test() {
   local out
   out="$TMP_ROOT/bash-go-test-redir.out"
-  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$FIXTURES/validate-bash-go-test-redirect.json"
+  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$FIXTURES/validate-bash-go-test-redirect.json" \
+    CLAUDE_PROOF_ROOT="$(fresh_proof_root bash-go-test-redir)"
   expect_no_output "$out"
 }
 
 test_validate_bash_allows_go_test_tee() {
   local out
   out="$TMP_ROOT/bash-go-test-tee.out"
-  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$FIXTURES/validate-bash-go-test-tee.json"
+  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$FIXTURES/validate-bash-go-test-tee.json" \
+    CLAUDE_PROOF_ROOT="$(fresh_proof_root bash-go-test-tee)"
   expect_no_output "$out"
 }
 
@@ -1421,18 +1433,19 @@ test_validate_bash_blocks_subagent_eci_active_off() {
 }
 
 test_validate_bash_allows_main_eci_active_off() {
-  local home input out cmd
-  home="$(fresh_home bash-main-eci-off)"
+  local input out cmd
   cmd="~/.claude/bin/eci-active off /tmp/eci-disengage.md"
   input="$TMP_ROOT/bash-main-eci-off.json"
   jq -n --arg cwd "$ROOT" --arg cmd "$cmd" \
     '{session_id:"t00-session",cwd:$cwd,tool_name:"Bash",tool_input:{command:$cmd}}' >"$input"
   out="$TMP_ROOT/bash-main-eci-off.out"
-  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" HOME="$home"
+  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" \
+    CLAUDE_PROOF_ROOT="$(fresh_proof_root bash-main-eci-off)"
   expect_no_output "$out"
 }
 
-test_validate_bash_blocks_git_reset_without_marker() {
+# Planner allows git reset with no active marker; the Claude reset gate was dropped.
+test_validate_bash_allows_git_reset_without_marker() {
   local repo input out cmd
   repo="$TMP_ROOT/git-reset-without-marker"
   mkdir -p "$repo" || return 1
@@ -1443,12 +1456,13 @@ test_validate_bash_blocks_git_reset_without_marker() {
     '{session_id:"t00-session",cwd:$cwd,tool_name:"Bash",tool_input:{command:$cmd}}' >"$input"
   out="$TMP_ROOT/bash-git-reset-without-marker.out"
 
-  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input"
-  is_pretool_deny "$out" &&
-    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "git reset denied"
+  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" \
+    CLAUDE_PROOF_ROOT="$(fresh_proof_root git-reset-without-marker)"
+  expect_no_output "$out"
 }
 
-test_validate_bash_consumes_git_reset_marker() {
+# The Claude wrapper no longer owns the reset marker: it must not consume it.
+test_validate_bash_leaves_git_reset_marker_untouched() {
   local repo marker input out cmd
   repo="$TMP_ROOT/git-reset-with-marker"
   mkdir -p "$repo" || return 1
@@ -1465,12 +1479,13 @@ test_validate_bash_consumes_git_reset_marker() {
     '{session_id:"t00-session",cwd:$cwd,tool_name:"Bash",tool_input:{command:$cmd}}' >"$input"
   out="$TMP_ROOT/bash-git-reset-with-marker.out"
 
-  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input"
+  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" \
+    CLAUDE_PROOF_ROOT="$(fresh_proof_root git-reset-with-marker)"
   expect_no_output "$out" &&
-    [ ! -e "$marker" ]
+    [ -s "$marker" ]
 }
 
-test_validate_bash_blocks_git_reset_marker_mismatch() {
+test_validate_bash_allows_git_reset_marker_mismatch() {
   local repo marker input out cmd
   repo="$TMP_ROOT/git-reset-marker-mismatch"
   mkdir -p "$repo" || return 1
@@ -1487,10 +1502,142 @@ test_validate_bash_blocks_git_reset_marker_mismatch() {
     '{session_id:"t00-session",cwd:$cwd,tool_name:"Bash",tool_input:{command:$cmd}}' >"$input"
   out="$TMP_ROOT/bash-git-reset-marker-mismatch.out"
 
-  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input"
+  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" \
+    CLAUDE_PROOF_ROOT="$(fresh_proof_root git-reset-marker-mismatch)"
+  expect_no_output "$out" &&
+    [ -s "$marker" ]
+}
+
+# (b) agent_id selects the planner's worker role via CODEX_HOOK_IS_SUBAGENT.
+test_validate_bash_subagent_agent_id_selects_worker_role() {
+  local proof input out sid="t00-session"
+  proof="$(fresh_proof_root subagent-role)"
+  mkdir -p "$proof/$sid" || return 1
+  printf 'scope: subagent role\ncwd: %s\nsession_id: %s\n' "$ROOT" "$sid" >"$proof/$sid/eci_active"
+  input="$TMP_ROOT/bash-subagent-role.json"
+  jq -n --arg sid "$sid" --arg cwd "$ROOT" \
+    '{session_id:$sid,agent_id:"sub-uuid",cwd:$cwd,tool_name:"Bash",tool_input:{command:"git add -A"}}' >"$input"
+  out="$TMP_ROOT/bash-subagent-role.out"
+
+  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" CLAUDE_PROOF_ROOT="$proof"
   is_pretool_deny "$out" &&
-    [ -e "$marker" ] &&
-    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "does not match"
+    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "[ECI_WORKER_GIT_OWNERSHIP_DENIED]" &&
+    json_field_not_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "ECI_BROAD_DESTRUCTIVE_DENIED"
+}
+
+# (b) without agent_id, an inherited CODEX_HOOK_IS_SUBAGENT must be cleared (coordinator role).
+test_validate_bash_clears_inherited_subagent_flag_for_coordinator() {
+  local proof input out sid="t00-session"
+  proof="$(fresh_proof_root coordinator-role)"
+  mkdir -p "$proof/$sid" || return 1
+  printf 'scope: coordinator role\ncwd: %s\nsession_id: %s\n' "$ROOT" "$sid" >"$proof/$sid/eci_active"
+  input="$TMP_ROOT/bash-coordinator-role.json"
+  jq -n --arg sid "$sid" --arg cwd "$ROOT" \
+    '{session_id:$sid,cwd:$cwd,tool_name:"Bash",tool_input:{command:"git add -A"}}' >"$input"
+  out="$TMP_ROOT/bash-coordinator-role.out"
+
+  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" \
+    CLAUDE_PROOF_ROOT="$proof" CODEX_HOOK_IS_SUBAGENT=1
+  is_pretool_deny "$out" &&
+    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "[ECI_BROAD_DESTRUCTIVE_DENIED]" &&
+    json_field_not_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "ECI_WORKER_GIT_OWNERSHIP_DENIED"
+}
+
+# (c) no ~/.codex: exit 0, no stdout, advisory on stderr.
+test_validate_bash_without_codex_home_fails_open_with_advisory() {
+  local home input out rc
+  home="$(fresh_home no-codex)"
+  input="$TMP_ROOT/bash-no-codex.json"
+  jq -n --arg cwd "$ROOT" '{session_id:"t00-session",cwd:$cwd,tool_name:"Bash",tool_input:{command:"ls"}}' >"$input"
+  out="$TMP_ROOT/bash-no-codex.out"
+
+  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" HOME="$home" \
+    CLAUDE_PROOF_ROOT="$(fresh_proof_root no-codex)"
+  rc=$?
+  [ "$rc" -eq 0 ] && expect_no_output "$out" &&
+    grep -q 'ECI planner unavailable' "$out.err"
+}
+
+# (d) missing planner binary: the wrapper must call eci_runtime_build_missing for
+# eci-command-plan, then fail open. The build step is stubbed in a scratch ~/.codex.
+test_validate_bash_rebuilds_missing_planner_before_failing_open() {
+  local home input out rc
+  home="$(fresh_home missing-planner)"
+  mkdir -p "$home/.codex/hooks/lib" || return 1
+  {
+    printf '. %s\n' "$HOME/.codex/hooks/lib/eci-runtime-sync.sh"
+    printf '%s\n' 'eci_runtime_build_missing() { printf "%s %s\n" "$1" "$2" >>"$HOME/build-missing.log"; return 1; }'
+  } >"$home/.codex/hooks/lib/eci-runtime-sync.sh"
+  input="$TMP_ROOT/bash-missing-planner.json"
+  jq -n --arg cwd "$ROOT" '{session_id:"t00-session",cwd:$cwd,tool_name:"Bash",tool_input:{command:"ls"}}' >"$input"
+  out="$TMP_ROOT/bash-missing-planner.out"
+
+  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" HOME="$home" \
+    CLAUDE_PROOF_ROOT="$(fresh_proof_root missing-planner)"
+  rc=$?
+  [ "$rc" -eq 0 ] && expect_no_output "$out" &&
+    [ "$(cat "$home/build-missing.log")" = "$home/.codex eci-command-plan" ]
+}
+
+# (e) non-JSON stdin: exit 0, no stdout (fail-open).
+test_validate_bash_non_json_stdin_fails_open_silently() {
+  local input out rc
+  input="$TMP_ROOT/bash-non-json.in"
+  printf 'not json\n' >"$input"
+  out="$TMP_ROOT/bash-non-json.out"
+
+  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" \
+    CLAUDE_PROOF_ROOT="$(fresh_proof_root non-json)"
+  rc=$?
+  [ "$rc" -eq 0 ] && expect_no_output "$out"
+}
+
+# (a) Wrapper equivalence: the Claude wrapper must match the Codex shim for the same
+# command, cwd, session and proof root. One pass or fail line per command.
+equiv_code() {
+  local reason
+  [ -s "$1" ] || { printf 'allow'; return 0; }
+  reason="$(jq -r '.hookSpecificOutput.permissionDecisionReason // empty' "$1" 2>/dev/null)"
+  case "$reason" in
+    '['*) printf '%s' "$reason" | sed -n 's/^\[\([A-Z_]*\)\].*/\1/p' ;;
+    '') printf 'other' ;;
+    *) printf 'deny' ;;
+  esac
+}
+
+test_validate_bash_wrapper_matches_codex_shim() {
+  local sid="t00-session" idx=0 cmd proof input co cl rc_c rc_l
+  local -a commands=(
+    'ls'
+    'git push origin main'
+    'git reset --hard'
+    'go test ./...'
+    'rm -f /home/pheona/.codex/bin/eci-active'
+    'echo "go test ./... later"'
+    'git add -A'
+    'grep -n validate hooks/validate-bash.sh'
+  )
+  for cmd in "${commands[@]}"; do
+    idx=$((idx + 1))
+    proof="$(fresh_proof_root "equiv-$idx")"
+    mkdir -p "$proof/$sid" || return 1
+    printf 'scope: equivalence\ncwd: %s\nsession_id: %s\n' "$ROOT" "$sid" >"$proof/$sid/eci_active"
+    input="$TMP_ROOT/equiv-$idx.json"
+    jq -n --arg sid "$sid" --arg cwd "$ROOT" --arg cmd "$cmd" \
+      '{session_id:$sid,cwd:$cwd,tool_name:"Bash",tool_input:{command:$cmd}}' >"$input"
+    co="$TMP_ROOT/equiv-$idx.codex.out"
+    cl="$TMP_ROOT/equiv-$idx.claude.out"
+    run_hook "$co" "$HOME/.codex/hooks/validate-bash.sh" "$input" CODEX_PROOF_ROOT="$proof"
+    rc_c=$?
+    run_hook "$cl" "$ROOT/hooks/validate-bash.sh" "$input" CLAUDE_PROOF_ROOT="$proof"
+    rc_l=$?
+    if [ "$rc_c" = "$rc_l" ] && cmp -s "$co" "$cl"; then
+      pass "validate-bash matches codex shim [$(equiv_code "$cl") rc=$rc_l]: $cmd"
+    else
+      fail "validate-bash matches codex shim: $cmd" \
+        "codex rc=$rc_c code=$(equiv_code "$co") stdout=$(head -c 200 "$co"); claude rc=$rc_l code=$(equiv_code "$cl") stdout=$(head -c 200 "$cl")"
+    fi
+  done
 }
 
 # ---- validate-edit-write activity marking ----
@@ -2400,10 +2547,10 @@ run_case "validate-bash allows in-place imports paths" \
   test_validate_bash_allows_in_place_imports_path
 run_case "validate-bash allows vendor test with tmp redirect" \
   test_validate_bash_allows_vendor_test_with_tmp_redirect
-run_case "validate-bash blocks bare go test" \
-  test_validate_bash_blocks_bare_go_test
-run_case "validate-bash blocks go test -count=1" \
-  test_validate_bash_blocks_go_test_count_one
+run_case "validate-bash allows bare go test (planner decides)" \
+  test_validate_bash_allows_bare_go_test
+run_case "validate-bash allows go test -count=1 (planner decides)" \
+  test_validate_bash_allows_go_test_count_one
 run_case "validate-bash allows redirected go test" \
   test_validate_bash_allows_redirected_go_test
 run_case "validate-bash allows go test piped to tee" \
@@ -2420,12 +2567,23 @@ run_case "validate-bash blocks subagent eci-active off" \
   test_validate_bash_blocks_subagent_eci_active_off
 run_case "validate-bash allows main eci-active off" \
   test_validate_bash_allows_main_eci_active_off
-run_case "validate-bash blocks git reset without marker" \
-  test_validate_bash_blocks_git_reset_without_marker
-run_case "validate-bash consumes git reset marker" \
-  test_validate_bash_consumes_git_reset_marker
-run_case "validate-bash blocks git reset marker mismatch" \
-  test_validate_bash_blocks_git_reset_marker_mismatch
+run_case "validate-bash allows git reset without marker (planner decides)" \
+  test_validate_bash_allows_git_reset_without_marker
+run_case "validate-bash leaves git reset marker untouched" \
+  test_validate_bash_leaves_git_reset_marker_untouched
+run_case "validate-bash allows git reset marker mismatch (planner decides)" \
+  test_validate_bash_allows_git_reset_marker_mismatch
+run_case "validate-bash subagent agent_id selects worker ECI role" \
+  test_validate_bash_subagent_agent_id_selects_worker_role
+run_case "validate-bash clears inherited CODEX_HOOK_IS_SUBAGENT for coordinator" \
+  test_validate_bash_clears_inherited_subagent_flag_for_coordinator
+run_case "validate-bash without ~/.codex fails open with stderr advisory" \
+  test_validate_bash_without_codex_home_fails_open_with_advisory
+run_case "validate-bash rebuilds missing ECI planner before failing open" \
+  test_validate_bash_rebuilds_missing_planner_before_failing_open
+run_case "validate-bash non-JSON stdin fails open with no stdout" \
+  test_validate_bash_non_json_stdin_fails_open_silently
+test_validate_bash_wrapper_matches_codex_shim
 
 # validate-edit-write activity
 run_case "validate-edit-write marks edit activity for main thread" \
