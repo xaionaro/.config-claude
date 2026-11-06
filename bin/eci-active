@@ -2,9 +2,9 @@
 # eci-active {on <task-description>|off <disengage-report.md>|status}
 #
 # Session-scoped marker for the explore-critique-implement (ECI) skill.
-# When `on`, the PreToolUse gate (eci-active-gate.sh) denies direct
-# Edit/Write/MultiEdit calls from the main thread, forcing delegation
-# to subagents per the ECI loop. Set `off` once the scope is closed
+# The marker does not block source edits. eci-active-gate.sh denies
+# Edit/Write/MultiEdit/NotebookEdit only on ECI control and ledger files,
+# and does not read this marker. Set `off` once the scope is closed
 # (clean pass, hard escalate, or user confirms) AND a disengage report
 # has been written walking the stop checklist with a critical analysis
 # of items that could not be fully complied with.

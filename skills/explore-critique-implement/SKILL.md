@@ -24,7 +24,7 @@ Coding task? Every subagent prompt (explorer, critic, implementer) must include:
 
 ## Engagement marker
 
-The PreToolUse gate `~/.claude/hooks/eci-active-gate.sh` denies direct Edit/Write/MultiEdit on the main thread while engaged. Every code change must flow through a subagent or teammate. Subagents and teammates write from their own session — the marker is keyed to the orchestrator's session and is absent in theirs, so neither trips this gate. The Stop hook exemption for `eci-implementer` uses a different scope — see `hooks/stop-gate.sh`.
+The PreToolUse gate `~/.claude/hooks/eci-active-gate.sh` denies Edit/Write/MultiEdit/NotebookEdit only when the target is an ECI control or ledger file (including the `eci_active` marker itself). It does not check the marker for source edits and does not exempt subagents. Every code change must still flow through a subagent or teammate (skill rule, not gate-enforced). The Stop hook exemption for `eci-implementer` uses a different scope — see `hooks/stop-gate.sh`.
 
 The Stop hook hard-blocks idle stops while ECI is active, with one auto-release: when the orchestrator dispatches `Agent` / `SendMessage` / `Monitor`, `hooks/eci-pending-set.sh` arms `$PROOF_DIR/eci_teammate_pending` and subsequent stops release silently until the teammate reply (which clears the marker via `hooks/eci-pending-clear.sh`).
 
@@ -35,7 +35,7 @@ If the block fires while a teammate IS still working (e.g. the user sent a mid-f
 | Engage | `~/.claude/bin/eci-active on "<task + scope>"` | Before Step 1 of the first iteration |
 | Disengage | See Teardown sequence below | Clean pass landed, hard escalate, or user confirms scope closed |
 
-Do not disengage mid-task to escape the gate — that is the regression this marker exists to catch. If a hand-edit feels necessary, SendMessage the persistent `implementer` teammate.
+Do not disengage mid-task to make direct edits. If a hand-edit feels necessary, SendMessage the persistent `implementer` teammate.
 
 ## Team setup
 

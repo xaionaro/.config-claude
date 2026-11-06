@@ -45,7 +45,7 @@ if [ -n "${SESSION_ID:-}" ]; then
   ECI_MARKER="$HOME/.cache/claude-proof/$SESSION_ID/eci_active"
   if [ -f "$ECI_MARKER" ]; then
     cat <<EOF
-ECI ACTIVE for this session — main thread MUST delegate Edit/Write/MultiEdit to subagents (per the eci-active-gate hook). Marker contents:
+ECI ACTIVE for this session — code edits go through subagents per the explore-critique-implement skill (eci-active-gate denies direct edits only to ECI control and ledger files). Marker contents:
 $(cat "$ECI_MARKER")
 If you cannot recall the explore-critique-implement flow, re-invoke via Skill tool, skill "explore-critique-implement". Compaction may have evicted it. Disengage only when the scope is closed via: ~/.claude/bin/eci-active off <disengage-report.md>
 EOF

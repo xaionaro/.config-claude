@@ -12,8 +12,8 @@
 # Recipient field resolution: tool_input.to | tool_input.recipient | tool_input.name.
 # If none are present, exit 0 (let the harness handle malformed input).
 #
-# Failure mode: trap-to-deny-with-evidence (matches eci-active-gate.sh and
-# the rest of the gate suite — surfaces hook bugs immediately rather than
+# Failure mode: trap-to-deny-with-evidence (matches the rest of the gate
+# suite — surfaces hook bugs immediately rather than
 # silently failing open).
 
 set -uo pipefail

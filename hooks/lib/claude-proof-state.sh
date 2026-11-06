@@ -220,7 +220,7 @@ claude_bind_side_stop_to_session() {
 #   2. claude --agent-type top-level spawn — input has .agent_type
 #      (e.g. "general-purpose"); NO .agent_id.
 # Either signal identifies a subagent; both must be exempted from
-# main-thread-only gates (stop-gate, eci-active-gate, ate-orchestrator-gate).
+# main-thread-only gates (stop-gate, ate-orchestrator-gate).
 # DO NOT introduce transcript-shape detection: Codex's
 # codex_hook_is_subagent_context parses ~/.codex/sessions/*.jsonl
 # session_meta.payload.source.subagent.thread_spawn — a structure
