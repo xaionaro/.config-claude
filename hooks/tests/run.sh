@@ -1083,22 +1083,22 @@ test_skill_marker_gate_blocks_notebookedit_without_marker() {
 
 # ---- ATE orchestrator gate ----
 
-test_ate_gate_denies_edits_for_lead() {
+test_ate_gate_allows_edits_for_lead() {
   local input out
   input="$TMP_ROOT/ate-lead.json"
   jq -n '{tool_name:"Edit",tool_input:{file_path:"src/file.go",old_string:"a",new_string:"b"}}' >"$input"
   out="$TMP_ROOT/ate-lead.out"
   run_hook "$out" "$ROOT/hooks/ate-orchestrator-gate.sh" "$input" CLAUDE_ROLE="lead"
-  is_pretool_deny "$out"
+  expect_no_output "$out"
 }
 
-test_ate_gate_denies_edits_for_coordinator() {
+test_ate_gate_allows_edits_for_coordinator() {
   local input out
   input="$TMP_ROOT/ate-coord.json"
   jq -n '{tool_name:"Edit",tool_input:{file_path:"src/file.go",old_string:"a",new_string:"b"}}' >"$input"
   out="$TMP_ROOT/ate-coord.out"
   run_hook "$out" "$ROOT/hooks/ate-orchestrator-gate.sh" "$input" CLAUDE_ROLE="coordinator"
-  is_pretool_deny "$out"
+  expect_no_output "$out"
 }
 
 test_ate_gate_allows_edits_for_executor() {
@@ -2277,10 +2277,10 @@ run_case "skill-marker gate blocks NotebookEdit on protected path without marker
   test_skill_marker_gate_blocks_notebookedit_without_marker
 
 # ATE orchestrator gate tests
-run_case "ATE gate denies edits for lead role" \
-  test_ate_gate_denies_edits_for_lead
-run_case "ATE gate denies edits for coordinator role" \
-  test_ate_gate_denies_edits_for_coordinator
+run_case "ATE gate allows edits for lead role" \
+  test_ate_gate_allows_edits_for_lead
+run_case "ATE gate allows edits for coordinator role" \
+  test_ate_gate_allows_edits_for_coordinator
 run_case "ATE gate allows edits for executor role" \
   test_ate_gate_allows_edits_for_executor
 run_case "ATE gate allows edits when no role is set" \
