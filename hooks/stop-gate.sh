@@ -269,6 +269,15 @@ run_secret_scan() {
 }
 # -----------------------------------------------------------------------
 
+# --- /side stop bypass: first check after the exemptions ---------------
+# Codex parity: a /side marker that applies to this session allows Stop before
+# ECI, skip-stop, ATE, activity, and proof checks (codex stop-gate.sh:1722-1728
+# at commit f50ca64~1; that file was deleted in f50ca64).
+SIDE_STOP=$(claude_existing_state_file side-stop side_stop "$SESSION_ID" "$CWD" 2>/dev/null || true)
+if claude_side_stop_is_active_for_session "$SIDE_STOP" "$SESSION_ID"; then
+  exit 0
+fi
+
 # --- ECI / skip / ATE / activity-empty ordering ------------------------
 # Mirror of codex stop-gate.sh:396-426. Order matters: ECI is the strongest
 # claim on the session, skip-stop is a deliberate bypass (only honored

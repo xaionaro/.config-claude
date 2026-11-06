@@ -2545,6 +2545,109 @@ run_case "stop gate adds loop reminder after five blocks" \
 run_case "stop gate blocks byte-identical audit without rescanned: line" \
   test_stop_gate_blocks_identical_audit_without_rescanned
 
+# ===========================================================================
+# /side stop marker (codex parity): prompt writes it, stop gate honours it.
+# ===========================================================================
+
+# Stop input for session $1 in cwd $2 with transcript activity (blocks without a marker).
+side_stop_input() {
+  local sid="$1" repo="$2" tr="$3" input="$4"
+  write_transcript_with_activity "$tr"
+  jq --arg sid "$sid" --arg cwd "$repo" --arg tr "$tr" \
+    '. + {session_id:$sid, transcript_path:$tr, cwd:$cwd}' \
+    "$FIXTURES/stop-basic.json" >"$input"
+}
+
+# Write a cwd-scoped /side marker for parent $3 in repo $2 (format from prompt-task-reminder.sh).
+seed_side_stop_cwd_marker() {
+  local home="$1" repo="$2" parent="$3" dir
+  dir="$(env -i HOME="$home" PATH="$PATH" bash -c \
+    '. "$HOME/.claude/hooks/lib/claude-proof-state.sh" && claude_ensure_cwd_state_dir side-stop "$1"' _ "$repo")" || return 1
+  [ -n "$dir" ] || return 1
+  {
+    printf 'command: /side\n'
+    printf 'parent_session_id: %s\n' "$parent"
+    printf 'cwd: %s\n' "$repo"
+    date -u '+created_utc: %Y-%m-%dT%H:%M:%SZ'
+  } >"$dir/side_stop"
+}
+
+test_prompt_side_writes_marker() {
+  local home input out sd cwd_marker
+  home="$(fresh_home prompt-side-marker)"
+  input="$TMP_ROOT/prompt-side-marker.json"
+  jq --arg cwd "$ROOT" '.session_id = "t00-parent" | .cwd = $cwd | .prompt = "/side quick question"' \
+    "$FIXTURES/user-prompt-submit.json" >"$input"
+  out="$TMP_ROOT/prompt-side-marker.out"
+  run_hook "$out" "$ROOT/hooks/prompt-task-reminder.sh" "$input" HOME="$home"
+  sd="$home/.cache/claude-proof/side-stop/sessions/t00-parent"
+  cwd_marker="$(find "$home/.cache/claude-proof/side-stop/cwd" -mindepth 2 -maxdepth 2 -name side_stop 2>/dev/null | head -n1)"
+  grep -q "PRE-WORK" "$out" &&
+    [ -f "$sd/side_stop" ] &&
+    grep -qx 'command: /side' "$sd/side_stop" &&
+    grep -qx 'parent_session_id: t00-parent' "$sd/side_stop" &&
+    grep -qxF "cwd: $ROOT" "$sd/side_stop" &&
+    grep -Eq '^created_utc: [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' "$sd/side_stop" &&
+    [ -n "$cwd_marker" ] &&
+    grep -qx 'command: /side' "$cwd_marker"
+}
+
+test_prompt_non_side_writes_no_marker() {
+  local home input out
+  home="$(fresh_home prompt-no-side-marker)"
+  input="$TMP_ROOT/prompt-no-side-marker.json"
+  jq --arg cwd "$ROOT" '.session_id = "t00-parent" | .cwd = $cwd | .prompt = "summarize the /side command"' \
+    "$FIXTURES/user-prompt-submit.json" >"$input"
+  out="$TMP_ROOT/prompt-no-side-marker.out"
+  run_hook "$out" "$ROOT/hooks/prompt-task-reminder.sh" "$input" HOME="$home"
+  grep -q "PRE-WORK" "$out" &&
+    [ "$(find "$home/.cache/claude-proof" -name side_stop 2>/dev/null | wc -l)" -eq 0 ]
+}
+
+test_stop_gate_side_marker_allows_child_not_parent() {
+  local home repo tr input out
+  home="$(fresh_home stop-side-allow)"
+  repo="$(make_git_repo stop-side-allow)" || return 1
+  seed_side_stop_cwd_marker "$home" "$repo" t00-parent || return 1
+
+  # Child session (not the marker's parent) stops: allowed, silent.
+  tr="$TMP_ROOT/stop-side-child-transcript.jsonl"
+  input="$TMP_ROOT/stop-side-child.json"
+  side_stop_input t00-side-child "$repo" "$tr" "$input"
+  out="$TMP_ROOT/stop-side-child.out"
+  run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" HOME="$home" CLAUDE_STOP_REVIEWER="" || return 1
+  expect_no_output "$out" || return 1
+
+  # Marker's own parent session is not exempted by it: still blocked.
+  tr="$TMP_ROOT/stop-side-parent-transcript.jsonl"
+  input="$TMP_ROOT/stop-side-parent.json"
+  side_stop_input t00-parent "$repo" "$tr" "$input"
+  out="$TMP_ROOT/stop-side-parent.out"
+  run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" HOME="$home" CLAUDE_STOP_REVIEWER=""
+  is_stop_block "$out"
+}
+
+test_stop_gate_without_side_marker_still_blocks() {
+  local home repo tr input out
+  home="$(fresh_home stop-no-side)"
+  repo="$(make_git_repo stop-no-side)" || return 1
+  tr="$TMP_ROOT/stop-no-side-transcript.jsonl"
+  input="$TMP_ROOT/stop-no-side.json"
+  side_stop_input t00-side-child "$repo" "$tr" "$input"
+  out="$TMP_ROOT/stop-no-side.out"
+  run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" HOME="$home" CLAUDE_STOP_REVIEWER=""
+  is_stop_block "$out"
+}
+
+run_case "prompt /side writes side_stop marker (session and cwd)" \
+  test_prompt_side_writes_marker
+run_case "prompt without leading /side writes no side_stop marker" \
+  test_prompt_non_side_writes_no_marker
+run_case "stop gate allows child under /side marker, parent still blocked" \
+  test_stop_gate_side_marker_allows_child_not_parent
+run_case "stop gate blocks child with transcript activity and no /side marker" \
+  test_stop_gate_without_side_marker_still_blocks
+
 # claude-tmp lib (disk-pressure resilience)
 run_case "claude_init_tmp uses writable target" \
   test_claude_init_tmp_uses_writable_target

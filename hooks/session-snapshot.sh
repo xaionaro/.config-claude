@@ -44,3 +44,6 @@ find "$ROOT/history"  -mindepth 1 -maxdepth 1 -type f -mtime +30 -delete 2>/dev/
 find "$ROOT/skills"   -mindepth 1 -maxdepth 1 -type d -mtime +30 -exec rm -rf {} + 2>/dev/null || true
 find "$ROOT/audit"    -mindepth 1 -maxdepth 1 -type d -mtime +30 -exec rm -rf {} + 2>/dev/null || true
 find "$ROOT/reviewer" -mindepth 1 -maxdepth 1 -type d -mtime +30 -exec rm -rf {} + 2>/dev/null || true
+# Codex parity (codex session-snapshot.sh:324): side-stop session markers have no
+# refresh path, so prune them by age like the other per-session state.
+find "$ROOT/side-stop/sessions" -mindepth 1 -maxdepth 1 -type d -mtime +30 -exec rm -rf {} + 2>/dev/null || true

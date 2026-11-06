@@ -51,3 +51,36 @@ If you cannot recall the explore-critique-implement flow, re-invoke via Skill to
 EOF
   fi
 fi
+
+# /side stop marker (codex parity): a prompt starting with /side marks this
+# session and its cwd so stop-gate.sh lets the side conversation stop.
+# Same marker format as codex prompt-task-reminder.sh:63-89. Fail-open.
+write_side_stop_marker() {
+  local dir="$1" cwd="$2"
+  mkdir -p "$dir" || return 1
+  {
+    printf 'command: /side\n'
+    printf 'parent_session_id: %s\n' "$SESSION_ID"
+    [ -n "$cwd" ] && printf 'cwd: %s\n' "$cwd"
+    date -u '+created_utc: %Y-%m-%dT%H:%M:%SZ'
+  } >"$dir/side_stop"
+}
+
+mark_side_stop() {
+  local prompt cwd side_dir
+  prompt=$(printf '%s' "$HOOK_INPUT" | jq -r 'if (.prompt? | type) == "string" then .prompt else "" end' 2>/dev/null) || return 0
+  printf '%s\n' "$prompt" | grep -Eq '^[[:space:]]*/side([[:space:]]|$)' || return 0
+  case "$SESSION_ID" in
+    ""|*[!A-Za-z0-9_-]*) return 0 ;;
+  esac
+  . "$HOME/.claude/hooks/lib/claude-proof-state.sh" || return 0
+  cwd=$(printf '%s' "$HOOK_INPUT" | jq -r 'if (.cwd? | type) == "string" then .cwd else "" end' 2>/dev/null) || cwd=""
+  write_side_stop_marker "$(claude_session_state_dir side-stop "$SESSION_ID")" "$cwd" || return 0
+  if [ -n "$cwd" ]; then
+    side_dir="$(claude_ensure_cwd_state_dir side-stop "$cwd" 2>/dev/null)" &&
+      [ -n "$side_dir" ] && write_side_stop_marker "$side_dir" "$cwd"
+  fi
+  return 0
+}
+mark_side_stop || true
+exit 0
