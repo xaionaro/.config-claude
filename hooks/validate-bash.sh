@@ -185,15 +185,16 @@ PY
   esac
 }
 
-# Detect `eci-active off` in a command (subagent guard): after deleting quotes
-# and backslashes, the text eci-active, whitespace, then the word off. Quoting,
+# Match the text `eci-active off` anywhere in a command (subagent guard). This
+# is a text match, not a parse of an invocation: after deleting quotes and
+# backslashes, it looks for eci-active, whitespace, then the word off. Quoting,
 # line continuations, wrappers (env, stdbuf, nice, sudo) and nested shells
 # (bash -c, env -S) therefore all match. This replaces an argv-head parser that
 # missed wrapper and continuation forms; ECI guards accidental deviation, not
 # adversarial input, so a text match is enough. Accepted over-denial: the same
 # text in echo, heredoc bodies, grep patterns and commit messages. Not detected:
 # indirection (E=...eci-active; "$E" off) or a script file that runs it.
-command_invokes_eci_off() {
+command_mentions_eci_off() {
   local text
   text="$(printf '%s' "$1" | tr -d '\\"'"'")"
   [[ $text =~ eci-active[[:space:]]+off([^[:alnum:]_]|$) ]]
@@ -538,7 +539,7 @@ fi
 
 # Block subagents from disengaging ECI via `eci-active off`. Same test as
 # claude_hook_is_subagent_context: a non-empty agent_id.
-if [ -n "$AGENT_ID" ] && command_invokes_eci_off "$COMMAND"; then
+if [ -n "$AGENT_ID" ] && command_mentions_eci_off "$COMMAND"; then
   deny "Only the main thread/orchestrator may disengage ECI with eci-active off. Subagents must report completion or blockers to the orchestrator while ECI remains active. This check matches eci-active followed by off anywhere in the command text, quoted text and heredocs included; reword such text, for example grep 'eci-active[[:space:]]off' or git commit -F <file>."
 fi
 
