@@ -30,8 +30,6 @@ esac
 [ -n "$prompt_id" ] || exit 0
 turn_id_json="$(claude_hook_turn_id_json "$(jq -cn --arg id "$prompt_id" '{turn_id: $id}')")"
 [ -n "$turn_id_json" ] || exit 0
-claude_hook_transcript_first_record_is_admissible "$input" || exit 0
-
 if claude_hook_is_subagent_context "$input"; then
   exit 0
 fi
@@ -77,13 +75,23 @@ if [ -e "$claim" ] || [ -L "$claim" ]; then
   exit 0
 fi
 
-projects_root="$(claude_hook_projects_root)" || exit 0
-envelope="$(printf '%s' "$input" |
-  /usr/bin/python3 "$HOOK_DIR/lib/bounded_hook_input.py" claude-hook-last-human-prompt "$projects_root")" || exit 0
-[ "$(printf '%s' "$envelope" | jq -c '.turn_id' 2>/dev/null)" = "$turn_id_json" ] || exit 0
-last_user_message="$(printf '%s' "$envelope" | jq -jr '.prompt' 2>/dev/null |
-  redact_sensitive_text |
-  /usr/bin/python3 "$HOOK_DIR/lib/utf8_prefix_cap.py")" || exit 0
+capture="$state_dir/capture-turn-$claim_key.json"
+if [ -e "$capture" ] || [ -L "$capture" ]; then
+  consumed_capture="$(mktemp "$state_dir/.capture-turn-$claim_key.consumed.XXXXXX")" || exit 0
+  mv -f -- "$capture" "$consumed_capture" || exit 0
+  last_user_message="$(/usr/bin/python3 "$HOOK_DIR/lib/turn_capture_validator.py" \
+    "$turn_id_json" <"$consumed_capture")" || exit 0
+  rm -f -- "$consumed_capture"
+else
+  claude_hook_transcript_first_record_is_admissible "$input" || exit 0
+  projects_root="$(claude_hook_projects_root)" || exit 0
+  envelope="$(printf '%s' "$input" |
+    /usr/bin/python3 "$HOOK_DIR/lib/bounded_hook_input.py" claude-hook-last-human-prompt "$projects_root")" || exit 0
+  [ "$(printf '%s' "$envelope" | jq -c '.turn_id' 2>/dev/null)" = "$turn_id_json" ] || exit 0
+  last_user_message="$(printf '%s' "$envelope" | jq -jr '.prompt' 2>/dev/null |
+    redact_sensitive_text |
+    /usr/bin/python3 "$HOOK_DIR/lib/utf8_prefix_cap.py")" || exit 0
+fi
 
 if ! ( umask 077; set -C; : >"$claim" ) 2>/dev/null; then
   exit 0
