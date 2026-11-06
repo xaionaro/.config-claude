@@ -1427,7 +1427,8 @@ test_validate_bash_marks_redirected_read_shell_activity() {
     [ -s "$home/.cache/claude-proof/activity/sessions/t00-session/shell" ]
 }
 
-# Subagent guard: `eci-active off` at argv head is denied for a subagent only.
+# Subagent guard: `eci-active off` is denied for a subagent only. The deny reason
+# is the verbatim message (it names the over-denial and how to reword).
 test_validate_bash_blocks_subagent_eci_active_off() {
   local home input out cmd
   home="$(fresh_home bash-subagent-eci-off)"
@@ -1438,7 +1439,8 @@ test_validate_bash_blocks_subagent_eci_active_off() {
   out="$TMP_ROOT/bash-subagent-eci-off.out"
   run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" HOME="$home"
   is_pretool_deny "$out" &&
-    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "Only the main thread"
+    json_field_equals "$out" '.hookSpecificOutput.permissionDecisionReason // empty' \
+      "Only the main thread/orchestrator may disengage ECI with eci-active off. Subagents must report completion or blockers to the orchestrator while ECI remains active. This check matches eci-active followed by off anywhere in the command text, quoted text and heredocs included; reword such text, for example grep 'eci-active[[:space:]]off' or git commit -F <file>."
 }
 
 test_validate_bash_allows_main_eci_active_off() {
@@ -1454,8 +1456,10 @@ test_validate_bash_allows_main_eci_active_off() {
   expect_no_output "$out" && planner_received "$home" "$input"
 }
 
-# Heredoc bodies and quoted text are not argv heads: the subagent guard must not deny them.
-test_validate_bash_subagent_heredoc_body_is_not_denied() {
+# Accepted over-denial: the guard is a text match, so a heredoc body or quoted
+# text that spells `eci-active off` is denied for a subagent and the planner is
+# not reached.
+test_validate_bash_subagent_heredoc_body_is_denied() {
   local home input out
   home="$(fresh_home subagent-heredoc)"
   make_planner_stub "$home" || return 1
@@ -1464,10 +1468,12 @@ test_validate_bash_subagent_heredoc_body_is_not_denied() {
   out="$TMP_ROOT/bash-subagent-heredoc.out"
   run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" HOME="$home" \
     CLAUDE_PROOF_ROOT="$(fresh_proof_root subagent-heredoc)"
-  expect_no_output "$out" && planner_received "$home" "$input"
+  is_pretool_deny "$out" &&
+    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "Only the main thread" &&
+    [ ! -e "$home/planner-stdin" ]
 }
 
-test_validate_bash_subagent_quoted_eci_off_text_is_not_denied() {
+test_validate_bash_subagent_quoted_eci_off_text_is_denied() {
   local home input out
   home="$(fresh_home subagent-quoted)"
   make_planner_stub "$home" || return 1
@@ -1476,10 +1482,12 @@ test_validate_bash_subagent_quoted_eci_off_text_is_not_denied() {
   out="$TMP_ROOT/bash-subagent-quoted.out"
   run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" HOME="$home" \
     CLAUDE_PROOF_ROOT="$(fresh_proof_root subagent-quoted)"
-  expect_no_output "$out" && planner_received "$home" "$input"
+  is_pretool_deny "$out" &&
+    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "Only the main thread" &&
+    [ ! -e "$home/planner-stdin" ]
 }
 
-# Argv-head `eci-active off` is denied for a subagent however it is reached.
+# Argv-head `eci-active off` forms stay denied for a subagent (the text match covers them).
 test_validate_bash_subagent_eci_off_argv_head_is_denied() {
   local home input out cmd n=0
   home="$(fresh_home subagent-argv)"
@@ -1503,7 +1511,7 @@ EOF" \
   done
 }
 
-# Subagent wrapper unwrapping (run_case rows below). Deny: subagent reason and the
+# Subagent text-match rows (run_case rows below). Deny: subagent reason and the
 # planner never runs. Forward: no output and the planner receives the input bytes.
 # Args: name agent_id command. Empty agent_id is the main thread.
 expect_subagent_bash_denied() {
@@ -2804,10 +2812,10 @@ run_case "validate-bash blocks subagent eci-active off" \
   test_validate_bash_blocks_subagent_eci_active_off
 run_case "validate-bash allows main eci-active off (planner receives input)" \
   test_validate_bash_allows_main_eci_active_off
-run_case "validate-bash does not deny subagent heredoc body mentioning eci-active off" \
-  test_validate_bash_subagent_heredoc_body_is_not_denied
-run_case "validate-bash does not deny subagent quoted eci-active off text" \
-  test_validate_bash_subagent_quoted_eci_off_text_is_not_denied
+run_case "validate-bash denies subagent heredoc body mentioning eci-active off (accepted over-denial)" \
+  test_validate_bash_subagent_heredoc_body_is_denied
+run_case "validate-bash denies subagent quoted eci-active off text (accepted over-denial)" \
+  test_validate_bash_subagent_quoted_eci_off_text_is_denied
 run_case "validate-bash denies subagent eci-active off at argv head in all forms" \
   test_validate_bash_subagent_eci_off_argv_head_is_denied
 run_case "subagent denied: bash -c \"eci-active off\"" \
@@ -2852,18 +2860,18 @@ run_case "subagent allowed: command -v eci-active (query only)" \
   expect_bash_forwarded sub-fwd-01 sub-uuid 'command -v eci-active'
 run_case "subagent allowed: command -V eci-active (query only)" \
   expect_bash_forwarded sub-fwd-02 sub-uuid 'command -V eci-active'
-run_case "subagent allowed: echo \"eci-active off\" (quoted text)" \
-  expect_bash_forwarded sub-fwd-03 sub-uuid 'echo "eci-active off"'
-run_case "subagent allowed: env echo eci-active off (argv head is echo)" \
-  expect_bash_forwarded sub-fwd-04 sub-uuid 'env echo eci-active off'
-run_case "subagent allowed: bash -c 'echo eci-active off' (nested text)" \
-  expect_bash_forwarded sub-fwd-05 sub-uuid "bash -c 'echo eci-active off'"
+run_case "subagent denied (accepted over-denial): echo \"eci-active off\" (quoted text)" \
+  expect_subagent_bash_denied sub-overdeny-03 sub-uuid 'echo "eci-active off"'
+run_case "subagent denied (accepted over-denial): env echo eci-active off (echo argument)" \
+  expect_subagent_bash_denied sub-overdeny-04 sub-uuid 'env echo eci-active off'
+run_case "subagent denied (accepted over-denial): bash -c 'echo eci-active off' (nested text)" \
+  expect_subagent_bash_denied sub-overdeny-05 sub-uuid "bash -c 'echo eci-active off'"
 run_case "subagent allowed: bash -c with no string (no crash, no deny)" \
   expect_bash_forwarded sub-fwd-06 sub-uuid 'bash -c'
 run_case "subagent allowed: timeout 5 with no command (no crash, no deny)" \
   expect_bash_forwarded sub-fwd-07 sub-uuid 'timeout 5'
-run_case "subagent allowed: cat heredoc body mentioning eci-active off" \
-  expect_bash_forwarded sub-fwd-08 sub-uuid "$(printf "cat <<'EOF'\neci-active off\nEOF")"
+run_case "subagent denied (accepted over-denial): cat heredoc body mentioning eci-active off" \
+  expect_subagent_bash_denied sub-overdeny-08 sub-uuid "$(printf "cat <<'EOF'\neci-active off\nEOF")"
 run_case "main thread forwarded: bash -c \"eci-active off\" (guard is subagent-only)" \
   expect_bash_forwarded main-fwd-01 '' 'bash -c "eci-active off"'
 run_case "main thread forwarded: env eci-active off (guard is subagent-only)" \
@@ -2884,12 +2892,56 @@ run_case "subagent denied: ! eci-active off (negation)" \
   expect_subagent_bash_denied sub-deny-25 sub-uuid '! eci-active off'
 run_case "subagent denied: while false; do eci-active off; done (loop body)" \
   expect_subagent_bash_denied sub-deny-26 sub-uuid 'while false; do eci-active off; done'
-run_case "subagent allowed: command -p -v eci-active off (query only)" \
-  expect_bash_forwarded sub-fwd-09 sub-uuid 'command -p -v eci-active off'
-run_case "subagent allowed: echo then eci-active off (then is an argument of echo)" \
-  expect_bash_forwarded sub-fwd-10 sub-uuid 'echo then eci-active off'
+run_case "subagent denied (accepted over-denial): command -p -v eci-active off (query text)" \
+  expect_subagent_bash_denied sub-overdeny-09 sub-uuid 'command -p -v eci-active off'
+run_case "subagent denied (accepted over-denial): echo then eci-active off (echo argument)" \
+  expect_subagent_bash_denied sub-overdeny-10 sub-uuid 'echo then eci-active off'
 run_case "main thread forwarded: if true; then eci-active off; fi (guard is subagent-only)" \
   expect_bash_forwarded main-fwd-04 '' 'if true; then eci-active off; fi'
+run_case "main thread forwarded: ~/.claude/bin/eci-active off /tmp/r.md (guard is subagent-only)" \
+  expect_bash_forwarded main-fwd-05 '' '~/.claude/bin/eci-active off /tmp/r.md'
+run_case "subagent denied: env -a x eci-active off (env option with argument)" \
+  expect_subagent_bash_denied sub-deny-27 sub-uuid 'env -a x eci-active off'
+run_case "subagent denied: env --split-string='eci-active off' (long split option)" \
+  expect_subagent_bash_denied sub-deny-28 sub-uuid "env --split-string='eci-active off'"
+run_case "subagent denied: stdbuf --output L eci-active off (long option with separate argument)" \
+  expect_subagent_bash_denied sub-deny-29 sub-uuid 'stdbuf --output L eci-active off'
+run_case "subagent denied: env -iS 'eci-active off' (grouped short options)" \
+  expect_subagent_bash_denied sub-deny-30 sub-uuid "env -iS 'eci-active off'"
+run_case "subagent denied: nice -n 5 ~/.claude/bin/eci-active off r.md (nice wrapper)" \
+  expect_subagent_bash_denied sub-deny-31 sub-uuid 'nice -n 5 ~/.claude/bin/eci-active off r.md'
+run_case "subagent denied: setsid ~/.claude/bin/eci-active off r.md (setsid wrapper)" \
+  expect_subagent_bash_denied sub-deny-32 sub-uuid 'setsid ~/.claude/bin/eci-active off r.md'
+run_case "subagent denied: \"\$HOME/.claude/bin/eci-active\" off r.md (quoted command word)" \
+  expect_subagent_bash_denied sub-deny-33 sub-uuid '"$HOME/.claude/bin/eci-active" off r.md'
+run_case "subagent denied: eci-active 'off' r.md (quoted subcommand)" \
+  expect_subagent_bash_denied sub-deny-34 sub-uuid "~/.claude/bin/eci-active 'off' r.md"
+run_case "subagent denied: eci-active \\off r.md (backslash-escaped subcommand)" \
+  expect_subagent_bash_denied sub-deny-35 sub-uuid '~/.claude/bin/eci-active \off r.md'
+run_case "subagent denied: backslash-newline continuation before eci-active off" \
+  expect_subagent_bash_denied sub-deny-36 sub-uuid "$(printf 'cd /x && \\\n  ~/.claude/bin/eci-active off r.md')"
+run_case "subagent denied: eci-active  off r.md (two spaces)" \
+  expect_subagent_bash_denied sub-deny-37 sub-uuid '~/.claude/bin/eci-active  off r.md'
+run_case "subagent denied: eci-active<TAB>off r.md (tab separator)" \
+  expect_subagent_bash_denied sub-deny-38 sub-uuid "$(printf '~/.claude/bin/eci-active\toff r.md')"
+run_case "subagent denied: x=\$(eci-active off r.md) (command substitution)" \
+  expect_subagent_bash_denied sub-deny-39 sub-uuid 'x=$(~/.claude/bin/eci-active off r.md)'
+run_case "subagent denied: x=\`eci-active off r.md\` (backtick substitution)" \
+  expect_subagent_bash_denied sub-deny-40 sub-uuid 'x=`~/.claude/bin/eci-active off r.md`'
+run_case "subagent allowed: eci-active status" \
+  expect_bash_forwarded sub-fwd-11 sub-uuid '~/.claude/bin/eci-active status'
+run_case "subagent allowed: eci-active on \"task x\"" \
+  expect_bash_forwarded sub-fwd-12 sub-uuid '~/.claude/bin/eci-active on "task x"'
+run_case "subagent allowed: grep -n off ~/.claude/bin/eci-active (off precedes eci-active)" \
+  expect_bash_forwarded sub-fwd-13 sub-uuid 'grep -n off ~/.claude/bin/eci-active'
+run_case "subagent allowed: sed -n '/off)/,/;;/p' ~/.claude/bin/eci-active (off precedes eci-active)" \
+  expect_bash_forwarded sub-fwd-14 sub-uuid "sed -n '/off)/,/;;/p' ~/.claude/bin/eci-active"
+run_case "subagent allowed: grep -n 'eci-active[[:space:]]off' (documented reword)" \
+  expect_bash_forwarded sub-fwd-15 sub-uuid "grep -n 'eci-active[[:space:]]off' hooks/tests/run.sh"
+run_case "subagent allowed: echo eci-active offsets (off is a prefix of another word)" \
+  expect_bash_forwarded sub-fwd-16 sub-uuid 'echo eci-active offsets'
+run_case "subagent allowed: echo inactive off (inactive is not eci-active)" \
+  expect_bash_forwarded sub-fwd-17 sub-uuid 'echo inactive off'
 run_case "validate-bash denies git push with ECI active" \
   test_validate_bash_denies_git_push_with_eci_active
 run_case "validate-bash denies chained git push without ECI" \
