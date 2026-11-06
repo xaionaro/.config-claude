@@ -149,7 +149,35 @@ fi
 # Block edits inside git submodules. A submodule is identified by a `.git`
 # entry that is a FILE (gitlink, contents start with "gitdir: ...") rather
 # than a directory. Walk up from FILE_PATH's directory looking for the
-# closest `.git`; if it's a file, we're inside a submodule.
+# closest `.git`; if it's a file, we're inside a submodule UNLESS it is
+# positively a linked worktree (`git worktree add`), which also uses a gitfile.
+#
+# Linked worktree = the `gitdir:` target is a worktree admin dir (holds
+# `commondir` and `gitdir` files, gitrepository-layout(5)) and is not under
+# `.git/modules/` and its repo has no core.worktree (a worktree of a submodule
+# stays denied in every superproject layout). Every read/parse
+# failure returns 1, so the caller denies; do not rely on the fail-open ERR trap.
+is_non_submodule_worktree_gitfile() {
+  local gf="$1" line="" gd
+  IFS= read -r line 2>/dev/null <"$gf" || [ -n "$line" ] || return 1
+  case "$line" in
+    "gitdir: "?*) gd="${line#gitdir: }" ;;
+    *) return 1 ;;
+  esac
+  case "$gd" in
+    /*) ;;
+    *) gd="$(dirname -- "$gf")/$gd" ;;
+  esac
+  case "$gd" in */.git/modules/*) return 1 ;; esac
+  [ -f "$gd/commondir" ] && [ -f "$gd/gitdir" ] || return 1
+  local common="" rc=0
+  IFS= read -r common 2>/dev/null <"$gd/commondir" || [ -n "$common" ] || return 1
+  case "$common" in /*) ;; *) common="$gd/$common" ;; esac
+  # Submodule git dirs carry core.worktree in every superproject layout.
+  [ -f "$common/config" ] && [ -r "$common/config" ] || return 1
+  git config --file "$common/config" --get core.worktree >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 1 ]
+}
 is_inside_submodule() {
   local p="$1"
   [ -n "$p" ] || return 1
@@ -165,7 +193,10 @@ is_inside_submodule() {
   esac
   while [ -n "$d" ] && [ "$d" != "/" ]; do
     if [ -e "$d/.git" ]; then
-      [ -f "$d/.git" ] && return 0  # gitlink → inside a submodule
+      if [ -f "$d/.git" ]; then
+        is_non_submodule_worktree_gitfile "$d/.git" && return 1  # linked worktree
+        return 0                                          # gitlink → inside a submodule
+      fi
       return 1                       # regular repo
     fi
     d="$(dirname -- "$d")"
