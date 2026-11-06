@@ -56,11 +56,22 @@ case "$ACTION" in
       echo "usage: eci-active on \"<task-description>\"" >&2
       exit 2
     fi
+    if [[ "$DESC" == *[[:cntrl:]]* ]]; then
+      echo "eci-active: task description must not contain control characters" >&2
+      exit 2
+    fi
+    # Layout accepted by claude_eci_marker_metadata_is_valid (hooks/lib/claude-eci-review.sh):
+    # scope, cwd, session_id in that order, LF-terminated, at most 4096 bytes.
+    body="$(printf 'scope: %s\ncwd: %s\nsession_id: %s' "$DESC" "$(pwd -P)" "${SESSION_DIR##*/}")"
+    if [ "$(printf '%s\n' "$body" | LC_ALL=C wc -c)" -gt 4096 ]; then
+      echo "eci-active: task description too long for the active marker (4096-byte limit)" >&2
+      exit 2
+    fi
     mkdir -p "$SESSION_DIR"
-    {
-      printf 'task: %s\n' "$DESC"
-      printf 'engaged: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    } > "$MARKER"
+    marker_tmp="$MARKER.tmp.$$"
+    rm -f -- "$marker_tmp"
+    (umask 077; printf '%s\n' "$body" >"$marker_tmp")
+    mv -f -- "$marker_tmp" "$MARKER"
     echo "eci-active: on ($MARKER)"
     ;;
   off)
