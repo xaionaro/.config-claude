@@ -13,7 +13,7 @@ Phased agent team with adversarial review loops and tiered information trust.
 
 **Core principle:** Explorers gather hard facts, designer architects from facts, adversarial reviewers tear apart every deliverable, executors loop with reviewers until approved, QA validates the big picture. Coordinator manages logistics, lead audits rule compliance. Neither implements.
 
-The PreToolUse gate `ate-orchestrator-gate.sh` denies direct Edit/Write/MultiEdit when `CLAUDE_ROLE` is `lead` or `coordinator`. If the gate fires, spawn the appropriate teammate and assign the task — do not unset `CLAUDE_ROLE` to bypass it.
+The PreToolUse gate `ate-orchestrator-gate.sh` is a no-op, matching Codex: it does not deny direct Edit/Write/MultiEdit for `CLAUDE_ROLE` `lead` or `coordinator`. Role discipline is enforced by this skill, not by the hook: the lead and coordinator never edit code; spawn the appropriate teammate and assign the task.
 
 Only the team lead's stop goes through the standard stop-checklist proof flow. Coordinator and every other subordinate role (snitch, explorer, designer, reviewer, executor, verifier, QA, brainstormer, test-*, eci-implementer, etc.) are exempt by `stop-gate.sh` — they report verdicts via messaging or commit their work directly. The lead's stop-gate is the single accountability point; its proof must walk `~/.claude/hooks/stop-checklist.md` and critically analyze any item not fully complied with during the lead's tenure. Disengaging by unsetting `CLAUDE_ROLE` to escape the gate is itself a violation flagged by the rule-compliance self-audit.
 
