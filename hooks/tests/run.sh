@@ -291,7 +291,8 @@ test_stop_gate_exempts_subagent_with_agent_id() {
   fi
 }
 
-test_stop_gate_exempts_subagent_with_agent_type() {
+test_stop_gate_does_not_exempt_agent_type_only() {
+  # agent_type alone is a main-thread --agent session (Claude docs); only agent_id marks a subagent.
   local proof_root tr input_file out decision
   proof_root="$(fresh_proof_root subagent-by-type)"
   tr="$TMP_ROOT/agent-type-transcript.jsonl"
@@ -312,11 +313,11 @@ test_stop_gate_exempts_subagent_with_agent_type() {
   decision=$(jq -r '.decision // "no-decision"' <"$out" 2>/dev/null)
   [ -z "$decision" ] && decision="no-decision"
 
-  if [ "$decision" = "no-decision" ]; then
-    pass "stop-gate exempts subagent with agent_type (no agent_id, no CLAUDE_ROLE)"
+  if [ "$decision" = "block" ]; then
+    pass "stop-gate does not exempt agent_type-only main thread (no agent_id)"
   else
-    fail "stop-gate exempts subagent with agent_type (no agent_id, no CLAUDE_ROLE)" \
-         "decision=$decision; expected silent exit. Output: $(head -c 300 "$out")"
+    fail "stop-gate does not exempt agent_type-only main thread (no agent_id)" \
+         "decision=$decision; expected block. Output: $(head -c 300 "$out")"
   fi
 }
 
@@ -2253,7 +2254,7 @@ test_claude_fail_open_trap_exits_zero_on_err() {
 
 # Original 15 tests — these call pass/fail inline (legacy style).
 test_stop_gate_exempts_subagent_with_agent_id
-test_stop_gate_exempts_subagent_with_agent_type
+test_stop_gate_does_not_exempt_agent_type_only
 test_stop_gate_blocks_main_thread_with_activity
 test_stop_gate_exempts_subordinate_role
 test_stop_gate_blocks_team_lead_role

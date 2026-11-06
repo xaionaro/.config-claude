@@ -28,18 +28,11 @@ if [ -z "$TRANSCRIPT_PATH" ]; then
   exit 0
 fi
 
-# Subagent exemption. Two real subagent shapes observed in live hook
-# input (captured 2026-05-06):
-#   1. Agent-tool inline spawn — input has .agent_id (UUID).
-#   2. claude --agent-type top-level spawn — input has .agent_type
-#      (e.g. "general-purpose") plus .permission_mode and
-#      .last_assistant_message; NO .agent_id.
-# Both are subagents whose work is verified by the orchestrator that
-# spawned them; neither walks the proof checklist. Treat either signal
-# as exemption. Mirrors hooks/eci-active-gate.sh:39.
+# Subagent exemption: .agent_id only. Claude docs: agent_id identifies a
+# subagent or in-process teammate; agent_type is also present for a
+# main-thread session started with --agent, so it does not mark a subagent.
 AGENT_ID=$(echo "$INPUT" | jq -r '.agent_id // empty')
-AGENT_TYPE=$(echo "$INPUT" | jq -r '.agent_type // empty')
-if [ -n "$AGENT_ID" ] || [ -n "$AGENT_TYPE" ]; then
+if [ -n "$AGENT_ID" ]; then
   exit 0
 fi
 

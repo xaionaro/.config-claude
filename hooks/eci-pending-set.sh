@@ -15,9 +15,9 @@ case "$SESSION_ID" in
 esac
 
 # Subagent calls do not run ECI; only the main thread's marker matters.
+# agent_id only (agent_type is also set for a main-thread --agent session).
 AGENT_ID=$(echo "$INPUT" | jq -r '.agent_id // empty')
-AGENT_TYPE=$(echo "$INPUT" | jq -r '.agent_type // empty')
-{ [ -n "$AGENT_ID" ] || [ -n "$AGENT_TYPE" ]; } && exit 0
+[ -n "$AGENT_ID" ] && exit 0
 
 PROOF_DIR="$HOME/.cache/claude-proof/$SESSION_ID"
 [ -f "$PROOF_DIR/eci_active" ] || exit 0
