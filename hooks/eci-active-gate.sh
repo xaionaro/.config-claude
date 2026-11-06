@@ -1,67 +1,141 @@
-#!/bin/bash
-# PreToolUse hook on Edit|Write|MultiEdit: denies main-thread writes when
-# the explore-critique-implement (ECI) marker is engaged for this session.
+#!/usr/bin/env bash
+# PreToolUse hook: protect active ECI control and ledger targets during edits.
 #
-# ECI requires the main thread to delegate implementation to subagents.
-# Agents that ignore the rule and start editing files directly hit this
-# gate. Disengage with `~/.claude/bin/eci-active off <report.md>` once scope closed.
+# Port of ~/.codex/hooks/eci-active-gate.sh. Denies Edit, Write, MultiEdit and
+# NotebookEdit whose target is an ECI control or ledger file (or a reserved
+# proof-dir descendant), raw or realpath-resolved, under a proof root.
 #
-# Subagents (agent_id non-empty) are allowed through — the marker targets
-# main-thread regression, not legitimate implementer subagents.
-#
-# Failure mode: any infrastructure error traps to deny-with-evidence so
-# the gate cannot be silently bypassed.
+# Deliberate divergences from the Codex gate:
+#   - every string path in tool_input (file_path, notebook_path, path,
+#     target_file) is checked, not only the first non-null key;
+#   - an alias (hard link, or symlink to a control file) is denied even when
+#     the link's own name is a working document;
+#   - an edit tool whose tool_input is not an object is denied with exit 2
+#     (Codex exits 5, which Claude Code treats as a non-blocking error).
+# Otherwise: no subagent exemption, no marker-based main-thread denial, and
+# other malformed or incomplete input is allowed.
 
-set -uo pipefail
+set -euo pipefail
 
-trap 'jq -n --arg reason "eci-active-gate infra error at line $LINENO; investigate $HOME/.cache/claude-proof and the gate script" "{
-  hookSpecificOutput: {
-    hookEventName: \"PreToolUse\",
-    permissionDecision: \"deny\",
-    permissionDecisionReason: \$reason
-  }
-}"; exit 0' ERR
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$HOOK_DIR/lib/claude-eci-control.sh"
+. "$HOOK_DIR/lib/eci-diagnostic.sh"
 
-INPUT=$(cat)
-SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
-[ -z "$SESSION_ID" ] && exit 0
-case "$SESSION_ID" in
-  *[!A-Za-z0-9_-]*) exit 0 ;;
+input=$(cat)
+
+if ! printf '%s' "$input" | jq -e '
+  type == "object" and (.tool_name | type) == "string" and
+  (.tool_name | length > 0) and
+  (.session_id | type) == "string" and (.cwd | type) == "string"
+' >/dev/null 2>&1; then
+  # Without a typed payload no concrete edit target can be resolved, so leave
+  # the call to normal validation.
+  exit 0
+fi
+tool_name=$(printf '%s' "$input" | jq -r '.tool_name' 2>/dev/null || true)
+
+session_id=$(printf '%s' "$input" | jq -r '.session_id' 2>/dev/null || true)
+cwd=$(printf '%s' "$input" | jq -r '.cwd' 2>/dev/null || true)
+case "$session_id" in
+  ""|*[!A-Za-z0-9_-]*)
+    exit 0
+    ;;
+esac
+[ -n "$cwd" ] || {
+  exit 0
+}
+case "$cwd" in
+  *[![:print:]]*)
+    exit 0
+    ;;
 esac
 
-TOOL=$(echo "$INPUT" | jq -r '.tool_name // empty')
-case "$TOOL" in
+case "$tool_name" in
   Edit|Write|MultiEdit|NotebookEdit) ;;
   *) exit 0 ;;
 esac
 
-# Subagent calls bypass the marker — implementer subagents must be free to
-# write. Two subagent shapes are exempted: Agent-tool spawns carry agent_id;
-# claude --agent-type spawns carry agent_type. Either signal exempts.
-AGENT_ID=$(echo "$INPUT" | jq -r '.agent_id // empty')
-AGENT_TYPE=$(echo "$INPUT" | jq -r '.agent_type // empty')
-{ [ -n "$AGENT_ID" ] || [ -n "$AGENT_TYPE" ]; } && exit 0
+# An edit whose tool_input is not an object has no checkable target. Deny it
+# with exit 2, the blocking exit code, and state the reason on stderr too.
+if ! printf '%s' "$input" | jq -e '(.tool_input | type) == "object"' >/dev/null 2>&1; then
+  reason="ECI denies this $tool_name call: tool_input is not a JSON object, so the edit target cannot be checked. Resend the call with a structured tool_input."
+  jq -n --arg reason "$reason" '{
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "deny",
+      permissionDecisionReason: $reason
+    }
+  }'
+  printf '%s\n' "$reason" >&2
+  exit 2
+fi
 
-# Markdown files (docs, plans, ECI disengage reports) are part of orchestration —
-# allow on the main thread without delegation. The gate exists to force code
-# implementation through subagents, not to block doc/notes work.
-FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.notebook_path // .tool_input.path // .tool_input.target_file // empty')
-case "$FILE_PATH" in
-  *.md|*.MD|*.markdown) exit 0 ;;
-esac
+# Every non-empty string path is a target. Deciding on the first non-null key
+# alone let a benign file_path mask a control notebook_path.
+tool_paths() {
+  printf '%s' "$input" |
+    jq -r '.tool_input | objects | [.file_path, .notebook_path, .path, .target_file][] | select(type == "string" and length > 0)' 2>/dev/null
+}
 
-MARKER="$HOME/.cache/claude-proof/$SESSION_ID/eci_active"
-[ -f "$MARKER" ] || exit 0
+# Working documents of the current session are coordination state, not
+# lifecycle controls. The exception is limited to the callback's own proof
+# session so a foreign session's record still reaches the control check below.
+current_session_working_document() {
+  local path="${1:-}" owner_session
 
-MARKER_BODY=$(cat "$MARKER" 2>/dev/null || echo "<unreadable>")
+  case "${path##*/}" in
+    project-understanding.yaml|latest-status-report.md|latest-status-report.yaml|handoff.md|high_level_log.jsonl|high_level_log.anchor) ;;
+    *) return 1 ;;
+  esac
+  owner_session="$(claude_path_owner_session_id "$path" 2>/dev/null || true)"
+  [ "$owner_session" = "$session_id" ]
+}
 
-REASON=$(printf 'ECI active for this session — main thread must delegate implementation to a subagent.\n\n%s\n\nDelegate via the Agent tool (one diff per implementer). Disengage only with clean-pass or user-closed via `~/.claude/bin/eci-active off <disengage-report.md>`. Hard-escalation does not authorize disengage.' "$MARKER_BODY")
+tool_path_list="$(tool_paths)"
 
-jq -n --arg reason "$REASON" '{
-  hookSpecificOutput: {
-    hookEventName: "PreToolUse",
-    permissionDecision: "deny",
-    permissionDecisionReason: $reason
-  }
-}'
+# Check raw and resolved targets (including lexical aliases and hard links)
+# against the control boundary. Alias denial is decided first: a hard link to a
+# control file, or a symlink whose target is one, is denied even when the
+# link's own name is a working document.
+while IFS= read -r control_path; do
+  [ -n "$control_path" ] || continue
+  lexical_control_path="$(claude_lexical_hook_path "$cwd" "$control_path" 2>/dev/null || true)"
+  resolved_control_path="$(claude_resolve_hook_path "$cwd" "$control_path" 2>/dev/null || true)"
+  control_alias=false
+  if [ -n "$lexical_control_path" ] && claude_path_is_eci_control_alias "$lexical_control_path"; then
+    control_alias=true
+  elif [ -n "$resolved_control_path" ] && [ "$resolved_control_path" != "$lexical_control_path" ] &&
+    claude_path_is_eci_control_alias "$resolved_control_path"; then
+    control_alias=true
+  fi
+  if [ -n "$lexical_control_path" ] && [ -L "$lexical_control_path" ] &&
+     [ -n "$resolved_control_path" ] && [ "$resolved_control_path" != "$lexical_control_path" ] &&
+     claude_path_is_eci_control_file "$resolved_control_path"; then
+    control_alias=true
+  fi
+
+  denied=false
+  if [ "$control_alias" = true ]; then
+    denied=true
+  elif { claude_path_is_eci_control_file "$lexical_control_path" ||
+         claude_path_is_eci_control_file "$resolved_control_path"; } &&
+       ! current_session_working_document "${resolved_control_path:-$lexical_control_path}"; then
+    denied=true
+  fi
+  if [ "$denied" = true ]; then
+    target_value="$(eci_diagnostic_value "${resolved_control_path:-$control_path}")"
+    reason="$(eci_diagnostic_reason "ECI_CONTROL_OWNER_REQUIRED" "PreToolUse" "edit-routing" "tool=$tool_name,target=$target_value" "ECI denies direct edits to active control state" "route this control-state change through its ECI lifecycle owner, not a direct edit")"
+    jq -n --arg reason "$reason" '{
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+        permissionDecisionReason: $reason
+      }
+    }'
+    exit 0
+  fi
+done <<< "$tool_path_list"
+
+# Every remaining target (repository source, Markdown, unrelated proof files)
+# is left to normal routing and validation.
 exit 0

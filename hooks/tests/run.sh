@@ -632,165 +632,440 @@ test_stop_gate_skips_ephemeral_session() {
 # Each test below is a function returning 0 on pass, non-zero on fail.
 # ===========================================================================
 
-# ---- ECI gate (PreToolUse on Edit|Write|MultiEdit) ----
+# ---- ECI gate (PreToolUse on Edit|Write|MultiEdit|NotebookEdit) ----
+# Port of the Codex gate. A target is denied only when it is an ECI control or
+# ledger file (or a reserved proof-dir descendant) under a proof root, raw or
+# realpath-resolved, or a hard link / symlink to such a file. Hook input must
+# carry session_id, tool_name and cwd; otherwise the gate allows.
 
-test_eci_gate_blocks_code_edit() {
-  local home pdir input out
-  home="$(fresh_home eci-code-edit)"
-  pdir="$(proof_dir_in_home "$home" t00-session)"
-  printf 'task: test\n' >"$pdir/eci_active"
-  input="$TMP_ROOT/eci-code-edit.json"
-  jq -n '{session_id:"t00-session",tool_name:"Edit",tool_input:{file_path:"src/file.go",old_string:"a",new_string:"b"}}' >"$input"
-  out="$TMP_ROOT/eci-code-edit.out"
-  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home"
-  is_pretool_deny "$out"
+# Write one hook-input JSON to $out. The filter sees $cwd (repo root); extra
+# jq arguments (--arg name value) go before the filter.
+eci_input() {
+  local out="$1" filter="$2"; shift 2
+  jq -n --arg cwd "$ROOT" "$@" "$filter" >"$out"
 }
 
-test_eci_gate_message_mentions_clean_pass_user_closed() {
-  local home pdir input out
-  home="$(fresh_home eci-msg)"
+# Fresh home whose proof session t00-session holds an active marker.
+eci_active_home() {
+  local name="$1" home pdir
+  home="$(fresh_home "$name")"
   pdir="$(proof_dir_in_home "$home" t00-session)"
   printf 'task: test\n' >"$pdir/eci_active"
-  input="$TMP_ROOT/eci-msg.json"
-  jq -n '{session_id:"t00-session",tool_name:"Edit",tool_input:{file_path:"src/file.go",old_string:"a",new_string:"b"}}' >"$input"
-  out="$TMP_ROOT/eci-msg.out"
-  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home"
-  is_pretool_deny "$out" &&
-    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "clean-pass" &&
-    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "user-closed" &&
-    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "delegate"
+  printf '%s' "$home"
 }
 
-test_eci_gate_blocks_code_write() {
+test_eci_gate_blocks_control_file_edit() {
   local home pdir input out
-  home="$(fresh_home eci-code-write)"
-  pdir="$(proof_dir_in_home "$home" t00-session)"
-  printf 'task: test\n' >"$pdir/eci_active"
-  out="$TMP_ROOT/eci-code-write.out"
-  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$FIXTURES/eci-write-code.json" HOME="$home"
-  is_pretool_deny "$out"
+  home="$(eci_active_home eci-ctl-edit)"
+  pdir="$home/.cache/claude-proof/t00-session"
+  input="$TMP_ROOT/eci-ctl-edit.json"
+  out="$TMP_ROOT/eci-ctl-edit.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$pdir/eci_active"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && is_pretool_deny "$out"
 }
 
-test_eci_gate_blocks_code_multiedit() {
+test_eci_gate_deny_reason_names_control_state() {
   local home pdir input out
-  home="$(fresh_home eci-code-multi)"
+  home="$(eci_active_home eci-ctl-reason)"
+  pdir="$home/.cache/claude-proof/t00-session"
+  input="$TMP_ROOT/eci-ctl-reason.json"
+  out="$TMP_ROOT/eci-ctl-reason.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$pdir/eci_active"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && is_pretool_deny "$out" &&
+    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "ECI_CONTROL_OWNER_REQUIRED" &&
+    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "active control state" &&
+    json_field_not_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "coordinator"
+}
+
+# Decision depends on the target name and location, not on marker presence.
+test_eci_gate_blocks_control_file_without_marker() {
+  local home pdir input out
+  home="$(fresh_home eci-ctl-nomarker)"
   pdir="$(proof_dir_in_home "$home" t00-session)"
-  printf 'task: test\n' >"$pdir/eci_active"
-  out="$TMP_ROOT/eci-code-multi.out"
-  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$FIXTURES/eci-multiedit.json" HOME="$home"
-  is_pretool_deny "$out"
+  input="$TMP_ROOT/eci-ctl-nomarker.json"
+  out="$TMP_ROOT/eci-ctl-nomarker.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$pdir/eci_active"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && is_pretool_deny "$out"
+}
+
+test_eci_gate_blocks_control_file_write() {
+  local home pdir input out
+  home="$(eci_active_home eci-ctl-write)"
+  pdir="$home/.cache/claude-proof/t00-session"
+  input="$TMP_ROOT/eci-ctl-write.json"
+  out="$TMP_ROOT/eci-ctl-write.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:$p,content:"x"}}' --arg p "$pdir/goal_state"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && is_pretool_deny "$out"
+}
+
+test_eci_gate_blocks_control_file_multiedit() {
+  local home pdir input out
+  home="$(eci_active_home eci-ctl-multi)"
+  pdir="$home/.cache/claude-proof/t00-session"
+  input="$TMP_ROOT/eci-ctl-multi.json"
+  out="$TMP_ROOT/eci-ctl-multi.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"MultiEdit",cwd:$cwd,tool_input:{file_path:$p,edits:[{old_string:"old",new_string:"new"}]}}' --arg p "$pdir/eci_active"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && is_pretool_deny "$out"
+}
+
+test_eci_gate_blocks_control_file_notebookedit() {
+  local home pdir input out
+  home="$(eci_active_home eci-ctl-notebook)"
+  pdir="$home/.cache/claude-proof/t00-session"
+  input="$TMP_ROOT/eci-ctl-notebook.json"
+  out="$TMP_ROOT/eci-ctl-notebook.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"NotebookEdit",cwd:$cwd,tool_input:{notebook_path:$p,new_source:"x = 1"}}' --arg p "$pdir/eci_wait"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && is_pretool_deny "$out"
+}
+
+# Basenames on the Codex control list are denied in the proof root.
+test_eci_gate_blocks_codex_control_names() {
+  local home pdir name input out
+  home="$(eci_active_home eci-codex-names)"
+  pdir="$home/.cache/claude-proof/t00-session"
+  input="$TMP_ROOT/eci-codex-names.json"
+  out="$TMP_ROOT/eci-codex-names.out"
+  for name in eci-blocker-report.md disengage.md user-closed.md stop_loop_state eci-required-critics.json baseline_head instructions.md; do
+    eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:$p,content:"x"}}' --arg p "$pdir/$name"
+    run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && is_pretool_deny "$out" || return 1
+  done
+}
+
+# Names removed from the Claude-only list match the Codex gate: allowed. Asserted
+# so the removed protection is explicit and cannot return silently.
+test_eci_gate_allows_names_outside_codex_list() {
+  local home pdir name input out
+  home="$(eci_active_home eci-removed-names)"
+  pdir="$home/.cache/claude-proof/t00-session"
+  input="$TMP_ROOT/eci-removed-names.json"
+  out="$TMP_ROOT/eci-removed-names.out"
+  for name in eci_teammate_pending ate_active task_active skip_stop summary-to-print.md parent_session_id gitleaks-findings.txt git-status-at-accept.txt last-result.md; do
+    eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:$p,content:"x"}}' --arg p "$pdir/$name"
+    run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out" || return 1
+  done
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:$p,content:"x"}}' --arg p "$home/.cache/claude-proof/copilot/x.txt"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
+}
+
+# Claim directories are coordinator-owned recursively (Codex parity).
+test_eci_gate_blocks_repair_authorize_claim_descendant() {
+  local home pdir input out
+  home="$(eci_active_home eci-repair-claim)"
+  pdir="$home/.cache/claude-proof/t00-session"
+  input="$TMP_ROOT/eci-repair-claim.json"
+  out="$TMP_ROOT/eci-repair-claim.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$pdir/eci-wait-repair-authorize.claim/inner.txt"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && is_pretool_deny "$out"
+}
+
+test_eci_gate_blocks_accidental_override_claim_descendant() {
+  local home pdir input out
+  home="$(eci_active_home eci-accidental-claim)"
+  pdir="$home/.cache/claude-proof/t00-session"
+  input="$TMP_ROOT/eci-accidental-claim.json"
+  out="$TMP_ROOT/eci-accidental-claim.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$pdir/.eci-accidental-mistake-override.claim/inner.txt"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && is_pretool_deny "$out"
+}
+
+# Control check precedes the Markdown allowance: a control .md is denied.
+test_eci_gate_blocks_markdown_control_file() {
+  local home pdir input out
+  home="$(eci_active_home eci-md-ctl)"
+  pdir="$home/.cache/claude-proof/t00-session"
+  input="$TMP_ROOT/eci-md-ctl.json"
+  out="$TMP_ROOT/eci-md-ctl.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:$p,content:"# x"}}' --arg p "$pdir/eci-blocker-report.md"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && is_pretool_deny "$out"
+}
+
+test_eci_gate_allows_source_edit_with_active_marker() {
+  local home input out
+  home="$(eci_active_home eci-src-edit)"
+  input="$TMP_ROOT/eci-src-edit.json"
+  out="$TMP_ROOT/eci-src-edit.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:"src/file.go",old_string:"a",new_string:"b"}}'
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
+}
+
+test_eci_gate_allows_source_write_fixture() {
+  local home input out
+  home="$(eci_active_home eci-src-write)"
+  input="$TMP_ROOT/eci-src-write.json"
+  out="$TMP_ROOT/eci-src-write.out"
+  with_cwd_fixture "$FIXTURES/eci-write-code.json" "$input"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
+}
+
+test_eci_gate_allows_source_multiedit_fixture() {
+  local home input out
+  home="$(eci_active_home eci-src-multi)"
+  input="$TMP_ROOT/eci-src-multi.json"
+  out="$TMP_ROOT/eci-src-multi.out"
+  with_cwd_fixture "$FIXTURES/eci-multiedit.json" "$input"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
+}
+
+test_eci_gate_allows_source_notebookedit_fixture() {
+  local home input out
+  home="$(eci_active_home eci-src-notebook)"
+  input="$TMP_ROOT/eci-src-notebook.json"
+  out="$TMP_ROOT/eci-src-notebook.out"
+  with_cwd_fixture "$FIXTURES/notebookedit-eci-active-deny.json" "$input"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
 }
 
 test_eci_gate_allows_markdown_edit() {
-  local home pdir out
-  home="$(fresh_home eci-md-edit)"
-  pdir="$(proof_dir_in_home "$home" t00-session)"
-  printf 'task: test\n' >"$pdir/eci_active"
+  local home input out
+  home="$(eci_active_home eci-md-edit)"
+  input="$TMP_ROOT/eci-md-edit.json"
   out="$TMP_ROOT/eci-md-edit.out"
-  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$FIXTURES/eci-edit-markdown.json" HOME="$home"
-  expect_no_output "$out"
+  with_cwd_fixture "$FIXTURES/eci-edit-markdown.json" "$input"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
 }
 
 test_eci_gate_allows_markdown_multiedit() {
-  local home pdir out
-  home="$(fresh_home eci-md-multi)"
-  pdir="$(proof_dir_in_home "$home" t00-session)"
-  printf 'task: test\n' >"$pdir/eci_active"
+  local home input out
+  home="$(eci_active_home eci-md-multi)"
+  input="$TMP_ROOT/eci-md-multi.json"
   out="$TMP_ROOT/eci-md-multi.out"
-  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$FIXTURES/eci-multiedit-markdown.json" HOME="$home"
-  expect_no_output "$out"
+  with_cwd_fixture "$FIXTURES/eci-multiedit-markdown.json" "$input"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
 }
 
 test_eci_gate_allows_markdown_write() {
-  local home pdir out
-  home="$(fresh_home eci-md-write)"
-  pdir="$(proof_dir_in_home "$home" t00-session)"
-  printf 'task: test\n' >"$pdir/eci_active"
+  local home input out
+  home="$(eci_active_home eci-md-write)"
+  input="$TMP_ROOT/eci-md-write.json"
   out="$TMP_ROOT/eci-md-write.out"
-  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$FIXTURES/eci-write-markdown.json" HOME="$home"
-  expect_no_output "$out"
+  with_cwd_fixture "$FIXTURES/eci-write-markdown.json" "$input"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
 }
 
 test_eci_gate_allows_when_no_marker() {
   local home input out
   home="$(fresh_home eci-no-marker)"
   input="$TMP_ROOT/eci-no-marker.json"
-  jq -n '{session_id:"t00-session",tool_name:"Edit",tool_input:{file_path:"src/file.go",old_string:"a",new_string:"b"}}' >"$input"
   out="$TMP_ROOT/eci-no-marker.out"
-  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home"
-  expect_no_output "$out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:"src/file.go",old_string:"a",new_string:"b"}}'
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
 }
 
-test_eci_gate_blocks_role_spoof() {
+# CLAUDE_ROLE is not an exemption: only the path decides.
+test_eci_gate_blocks_control_file_with_role_env() {
   local home pdir input out
-  home="$(fresh_home eci-role-spoof)"
-  pdir="$(proof_dir_in_home "$home" t00-session)"
-  printf 'task: test\n' >"$pdir/eci_active"
-  input="$TMP_ROOT/eci-role-spoof.json"
-  jq -n '{session_id:"t00-session",tool_name:"Edit",tool_input:{file_path:"src/file.go",old_string:"a",new_string:"b"}}' >"$input"
-  out="$TMP_ROOT/eci-role-spoof.out"
-  # CLAUDE_ROLE does not bypass the ECI gate (only agent_id/agent_type do).
-  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" CLAUDE_ROLE="eci-implementer"
-  is_pretool_deny "$out"
+  home="$(eci_active_home eci-role-env)"
+  pdir="$home/.cache/claude-proof/t00-session"
+  input="$TMP_ROOT/eci-role-env.json"
+  out="$TMP_ROOT/eci-role-env.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$pdir/eci_active"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" CLAUDE_ROLE="eci-implementer" && is_pretool_deny "$out"
 }
 
-test_eci_gate_allows_subagent_via_agent_id() {
+# No subagent exemption: agent_id / agent_type do not lift a control-file deny.
+# Dual side: the same subagent shape still allows a source edit.
+test_eci_gate_blocks_control_file_subagent_agent_id() {
   local home pdir input out
-  home="$(fresh_home eci-agent-id)"
-  pdir="$(proof_dir_in_home "$home" t00-session)"
-  printf 'task: test\n' >"$pdir/eci_active"
+  home="$(eci_active_home eci-agent-id)"
+  pdir="$home/.cache/claude-proof/t00-session"
   input="$TMP_ROOT/eci-agent-id.json"
-  jq -n '{session_id:"t00-session",agent_id:"sub-uuid",tool_name:"Edit",tool_input:{file_path:"src/file.go",old_string:"a",new_string:"b"}}' >"$input"
   out="$TMP_ROOT/eci-agent-id.out"
-  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home"
-  expect_no_output "$out"
+  eci_input "$input" '{session_id:"t00-session",agent_id:"sub-uuid",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$pdir/eci_active"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" || return 1
+  is_pretool_deny "$out" || return 1
+  eci_input "$input" '{session_id:"t00-session",agent_id:"sub-uuid",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:"src/file.go",old_string:"a",new_string:"b"}}'
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
 }
 
-test_eci_gate_allows_subagent_via_agent_type() {
+test_eci_gate_blocks_control_file_subagent_agent_type() {
   local home pdir input out
-  home="$(fresh_home eci-agent-type)"
-  pdir="$(proof_dir_in_home "$home" t00-session)"
-  printf 'task: test\n' >"$pdir/eci_active"
+  home="$(eci_active_home eci-agent-type)"
+  pdir="$home/.cache/claude-proof/t00-session"
   input="$TMP_ROOT/eci-agent-type.json"
-  jq -n '{session_id:"t00-session",agent_type:"general-purpose",tool_name:"Edit",tool_input:{file_path:"src/file.go",old_string:"a",new_string:"b"}}' >"$input"
   out="$TMP_ROOT/eci-agent-type.out"
-  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home"
-  expect_no_output "$out"
+  eci_input "$input" '{session_id:"t00-session",agent_type:"general-purpose",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$pdir/eci_active"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && is_pretool_deny "$out"
 }
 
+# Cross-session ledger is denied; the same name in the hook's own session is
+# a working document and allowed (see test_eci_gate_allows_own_session_working_doc).
+test_eci_gate_blocks_other_session_ledger() {
+  local home pdir other input out
+  home="$(eci_active_home eci-other-ledger)"
+  other="$home/.cache/claude-proof/t01-other"
+  input="$TMP_ROOT/eci-other-ledger.json"
+  out="$TMP_ROOT/eci-other-ledger.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:$p,content:"x"}}' --arg p "$other/project-understanding.yaml"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && is_pretool_deny "$out"
+}
+
+test_eci_gate_allows_own_session_working_doc() {
+  local home pdir input out
+  home="$(eci_active_home eci-own-doc)"
+  pdir="$home/.cache/claude-proof/t00-session"
+  input="$TMP_ROOT/eci-own-doc.json"
+  out="$TMP_ROOT/eci-own-doc.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:$p,content:"x"}}' --arg p "$pdir/project-understanding.yaml"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" || return 1
+  expect_no_output "$out" || return 1
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:$p,content:"x"}}' --arg p "$pdir/high_level_log.jsonl"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
+}
+
+# Ledger-named file that is not a control basename is allowed in the proof root.
+test_eci_gate_allows_non_control_ledger_in_proof_root() {
+  local home pdir input out
+  home="$(eci_active_home eci-noncontrol)"
+  pdir="$home/.cache/claude-proof/t00-session"
+  input="$TMP_ROOT/eci-noncontrol.json"
+  out="$TMP_ROOT/eci-noncontrol.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:$p,content:"x"}}' --arg p "$pdir/latest-status-report.yaml"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" || return 1
+  expect_no_output "$out" || return 1
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:$p,content:"x"}}' --arg p "$pdir/notes.txt"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
+}
+
+# Reserved namespaces are denied recursively; a non-reserved nested path in the
+# session dir is not a control target.
+test_eci_gate_blocks_reserved_proof_dir_descendant() {
+  local home pdir input out
+  home="$(eci_active_home eci-reserved)"
+  pdir="$home/.cache/claude-proof/t00-session"
+  input="$TMP_ROOT/eci-reserved.json"
+  out="$TMP_ROOT/eci-reserved.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$home/.cache/claude-proof/reviewer/nested/state.json"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" || return 1
+  is_pretool_deny "$out" || return 1
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$pdir/nested/state.json"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
+}
+
+# Hard link to the marker: link count > 1 makes the target an alias. The
+# unlinked file with identical content is allowed.
+test_eci_gate_blocks_hardlink_alias_to_marker() {
+  local home pdir work input out
+  home="$(eci_active_home eci-hardlink)"
+  pdir="$home/.cache/claude-proof/t00-session"
+  work="$home/work"
+  mkdir -p "$work" || return 1
+  ln "$pdir/eci_active" "$work/alias.go" || return 1
+  printf 'task: test\n' >"$work/plain.go"
+  input="$TMP_ROOT/eci-hardlink.json"
+  out="$TMP_ROOT/eci-hardlink.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$work/alias.go"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" || return 1
+  is_pretool_deny "$out" || return 1
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$work/plain.go"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
+}
+
+# Symlink to the marker is caught through the realpath-resolved target.
+test_eci_gate_blocks_symlink_to_control_file() {
+  local home pdir work input out
+  home="$(eci_active_home eci-symlink)"
+  pdir="$home/.cache/claude-proof/t00-session"
+  work="$home/work"
+  mkdir -p "$work" || return 1
+  ln -s "$pdir/eci_active" "$work/link.go" || return 1
+  input="$TMP_ROOT/eci-symlink.json"
+  out="$TMP_ROOT/eci-symlink.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$work/link.go"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && is_pretool_deny "$out"
+}
+
+# Malformed session ids skip the gate even for a control target.
 test_eci_gate_skips_unsafe_session_id() {
-  local home input out
-  home="$(fresh_home eci-unsafe-sid)"
+  local home pdir input out
+  home="$(eci_active_home eci-unsafe-sid)"
+  pdir="$home/.cache/claude-proof/t00-session"
   input="$TMP_ROOT/eci-unsafe-sid.json"
-  jq -n '{session_id:"../bad",tool_name:"Edit",tool_input:{file_path:"src/file.go",old_string:"a",new_string:"b"}}' >"$input"
   out="$TMP_ROOT/eci-unsafe-sid.out"
-  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home"
-  expect_no_output "$out"
+  eci_input "$input" '{session_id:"../bad",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$pdir/eci_active"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
+}
+
+test_eci_gate_skips_bad_json() {
+  local home pdir input out
+  home="$(eci_active_home eci-bad-json)"
+  pdir="$home/.cache/claude-proof/t00-session"
+  input="$TMP_ROOT/eci-bad-json.json"
+  out="$TMP_ROOT/eci-bad-json.out"
+  printf '{not json, "file_path": "%s/eci_active"' "$pdir" >"$input"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
+}
+
+# Missing cwd skips the gate; the same payload with cwd is denied.
+test_eci_gate_skips_missing_cwd() {
+  local home pdir input out
+  home="$(eci_active_home eci-no-cwd)"
+  pdir="$home/.cache/claude-proof/t00-session"
+  input="$TMP_ROOT/eci-no-cwd.json"
+  out="$TMP_ROOT/eci-no-cwd.out"
+  jq -n --arg p "$pdir/eci_active" '{session_id:"t00-session",tool_name:"Edit",tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' >"$input"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" || return 1
+  expect_no_output "$out" || return 1
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$pdir/eci_active"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && is_pretool_deny "$out"
 }
 
 test_eci_gate_skips_non_edit_tool() {
   local home input out
-  home="$(fresh_home eci-non-edit)"
-  pdir="$(proof_dir_in_home "$home" t00-session)"
-  printf 'task: test\n' >"$pdir/eci_active"
+  home="$(eci_active_home eci-non-edit)"
   input="$TMP_ROOT/eci-non-edit.json"
-  jq -n '{session_id:"t00-session",tool_name:"Bash",tool_input:{command:"ls"}}' >"$input"
   out="$TMP_ROOT/eci-non-edit.out"
-  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home"
-  expect_no_output "$out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Bash",cwd:$cwd,tool_input:{command:"ls"}}'
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
 }
 
-# Broadening: NotebookEdit must be policed identically to Edit/Write/MultiEdit.
-# Pre-fix the gate's tool-case statement excludes NotebookEdit and silently
-# exits, bypassing the policy. Post-fix the gate denies just like the others.
-test_eci_gate_blocks_code_notebookedit() {
-  local home pdir out
-  home="$(fresh_home eci-code-notebook)"
+# A hard link named like a working document is an alias of another session's
+# control and is denied. Dual side: an unlinked handoff.md in the same session
+# is still an allowed working document.
+test_eci_gate_blocks_working_doc_hardlink_alias() {
+  local home pdir other input out
+  home="$(fresh_home eci-wd-alias)"
   pdir="$(proof_dir_in_home "$home" t00-session)"
-  printf 'task: test\n' >"$pdir/eci_active"
-  out="$TMP_ROOT/eci-code-notebook.out"
-  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$FIXTURES/notebookedit-eci-active-deny.json" HOME="$home"
-  is_pretool_deny "$out"
+  other="$(proof_dir_in_home "$home" t01-other)"
+  printf 'task: other\n' >"$other/eci_active" || return 1
+  ln "$other/eci_active" "$pdir/handoff.md" || return 1
+  input="$TMP_ROOT/eci-wd-alias.json"
+  out="$TMP_ROOT/eci-wd-alias.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:$p,content:"x"}}' --arg p "$pdir/handoff.md"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && is_pretool_deny "$out" || return 1
+  rm -f "$pdir/handoff.md" || return 1
+  printf 'notes\n' >"$pdir/handoff.md" || return 1
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
+}
+
+# Every string path in tool_input is checked: a benign file_path must not mask a
+# control notebook_path. Dual side: two benign paths stay allowed.
+test_eci_gate_checks_every_target_key() {
+  local home pdir input out
+  home="$(eci_active_home eci-every-key)"
+  pdir="$home/.cache/claude-proof/t00-session"
+  input="$TMP_ROOT/eci-every-key.json"
+  out="$TMP_ROOT/eci-every-key.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"NotebookEdit",cwd:$cwd,tool_input:{file_path:"README.md",notebook_path:$p,new_source:"x = 1"}}' --arg p "$pdir/eci_wait"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && is_pretool_deny "$out" || return 1
+  eci_input "$input" '{session_id:"t00-session",tool_name:"NotebookEdit",cwd:$cwd,tool_input:{file_path:"README.md",notebook_path:"src/file.ipynb",new_source:"x = 1"}}'
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
+}
+
+# An edit tool with a non-object tool_input is denied with exit 2 (blocking),
+# reason on stderr. The same shape on a non-edit tool stays allowed.
+test_eci_gate_denies_edit_with_non_object_tool_input() {
+  local home input out rc
+  home="$(eci_active_home eci-non-object)"
+  input="$TMP_ROOT/eci-non-object.json"
+  out="$TMP_ROOT/eci-non-object.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:"x"}'
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home"
+  rc=$?
+  [ "$rc" -eq 2 ] && is_pretool_deny "$out" && [ -s "$out.err" ] || return 1
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Bash",cwd:$cwd,tool_input:"x"}'
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home"
+  rc=$?
+  [ "$rc" -eq 0 ] && expect_no_output "$out"
 }
 
 # Broadening: skill-marker-gate must enforce required-skill markers on
@@ -1928,34 +2203,76 @@ test_validate_edit_write_allows_regular_repo_edit
 test_validate_bash_allows_write_into_submodule
 
 # ECI gate tests
-run_case "ECI gate blocks code Edit when marker exists" \
-  test_eci_gate_blocks_code_edit
-run_case "ECI gate message names clean-pass/user-closed teardown" \
-  test_eci_gate_message_mentions_clean_pass_user_closed
-run_case "ECI gate blocks code Write when marker exists" \
-  test_eci_gate_blocks_code_write
-run_case "ECI gate blocks code MultiEdit when marker exists" \
-  test_eci_gate_blocks_code_multiedit
-run_case "ECI gate allows markdown Edit while marker exists" \
+run_case "ECI gate blocks Edit of control file in own proof session" \
+  test_eci_gate_blocks_control_file_edit
+run_case "ECI gate deny reason names control state, Claude-neutral" \
+  test_eci_gate_deny_reason_names_control_state
+run_case "ECI gate blocks control file without any marker present" \
+  test_eci_gate_blocks_control_file_without_marker
+run_case "ECI gate blocks Write of control file" \
+  test_eci_gate_blocks_control_file_write
+run_case "ECI gate blocks MultiEdit of control file" \
+  test_eci_gate_blocks_control_file_multiedit
+run_case "ECI gate blocks NotebookEdit of control file" \
+  test_eci_gate_blocks_control_file_notebookedit
+run_case "ECI gate blocks Codex control basenames" \
+  test_eci_gate_blocks_codex_control_names
+run_case "ECI gate allows names removed from the Claude-only list (Codex parity)" \
+  test_eci_gate_allows_names_outside_codex_list
+run_case "ECI gate blocks edit of repair-authorize claim dir descendant" \
+  test_eci_gate_blocks_repair_authorize_claim_descendant
+run_case "ECI gate blocks edit of accidental-override claim dir descendant" \
+  test_eci_gate_blocks_accidental_override_claim_descendant
+run_case "ECI gate blocks working-doc name hard-linked to another session's control" \
+  test_eci_gate_blocks_working_doc_hardlink_alias
+run_case "ECI gate checks every tool_input path key, not only the first" \
+  test_eci_gate_checks_every_target_key
+run_case "ECI gate denies edit tool with non-object tool_input (exit 2)" \
+  test_eci_gate_denies_edit_with_non_object_tool_input
+run_case "ECI gate blocks control .md (control check precedes markdown)" \
+  test_eci_gate_blocks_markdown_control_file
+run_case "ECI gate allows source Edit while marker exists" \
+  test_eci_gate_allows_source_edit_with_active_marker
+run_case "ECI gate allows source Write fixture" \
+  test_eci_gate_allows_source_write_fixture
+run_case "ECI gate allows source MultiEdit fixture" \
+  test_eci_gate_allows_source_multiedit_fixture
+run_case "ECI gate allows source NotebookEdit fixture" \
+  test_eci_gate_allows_source_notebookedit_fixture
+run_case "ECI gate allows markdown Edit" \
   test_eci_gate_allows_markdown_edit
-run_case "ECI gate allows markdown MultiEdit while marker exists" \
+run_case "ECI gate allows markdown MultiEdit" \
   test_eci_gate_allows_markdown_multiedit
-run_case "ECI gate allows markdown Write while marker exists" \
+run_case "ECI gate allows markdown Write" \
   test_eci_gate_allows_markdown_write
-run_case "ECI gate allows when no marker exists" \
+run_case "ECI gate allows source edit when no marker exists" \
   test_eci_gate_allows_when_no_marker
-run_case "ECI gate blocks CLAUDE_ROLE spoof through marker" \
-  test_eci_gate_blocks_role_spoof
-run_case "ECI gate allows subagent via agent_id" \
-  test_eci_gate_allows_subagent_via_agent_id
-run_case "ECI gate allows subagent via agent_type" \
-  test_eci_gate_allows_subagent_via_agent_type
+run_case "ECI gate: CLAUDE_ROLE env does not lift control deny" \
+  test_eci_gate_blocks_control_file_with_role_env
+run_case "ECI gate: agent_id does not lift control deny (no subagent exemption)" \
+  test_eci_gate_blocks_control_file_subagent_agent_id
+run_case "ECI gate: agent_type does not lift control deny (no subagent exemption)" \
+  test_eci_gate_blocks_control_file_subagent_agent_type
+run_case "ECI gate blocks other-session ledger in proof root" \
+  test_eci_gate_blocks_other_session_ledger
+run_case "ECI gate allows own-session working document" \
+  test_eci_gate_allows_own_session_working_doc
+run_case "ECI gate allows non-control ledger name in proof root" \
+  test_eci_gate_allows_non_control_ledger_in_proof_root
+run_case "ECI gate blocks reserved proof-dir descendant, allows nested non-reserved" \
+  test_eci_gate_blocks_reserved_proof_dir_descendant
+run_case "ECI gate blocks hard-link alias to active marker" \
+  test_eci_gate_blocks_hardlink_alias_to_marker
+run_case "ECI gate blocks symlink resolving to control file" \
+  test_eci_gate_blocks_symlink_to_control_file
 run_case "ECI gate skips on unsafe session_id" \
   test_eci_gate_skips_unsafe_session_id
-run_case "ECI gate skips non-Edit/Write/MultiEdit tools" \
+run_case "ECI gate skips on bad JSON" \
+  test_eci_gate_skips_bad_json
+run_case "ECI gate skips on missing cwd, denies same payload with cwd" \
+  test_eci_gate_skips_missing_cwd
+run_case "ECI gate skips non-Edit/Write/MultiEdit/NotebookEdit tools" \
   test_eci_gate_skips_non_edit_tool
-run_case "ECI gate blocks code NotebookEdit when marker exists" \
-  test_eci_gate_blocks_code_notebookedit
 run_case "skill-marker gate blocks NotebookEdit on protected path without marker" \
   test_skill_marker_gate_blocks_notebookedit_without_marker
 
