@@ -1525,6 +1525,35 @@ EOF" \
   done
 }
 
+# Subagent wrapper unwrapping (run_case rows below). Deny: subagent reason and the
+# planner never runs. Forward: no output and the planner receives the input bytes.
+# Args: name agent_id command. Empty agent_id is the main thread.
+expect_subagent_bash_denied() {
+  local home input out
+  home="$(fresh_home "$1")" || return 1
+  make_planner_stub "$home" || return 1
+  input="$TMP_ROOT/$1.json"
+  write_bash_input "$input" t00-session "$ROOT" "$3" "$2"
+  out="$TMP_ROOT/$1.out"
+  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" HOME="$home" \
+    CLAUDE_PROOF_ROOT="$(fresh_proof_root "$1")"
+  is_pretool_deny "$out" &&
+    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "Only the main thread" &&
+    [ ! -e "$home/planner-stdin" ]
+}
+
+expect_bash_forwarded() {
+  local home input out
+  home="$(fresh_home "$1")" || return 1
+  make_planner_stub "$home" || return 1
+  input="$TMP_ROOT/$1.json"
+  write_bash_input "$input" t00-session "$ROOT" "$3" "$2"
+  out="$TMP_ROOT/$1.out"
+  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" HOME="$home" \
+    CLAUDE_PROOF_ROOT="$(fresh_proof_root "$1")"
+  expect_no_output "$out" && planner_received "$home" "$input"
+}
+
 # Push is denied unconditionally (CLAUDE.md: push only on request), with or without ECI.
 test_validate_bash_denies_git_push_with_eci_active() {
   local home proof input out
@@ -2804,6 +2833,86 @@ run_case "validate-bash does not deny subagent quoted eci-active off text" \
   test_validate_bash_subagent_quoted_eci_off_text_is_not_denied
 run_case "validate-bash denies subagent eci-active off at argv head in all forms" \
   test_validate_bash_subagent_eci_off_argv_head_is_denied
+run_case "subagent denied: bash -c \"eci-active off\"" \
+  expect_subagent_bash_denied sub-deny-01 sub-uuid 'bash -c "eci-active off"'
+run_case "subagent denied: sh -lc 'eci-active off'" \
+  expect_subagent_bash_denied sub-deny-02 sub-uuid "sh -lc 'eci-active off'"
+run_case "subagent denied: zsh -c 'eci-active off'" \
+  expect_subagent_bash_denied sub-deny-03 sub-uuid "zsh -c 'eci-active off'"
+run_case "subagent denied: bash -o pipefail -c 'eci-active off'" \
+  expect_subagent_bash_denied sub-deny-04 sub-uuid "bash -o pipefail -c 'eci-active off'"
+run_case "subagent denied: env eci-active off" \
+  expect_subagent_bash_denied sub-deny-05 sub-uuid 'env eci-active off'
+run_case "subagent denied: env -i eci-active off" \
+  expect_subagent_bash_denied sub-deny-06 sub-uuid 'env -i eci-active off'
+run_case "subagent denied: env -u FOO eci-active off" \
+  expect_subagent_bash_denied sub-deny-07 sub-uuid 'env -u FOO eci-active off'
+run_case "subagent denied: env -S 'eci-active off'" \
+  expect_subagent_bash_denied sub-deny-08 sub-uuid "env -S 'eci-active off'"
+run_case "subagent denied: env FOO=1 bash -c 'eci-active off'" \
+  expect_subagent_bash_denied sub-deny-09 sub-uuid "env FOO=1 bash -c 'eci-active off'"
+run_case "subagent denied: bash -c 'env eci-active off' (nested wrapper)" \
+  expect_subagent_bash_denied sub-deny-10 sub-uuid "bash -c 'env eci-active off'"
+run_case "subagent denied: command eci-active off" \
+  expect_subagent_bash_denied sub-deny-11 sub-uuid 'command eci-active off'
+run_case "subagent denied: exec eci-active off" \
+  expect_subagent_bash_denied sub-deny-12 sub-uuid 'exec eci-active off'
+run_case "subagent denied: nohup eci-active off" \
+  expect_subagent_bash_denied sub-deny-13 sub-uuid 'nohup eci-active off'
+run_case "subagent denied: time eci-active off" \
+  expect_subagent_bash_denied sub-deny-14 sub-uuid 'time eci-active off'
+run_case "subagent denied: time -p eci-active off" \
+  expect_subagent_bash_denied sub-deny-15 sub-uuid 'time -p eci-active off'
+run_case "subagent denied: timeout 5 eci-active off" \
+  expect_subagent_bash_denied sub-deny-16 sub-uuid 'timeout 5 eci-active off'
+run_case "subagent denied: timeout -s TERM 5 eci-active off" \
+  expect_subagent_bash_denied sub-deny-17 sub-uuid 'timeout -s TERM 5 eci-active off'
+run_case "subagent denied: stdbuf -oL eci-active off" \
+  expect_subagent_bash_denied sub-deny-18 sub-uuid 'stdbuf -oL eci-active off'
+run_case "subagent denied: bash ~/.claude/bin/eci-active off (script form)" \
+  expect_subagent_bash_denied sub-deny-19 sub-uuid 'bash ~/.claude/bin/eci-active off'
+run_case "subagent allowed: command -v eci-active (query only)" \
+  expect_bash_forwarded sub-fwd-01 sub-uuid 'command -v eci-active'
+run_case "subagent allowed: command -V eci-active (query only)" \
+  expect_bash_forwarded sub-fwd-02 sub-uuid 'command -V eci-active'
+run_case "subagent allowed: echo \"eci-active off\" (quoted text)" \
+  expect_bash_forwarded sub-fwd-03 sub-uuid 'echo "eci-active off"'
+run_case "subagent allowed: env echo eci-active off (argv head is echo)" \
+  expect_bash_forwarded sub-fwd-04 sub-uuid 'env echo eci-active off'
+run_case "subagent allowed: bash -c 'echo eci-active off' (nested text)" \
+  expect_bash_forwarded sub-fwd-05 sub-uuid "bash -c 'echo eci-active off'"
+run_case "subagent allowed: bash -c with no string (no crash, no deny)" \
+  expect_bash_forwarded sub-fwd-06 sub-uuid 'bash -c'
+run_case "subagent allowed: timeout 5 with no command (no crash, no deny)" \
+  expect_bash_forwarded sub-fwd-07 sub-uuid 'timeout 5'
+run_case "subagent allowed: cat heredoc body mentioning eci-active off" \
+  expect_bash_forwarded sub-fwd-08 sub-uuid "$(printf "cat <<'EOF'\neci-active off\nEOF")"
+run_case "main thread forwarded: bash -c \"eci-active off\" (guard is subagent-only)" \
+  expect_bash_forwarded main-fwd-01 '' 'bash -c "eci-active off"'
+run_case "main thread forwarded: env eci-active off (guard is subagent-only)" \
+  expect_bash_forwarded main-fwd-02 '' 'env eci-active off'
+run_case "main thread forwarded: timeout 5 eci-active off (guard is subagent-only)" \
+  expect_bash_forwarded main-fwd-03 '' 'timeout 5 eci-active off'
+run_case "subagent denied: env FOO=1 -i nohup time -p eci-active off (interleaved env args)" \
+  expect_subagent_bash_denied sub-deny-20 sub-uuid 'env FOO=1 -i nohup time -p eci-active off'
+run_case "subagent denied: bash -eo pipefail -c 'eci-active off' (combined option group)" \
+  expect_subagent_bash_denied sub-deny-21 sub-uuid "bash -eo pipefail -c 'eci-active off'"
+run_case "subagent denied: bash -- eci-active off (script after --)" \
+  expect_subagent_bash_denied sub-deny-22 sub-uuid 'bash -- eci-active off'
+run_case "subagent denied: if true; then eci-active off; fi (reserved word)" \
+  expect_subagent_bash_denied sub-deny-23 sub-uuid 'if true; then eci-active off; fi'
+run_case "subagent denied: { eci-active off; } (group)" \
+  expect_subagent_bash_denied sub-deny-24 sub-uuid '{ eci-active off; }'
+run_case "subagent denied: ! eci-active off (negation)" \
+  expect_subagent_bash_denied sub-deny-25 sub-uuid '! eci-active off'
+run_case "subagent denied: while false; do eci-active off; done (loop body)" \
+  expect_subagent_bash_denied sub-deny-26 sub-uuid 'while false; do eci-active off; done'
+run_case "subagent allowed: command -p -v eci-active off (query only)" \
+  expect_bash_forwarded sub-fwd-09 sub-uuid 'command -p -v eci-active off'
+run_case "subagent allowed: echo then eci-active off (then is an argument of echo)" \
+  expect_bash_forwarded sub-fwd-10 sub-uuid 'echo then eci-active off'
+run_case "main thread forwarded: if true; then eci-active off; fi (guard is subagent-only)" \
+  expect_bash_forwarded main-fwd-04 '' 'if true; then eci-active off; fi'
 run_case "validate-bash denies git push with ECI active" \
   test_validate_bash_denies_git_push_with_eci_active
 run_case "validate-bash denies chained git push without ECI" \

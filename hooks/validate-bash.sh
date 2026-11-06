@@ -188,9 +188,12 @@ PY
 # Detect `eci-active off` at the argv head of a simple command (subagent guard).
 # Quoted text, heredoc bodies and arguments never count. The scanner splits on
 # ; & | ( ) ` $( and newlines outside quotes, skips redirections and leading
-# NAME=value words, and matches when the first word is eci-active or a path
-# ending in /eci-active and the next word is off. Not covered: nested shells
-# (bash -c "...") and wrappers (env, command, exec).
+# NAME=value words. It then unwraps prefixes down to the command word: reserved
+# words (! { if then elif else do while until), env, command, exec, nohup, time,
+# stdbuf, timeout and bash/sh/zsh/dash/ksh. A shell with -c queues its command
+# string, and env -S queues its split string. Queued strings are scanned as shell
+# text after the main pass, so nesting ends. A shell with a script argument is
+# checked as the head. `command -v` and `command -V` only print, so they never match.
 command_invokes_eci_off() {
   printf '%s' "$1" |
     awk '
@@ -218,12 +221,123 @@ command_invokes_eci_off() {
         word = ""
         inword = 0
       }
+      # Queue a shell string for a scan after the main pass.
+      function nest_add(s) {
+        nest[++nest_n] = s
+      }
+      # Index of the word that runs after wrapper name, whose first argument is at h.
+      # Returns nwords + 1 when the segment runs no eci-active call here.
+      function skip_wrapper(name, h,   t, s, k) {
+        while (h <= nwords) {
+          t = words[h]
+          if (name == "env" && (t == "-S" || t ~ /^-S/)) {
+            if (t == "-S") {
+              s = (h + 1 <= nwords) ? words[h + 1] : ""
+              k = h + 2
+            } else {
+              s = substr(t, 3)
+              k = h + 1
+            }
+            for (; k <= nwords; k++) {
+              s = s " " words[k]
+            }
+            nest_add(s)
+            return nwords + 1
+          }
+          if (name == "env" && t ~ /^[A-Za-z_][A-Za-z0-9_]*=/) {
+            h++
+            continue
+          }
+          if (name == "env" && (t == "-u" || t == "-C" || t == "--unset" || t == "--chdir")) {
+            h += 2
+            continue
+          }
+          if (name == "command" && t ~ /^-[pvV]+$/ && t ~ /[vV]/) {
+            return nwords + 1
+          }
+          if (name == "exec" && t == "-a") {
+            h += 2
+            continue
+          }
+          if (name == "time" && (t == "-o" || t == "-f")) {
+            h += 2
+            continue
+          }
+          if (name == "stdbuf" && (t == "-i" || t == "-o" || t == "-e")) {
+            h += 2
+            continue
+          }
+          if (name == "timeout" && (t == "-s" || t == "-k" || t == "--signal" || t == "--kill-after")) {
+            h += 2
+            continue
+          }
+          if (name == "timeout" && t !~ /^-/) {
+            return h + 1
+          }
+          if (t ~ /^-/) {
+            h++
+            continue
+          }
+          return h
+        }
+        return nwords + 1
+      }
+      # Index of the command word after a shell, whose options start at h. Option
+      # groups with c make the first non-option word the command string, which is
+      # queued. Groups with o or O take their argument from the next word. Otherwise
+      # the first non-option word is returned: the script when one is given.
+      function skip_shell(h,   t, cflag) {
+        cflag = 0
+        while (h <= nwords) {
+          t = words[h]
+          if (t == "--rcfile" || t == "--init-file") {
+            h += 2
+            continue
+          }
+          if (t ~ /^[-+][A-Za-z]+$/) {
+            if (t ~ /^-.*c/) {
+              cflag = 1
+            }
+            if (t ~ /[oO]/) {
+              h += 2
+            } else {
+              h++
+            }
+            continue
+          }
+          if (t ~ /^--[A-Za-z-]*$/) {
+            h++
+            continue
+          }
+          if (cflag) {
+            nest_add(t)
+            return nwords + 1
+          }
+          return h
+        }
+        return nwords + 1
+      }
+      # Index of the command word: skips assignments, reserved words and wrappers,
+      # and checks shell heads. Returns nwords + 1 when no command runs here.
+      function unwrap(h,   base) {
+        while (h <= nwords) {
+          base = words[h]
+          sub(/^.*\//, "", base)
+          if (words[h] ~ /^[A-Za-z_][A-Za-z0-9_]*=/ || words[h] ~ /^(!|\{|if|then|elif|else|do|while|until)$/) {
+            h++
+          } else if (base == "env" || base == "command" || base == "exec" || base == "nohup" || base == "time" || base == "stdbuf" || base == "timeout") {
+            h = skip_wrapper(base, h + 1)
+          } else if (base == "bash" || base == "sh" || base == "zsh" || base == "dash" || base == "ksh") {
+            h = skip_shell(h + 1)
+          } else {
+            return h
+          }
+        }
+        return nwords + 1
+      }
       function end_segment(   h, base) {
         end_word()
-        h = 1
-        while (h <= nwords && words[h] ~ /^[A-Za-z_][A-Za-z0-9_]*=/) {
-          h++
-        }
+        h = unwrap(1)
         if (h < nwords) {
           base = words[h]
           sub(/^.*\//, "", base)
@@ -236,9 +350,11 @@ command_invokes_eci_off() {
         want_delim = 0
         strip_next = 0
       }
-      {
+      # One line of input. Heredoc bodies and quotes carry over between lines
+      # through the scanner state.
+      function scan_line(L,   n, i, k, c, nx, line) {
         if (skipping) {
-          line = $0
+          line = L
           if (delim_strip[1]) {
             sub(/^\t+/, "", line)
           }
@@ -252,12 +368,12 @@ command_invokes_eci_off() {
           if (ndelim == 0) {
             skipping = 0
           }
-          next
+          return
         }
-        n = length($0)
+        n = length(L)
         for (i = 1; i <= n; i++) {
-          c = substr($0, i, 1)
-          nx = substr($0, i + 1, 1)
+          c = substr(L, i, 1)
+          nx = substr(L, i + 1, 1)
           if (sq) {
             if (c == SQ) {
               sq = 0
@@ -320,7 +436,7 @@ command_invokes_eci_off() {
             end_word()
             redirect_next = 1
             i++
-            if (substr($0, i + 1, 1) == ">") {
+            if (substr(L, i + 1, 1) == ">") {
               i++
             }
             continue
@@ -333,7 +449,7 @@ command_invokes_eci_off() {
             continue
           }
           if (c == "<" && nx == "<") {
-            if (substr($0, i + 2, 1) == "<") {
+            if (substr(L, i + 2, 1) == "<") {
               end_word()
               redirect_next = 1
               i += 2
@@ -342,7 +458,7 @@ command_invokes_eci_off() {
             end_word()
             want_delim = 1
             i++
-            if (substr($0, i + 1, 1) == "-") {
+            if (substr(L, i + 1, 1) == "-") {
               strip_next = 1
               i++
             }
@@ -373,8 +489,31 @@ command_invokes_eci_off() {
           }
         }
       }
+      # Scan a queued shell string from a clean scanner state.
+      function scan_text(T,   lines, n, i) {
+        word = ""
+        inword = 0
+        sq = 0
+        dq = 0
+        esc = 0
+        nwords = 0
+        redirect_next = 0
+        want_delim = 0
+        strip_next = 0
+        ndelim = 0
+        skipping = 0
+        n = split(T, lines, "\n")
+        for (i = 1; i <= n; i++) {
+          scan_line(lines[i])
+        }
+        end_segment()
+      }
+      { scan_line($0) }
       END {
         end_segment()
+        for (q = 1; q <= nest_n; q++) {
+          scan_text(nest[q])
+        }
         exit(found ? 0 : 1)
       }
     '
