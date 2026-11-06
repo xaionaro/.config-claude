@@ -519,7 +519,6 @@ test_validate_edit_write_allows_lookalike_dirnames() {
   [ "$rc" = 0 ] && pass "validate-edit-write does NOT block lookalike dirnames (4)"
 }
 
-
 test_validate_edit_write_allows_regular_repo_edit() {
   local repo input out decision
   repo="$TMP_ROOT/regular-repo-$$"
@@ -541,10 +540,55 @@ test_validate_edit_write_allows_regular_repo_edit() {
   fi
 }
 
+# Real git submodule and a worktree of it, built under $TMP_ROOT. No hook gates
+# submodule paths (codex behaviour), so a Write into either must be allowed.
+test_validate_edit_write_allows_write_into_submodule_and_its_worktree() {
+  local name="validate-edit-write allows Write into a git submodule and a worktree of it"
+  local r="$TMP_ROOT/sm-allow" p input out hrc bad=""
+  local g=(env GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git
+    -c user.name=t -c user.email=t@example.invalid -c init.defaultBranch=main
+    -c protocol.file.allow=always -c commit.gpgsign=false -c core.hooksPath=/dev/null)
+  mkdir -p "$r" || { fail "$name" "mkdir $r failed"; return; }
+  {
+    "${g[@]}" init -q "$r/subsrc" && echo x >"$r/subsrc/file.txt" &&
+      "${g[@]}" -C "$r/subsrc" add file.txt && "${g[@]}" -C "$r/subsrc" commit -q -m init &&
+    "${g[@]}" init -q "$r/super" && echo x >"$r/super/top.txt" &&
+      "${g[@]}" -C "$r/super" add top.txt && "${g[@]}" -C "$r/super" commit -q -m init &&
+      "${g[@]}" -C "$r/super" submodule add -q "$r/subsrc" sub &&
+      "${g[@]}" -C "$r/super" commit -q -m addsub &&
+      "${g[@]}" -C "$r/super/sub" worktree add -q -b subwt-branch "$r/sub-wt"
+  } >"$r/build.log" 2>&1 || { fail "$name" "fixture build failed: $(head -c 300 "$r/build.log")"; return; }
+  # Premise: both targets sit behind a gitfile (.git is a FILE), the layout a
+  # submodule gate keys on; otherwise the allow below would prove nothing.
+  if ! { [ -f "$r/super/sub/.git" ] && [ -f "$r/sub-wt/.git" ]; }; then
+    fail "$name" "premise: expected .git gitfiles in the submodule and its worktree"; return
+  fi
+
+  input="$r/in.json"; out="$r/out.json"
+  for p in "$r/super/sub/file.txt" "$r/sub-wt/file.txt"; do
+    jq -n --arg fp "$p" '{tool_name:"Write",tool_input:{file_path:$fp,content:"y"}}' >"$input"
+    run_hook "$out" "$ROOT/hooks/validate-edit-write.sh" "$input"; hrc=$?
+    if [ "$hrc" != 0 ] || is_pretool_deny "$out" || grep -qi deny "$out"; then
+      bad="$bad [${p#"$r"/}: rc=$hrc out=$(head -c 200 "$out")]"
+    fi
+  done
+  # Control: the hook does run on submodule paths (vendor/ inside one is still denied).
+  jq -n --arg fp "$r/super/sub/vendor/x.go" '{tool_name:"Write",tool_input:{file_path:$fp,content:"y"}}' >"$input"
+  run_hook "$out" "$ROOT/hooks/validate-edit-write.sh" "$input"
+  if ! { is_pretool_deny "$out" && json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason' "vendor"; }; then
+    bad="$bad [control: expected vendor/ deny inside submodule, out=$(head -c 200 "$out")]"
+  fi
+
+  if [ -z "$bad" ]; then
+    pass "$name"
+  else
+    fail "$name" "unexpected:$bad"
+  fi
+}
+
 test_validate_bash_allows_write_into_submodule() {
-  # Submodule write blocking is the file-edit tools' job (Edit/Write/MultiEdit
-  # via validate-edit-write.sh). Bash is intentionally NOT gated on submodule
-  # paths — running scripts/builds inside submodules is a normal workflow.
+  # No hook gates submodule paths: writes into submodules are allowed (codex
+  # behaviour), including via Bash.
   local home repo sub input out decision
   home="$(fresh_home bash-submod)"
   make_planner_stub "$home" || return 1
@@ -2659,6 +2703,7 @@ test_validate_bash_allows_write_to_singular_import_dir
 test_validate_edit_write_blocks_thirdparty_variants
 test_validate_edit_write_allows_lookalike_dirnames
 test_validate_edit_write_allows_regular_repo_edit
+test_validate_edit_write_allows_write_into_submodule_and_its_worktree
 test_validate_bash_allows_write_into_submodule
 
 # ECI gate tests
