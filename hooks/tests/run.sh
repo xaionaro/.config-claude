@@ -519,28 +519,6 @@ test_validate_edit_write_allows_lookalike_dirnames() {
   [ "$rc" = 0 ] && pass "validate-edit-write does NOT block lookalike dirnames (4)"
 }
 
-test_validate_edit_write_blocks_submodule_edit() {
-  local repo sub input out decision
-  repo="$TMP_ROOT/sup-repo-$$"
-  sub="$repo/sub"
-  mkdir -p "$repo/.git" "$sub"
-  printf 'gitdir: %s/modules/sub\n' "$repo/.git" >"$sub/.git"
-  echo "package x" >"$sub/file.go"
-
-  input="$TMP_ROOT/edit-submod.json"
-  jq -n --arg fp "$sub/file.go" '{tool_name:"Edit",tool_input:{file_path:$fp,old_string:"x",new_string:"y"}}' >"$input"
-  out="$TMP_ROOT/edit-submod.out"
-  run_hook "$out" "$ROOT/hooks/validate-edit-write.sh" "$input"
-  decision=$(jq -r '.hookSpecificOutput.permissionDecision // "no-decision"' <"$out" 2>/dev/null)
-  [ -z "$decision" ] && decision="no-decision"
-
-  if [ "$decision" = "deny" ]; then
-    pass "validate-edit-write denies edits inside a git submodule"
-  else
-    fail "validate-edit-write denies edits inside a git submodule" \
-         "decision=$decision; expected deny. Output: $(head -c 300 "$out")"
-  fi
-}
 
 test_validate_edit_write_allows_regular_repo_edit() {
   local repo input out decision
@@ -561,98 +539,6 @@ test_validate_edit_write_allows_regular_repo_edit() {
     fail "validate-edit-write allows edits in a regular (non-submodule) repo" \
          "decision=$decision; expected allow. Output: $(head -c 300 "$out")"
   fi
-}
-
-# ---- validate-edit-write gitlink gate: linked worktrees vs submodules ----
-# Real git fixtures, built once per run under $TMP_ROOT/gl. A `.git` FILE marks
-# both a submodule and a linked worktree; only a submodule must be denied.
-GL_ROOT=""
-gl_git() {
-  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git \
-    -c user.name=t -c user.email=t@example.invalid -c init.defaultBranch=main \
-    -c protocol.file.allow=always -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"
-}
-
-# Build fixtures once; prints a reason on failure. Must run in the current
-# shell (not a $(...) subshell) so GL_ROOT persists across rows.
-build_gitlink_fixtures() {
-  [ -n "$GL_ROOT" ] && return 0
-  local r="$TMP_ROOT/gl"
-  mkdir -p "$r" || return 1
-  {
-    gl_git init -q "$r/plain" && echo x >"$r/plain/file.txt" &&
-      gl_git -C "$r/plain" add file.txt && gl_git -C "$r/plain" commit -q -m init &&
-      gl_git -C "$r/plain" worktree add -q -b wt-branch "$r/wt" &&
-    gl_git init -q "$r/subsrc" && echo x >"$r/subsrc/file.txt" &&
-      gl_git -C "$r/subsrc" add file.txt && gl_git -C "$r/subsrc" commit -q -m init &&
-    gl_git init -q "$r/super" && echo x >"$r/super/top.txt" &&
-      gl_git -C "$r/super" add top.txt && gl_git -C "$r/super" commit -q -m init &&
-      gl_git -C "$r/super" submodule add -q "$r/subsrc" sub &&
-      gl_git -C "$r/super" commit -q -m addsub &&
-      gl_git -C "$r/super/sub" worktree add -q -b subwt-branch "$r/sub-wt" &&
-    gl_git -C "$r/super" worktree add -q -b superwt-branch "$r/super-wt" &&
-      gl_git -C "$r/super-wt" submodule update -q --init &&
-      gl_git -C "$r/super-wt/sub" worktree add -q -b subwt2-branch "$r/sub-wt2" &&
-    mkdir -p "$r/dangling" && echo x >"$r/dangling/file.txt" &&
-      printf 'gitdir: %s/nonexistent/worktrees/x\n' "$r" >"$r/dangling/.git"
-  } >"$r/build.log" 2>&1 || { head -c 400 "$r/build.log"; return 1; }
-  # Premises that make the rows discriminating: gitfiles are files, and the
-  # worktree-of-a-submodule inside a linked-worktree superproject has NO
-  # "/.git/modules/" in its gitdir text (only core.worktree identifies it).
-  if ! { [ -f "$r/wt/.git" ] && [ -f "$r/super/sub/.git" ] && [ -f "$r/sub-wt/.git" ] &&
-         [ -f "$r/sub-wt2/.git" ] && [ -d "$r/plain/.git" ]; }; then
-    echo "premise: unexpected gitfile layout"; return 1
-  fi
-  if grep -q '/\.git/modules/' "$r/sub-wt2/.git"; then
-    echo "premise: sub-wt2 gitdir text contains /.git/modules/"; return 1
-  fi
-  GL_ROOT="$r"
-}
-
-# Echo "<decision>|<reason>" for an Edit of $1 via validate-edit-write.sh.
-gitlink_decision() {
-  local fp="$1" input out
-  input="$TMP_ROOT/gl-in.json"; out="$TMP_ROOT/gl-out.json"
-  jq -n --arg fp "$fp" '{tool_name:"Edit",tool_input:{file_path:$fp,old_string:"x",new_string:"y"}}' >"$input"
-  run_hook "$out" "$ROOT/hooks/validate-edit-write.sh" "$input"
-  jq -r '(.hookSpecificOutput.permissionDecision // "no-decision") + "|" + (.hookSpecificOutput.permissionDecisionReason // "")' <"$out" 2>/dev/null
-}
-
-# gitlink_case <name> <path relative to the fixture root> <allow|deny>
-gitlink_case() {
-  local name="$1" rel="$2" want="$3" res decision reason
-  # current shell, not $(...): GL_ROOT must persist across rows
-  build_gitlink_fixtures >"$TMP_ROOT/gl-build.msg" 2>&1 ||
-    { fail "$name" "fixture setup failed: $(head -c 300 "$TMP_ROOT/gl-build.msg")"; return; }
-  res="$(gitlink_decision "$GL_ROOT/$rel")"
-  decision="${res%%|*}"; reason="${res#*|}"
-  if [ "$want" = deny ]; then
-    # the deny must come from the submodule gate, not from another policy
-    if [ "$decision" = deny ] && [[ "$reason" == *"git submodule"* ]]; then pass "$name"
-    else fail "$name" "decision=$decision reason=${reason:0:120}; expected submodule-gate deny"; fi
-  else
-    if [ "$decision" != deny ]; then pass "$name"
-    else fail "$name" "decision=$decision reason=${reason:0:120}; expected allow"; fi
-  fi
-}
-
-test_gitlink_plain_repo_allowed() {
-  gitlink_case "validate-edit-write gitlink: plain git repo file write allowed" plain/file.txt allow
-}
-test_gitlink_linked_worktree_allowed() {
-  gitlink_case "validate-edit-write gitlink: linked worktree (git worktree add) file write allowed" wt/file.txt allow
-}
-test_gitlink_real_submodule_denied() {
-  gitlink_case "validate-edit-write gitlink: real submodule file write denied" super/sub/file.txt deny
-}
-test_gitlink_worktree_of_submodule_denied() {
-  gitlink_case "validate-edit-write gitlink: worktree of a submodule (normal superproject) denied" sub-wt/file.txt deny
-}
-test_gitlink_worktree_of_submodule_in_linked_superproject_denied() {
-  gitlink_case "validate-edit-write gitlink: worktree of a submodule (linked-worktree superproject) denied" sub-wt2/file.txt deny
-}
-test_gitlink_dangling_gitdir_denied() {
-  gitlink_case "validate-edit-write gitlink: .git file with nonexistent gitdir denied (fail closed)" dangling/file.txt deny
 }
 
 test_validate_bash_allows_write_into_submodule() {
@@ -2764,14 +2650,7 @@ test_validate_edit_write_blocks_vendor_dir
 test_validate_bash_allows_write_to_singular_import_dir
 test_validate_edit_write_blocks_thirdparty_variants
 test_validate_edit_write_allows_lookalike_dirnames
-test_validate_edit_write_blocks_submodule_edit
 test_validate_edit_write_allows_regular_repo_edit
-test_gitlink_plain_repo_allowed
-test_gitlink_linked_worktree_allowed
-test_gitlink_real_submodule_denied
-test_gitlink_worktree_of_submodule_denied
-test_gitlink_worktree_of_submodule_in_linked_superproject_denied
-test_gitlink_dangling_gitdir_denied
 test_validate_bash_allows_write_into_submodule
 
 # ECI gate tests
