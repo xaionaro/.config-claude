@@ -103,6 +103,17 @@
         ]
       }
     ],
+    "PostCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/eci-post-compact-refresh.sh"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "matcher": "",
