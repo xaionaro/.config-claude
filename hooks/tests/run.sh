@@ -2979,6 +2979,8 @@ run_case "subagent denied: eci-active \$'off' r.md (ANSI-C quoted subcommand)" \
   expect_subagent_bash_denied sub-deny-42 sub-uuid "eci-active \$'off' r.md"
 run_case "subagent denied: eci-active \$\"off\" r.md (locale-quoted subcommand)" \
   expect_subagent_bash_denied sub-deny-43 sub-uuid 'eci-active $"off" r.md'
+run_case "subagent denied: backslash-newline inside the phrase (eci-active \\<newline> off r.md)" \
+  expect_subagent_bash_denied sub-deny-44 sub-uuid "$(printf 'eci-active \\\n off r.md')"
 run_case "main thread forwarded: \$'eci-active' \$'off' r.md (guard is subagent-only)" \
   expect_bash_forwarded main-fwd-06 '' "\$'eci-active' \$'off' r.md"
 run_case "subagent allowed: eci-active status" \
