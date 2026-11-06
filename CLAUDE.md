@@ -95,6 +95,8 @@ Walk through every entry below before starting work. For each, decide: does it a
 11. UI code? (writing, reviewing, modifying *.qml, *.qmldir, *.qmltypes, or any UI surface) → `ui-design`
 12. Writing a status update / sitrep / progress report? → `writing-status-reports`
 13. Project-understanding ledger / context ledger / ECI/ATE ledger updates? → `maintaining-context-ledger`
+14. Any-language code (writing, reviewing, modifying, diffs, PRs)? → `coding-common`
+15. Handover, handoff, or unfinished work at session end? → `writing-handovers`
 
 # Environment
 
