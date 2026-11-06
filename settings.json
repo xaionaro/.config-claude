@@ -34,6 +34,15 @@
             "command": "$HOME/.claude/hooks/eci-pending-clear.sh"
           }
         ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/pre-reviewer-prompt-capture.sh"
+          }
+        ]
       }
     ],
     "PreToolUse": [
