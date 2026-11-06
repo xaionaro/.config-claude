@@ -25,8 +25,12 @@ case "$tool_name" in
   *) exit 0 ;;
 esac
 
-# The turn key is the documented prompt_id of the hook input. The prompt text
-# is recovered from the transcript record carrying that same promptId.
+# Opt-in gate first: unset means nothing is read, created or touched.
+[ -n "${CLAUDE_EDIT_PRE_REVIEWER:-}" ] || exit 0
+
+# The turn key is the documented prompt_id of the hook input. The admitted
+# prompt is the capture the writer stored for that turn. No capture means no
+# review (codex parity: no transcript fallback).
 [ -n "$prompt_id" ] || exit 0
 turn_id_json="$(claude_hook_turn_id_json "$(jq -cn --arg id "$prompt_id" '{turn_id: $id}')")"
 [ -n "$turn_id_json" ] || exit 0
@@ -37,7 +41,6 @@ fi
 root="$(claude_proof_root)"
 state_dir="$root/pre-reviewer/$session_id"
 stop_state_dir="$root/reviewer/$session_id"
-claude_ensure_private_pre_reviewer_state_dir "$state_dir" || exit 0
 
 is_touch_bypass_command() {
   local command_text="$1"
@@ -61,42 +64,44 @@ fi
 
 [ -f "$state_dir/bypass" ] && exit 0
 
-[ -n "${CLAUDE_EDIT_PRE_REVIEWER:-}" ] || exit 0
 claude_parse_pre_reviewer_env CLAUDE_EDIT_PRE_REVIEWER || exit 0
 [ -n "$REVIEWER_BACKEND" ] || exit 0
+claude_ensure_private_pre_reviewer_state_dir "$state_dir" || exit 0
 
 claim_key="$(claude_turn_state_key "$turn_id_json" 2>/dev/null || true)"
 [ -n "$claim_key" ] || exit 0
 claim="$(claude_turn_claim_path "$state_dir" "$claim_key")"
-trap claude_unlock_pre_reviewer_turn EXIT
-trap 'claude_unlock_pre_reviewer_turn; exit 0' HUP INT TERM
+consumed_capture=""
+cleanup_present_turn() {
+  claude_unlock_pre_reviewer_turn
+  [ -z "$consumed_capture" ] || rm -f -- "$consumed_capture"
+}
+trap cleanup_present_turn EXIT
+trap 'cleanup_present_turn; exit 0' HUP INT TERM
 claude_lock_pre_reviewer_turn "$state_dir" || exit 0
 if [ -e "$claim" ] || [ -L "$claim" ]; then
   exit 0
 fi
 
 capture="$state_dir/capture-turn-$claim_key.json"
-if [ -e "$capture" ] || [ -L "$capture" ]; then
-  consumed_capture="$(mktemp "$state_dir/.capture-turn-$claim_key.consumed.XXXXXX")" || exit 0
-  mv -f -- "$capture" "$consumed_capture" || exit 0
-  last_user_message="$(/usr/bin/python3 "$HOOK_DIR/lib/turn_capture_validator.py" \
-    "$turn_id_json" <"$consumed_capture")" || exit 0
-  rm -f -- "$consumed_capture"
-else
-  claude_hook_transcript_first_record_is_admissible "$input" || exit 0
-  projects_root="$(claude_hook_projects_root)" || exit 0
-  envelope="$(printf '%s' "$input" |
-    /usr/bin/python3 "$HOOK_DIR/lib/bounded_hook_input.py" claude-hook-last-human-prompt "$projects_root")" || exit 0
-  [ "$(printf '%s' "$envelope" | jq -c '.turn_id' 2>/dev/null)" = "$turn_id_json" ] || exit 0
-  last_user_message="$(printf '%s' "$envelope" | jq -jr '.prompt' 2>/dev/null |
-    redact_sensitive_text |
-    /usr/bin/python3 "$HOOK_DIR/lib/utf8_prefix_cap.py")" || exit 0
+if [ ! -e "$capture" ] && [ ! -L "$capture" ]; then
+  exit 0
 fi
+consumed_capture="$(mktemp "$state_dir/.capture-turn-$claim_key.consumed.XXXXXX")" || exit 0
+mv -f -- "$capture" "$consumed_capture" || exit 0
+last_user_message="$(/usr/bin/python3 "$HOOK_DIR/lib/turn_capture_validator.py" \
+  "$turn_id_json" <"$consumed_capture")" || exit 0
 
 if ! ( umask 077; set -C; : >"$claim" ) 2>/dev/null; then
+  # Claim not created: restore the capture so the turn stays reviewable.
+  if mv -f -- "$consumed_capture" "$capture"; then
+    consumed_capture=""
+  fi
   exit 0
 fi
 claude_unlock_pre_reviewer_turn
+rm -f -- "$consumed_capture"
+consumed_capture=""
 trap - EXIT HUP INT TERM
 
 if ! tool_input="$(

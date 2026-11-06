@@ -214,23 +214,20 @@ claude_bind_side_stop_to_session() {
   cp "$file" "$dir/side_stop"
 }
 
-# Subagent detection in Claude. Two real subagent shapes observed in live
-# hook input (captured 2026-05-06):
-#   1. Agent-tool inline spawn — input has .agent_id (UUID).
-#   2. claude --agent-type top-level spawn — input has .agent_type
-#      (e.g. "general-purpose"); NO .agent_id.
-# Either signal identifies a subagent; both must be exempted from
-# main-thread-only gates (stop-gate).
+# Subagent detection in Claude: agent_id only. The Claude Code hooks docs
+# (https://code.claude.com/docs/en/hooks) define agent_id as "the subagent or
+# in-process teammate the hook fires in". agent_type is NOT a subagent signal:
+# the same docs say it is also present when a main-thread session uses --agent,
+# so testing it would exempt that main thread from its own gates.
 # DO NOT introduce transcript-shape detection: Codex's
 # codex_hook_is_subagent_context parses ~/.codex/sessions/*.jsonl
 # session_meta.payload.source.subagent.thread_spawn — a structure
 # unique to the Codex transcript schema. Claude exposes these fields directly.
 claude_hook_is_subagent_context() {
   local input="${1:-$(cat)}"
-  local agent_id agent_type
+  local agent_id
   agent_id=$(printf '%s' "$input" | jq -r '.agent_id // empty' 2>/dev/null)
-  agent_type=$(printf '%s' "$input" | jq -r '.agent_type // empty' 2>/dev/null)
-  [ -n "$agent_id" ] || [ -n "$agent_type" ]
+  [ -n "$agent_id" ]
 }
 
 claude_remove_session_state_file() {

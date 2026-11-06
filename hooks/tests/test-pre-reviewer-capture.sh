@@ -3,7 +3,8 @@
 # (a) writer output, and the validator contract the reader relies on
 # (b) worker with a capture present, including a lagging transcript
 # (c) malformed writer input: exit 0, no output, no state written
-# (d) worker with the capture absent
+# (d) worker with the capture absent: no review, no transcript fallback
+# (f) prune of expired turn state, (g) consumed capture cleanup and restore
 # HOOK_ROOT overrides the hooks directory under test (deliberate-mutation check).
 # Every case asserts the positive effect and the absence of the bad effect.
 
@@ -144,6 +145,15 @@ stray_temp_count() {
   find "$PROOF_DIR" -name '.capture-turn-*' 2>/dev/null | wc -l | tr -d ' '
 }
 
+# Consumed-capture leftovers for one session (the worker must remove or restore them).
+consumed_leftovers() { # session
+  find "$PROOF_DIR/pre-reviewer/$1" -name '*.consumed.*' 2>/dev/null | wc -l | tr -d ' '
+}
+
+turn_key() { # prompt_id
+  printf '%s' "\"$1\"" | sha256sum | cut -d' ' -f1
+}
+
 echo "== (a) writer output and reader contract"
 user_prompt_json "sess-a" prompt-a "$PROMPT" >"$WORK/in-a.json"
 run_writer "$WORK/in-a.json"
@@ -233,6 +243,7 @@ assert_eq "b1: transcript matches, capture present: deny emitted" deny \
   "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.permissionDecision // empty' 2>/dev/null)"
 assert_eq "b1: transcript matches, capture present: one reviewer request" 1 \
   "$(( $(request_count) - before ))"
+assert_eq "b1: consumed capture removed after claim" 0 "$(consumed_leftovers sess-b1)"
 
 # Lagging transcript: the turn's own record is not flushed yet. The capture must
 # still supply the admitted prompt, as in the Codex worker.
@@ -247,16 +258,15 @@ assert_eq "b2: lagging transcript, capture present: deny emitted (Codex parity)"
 assert_eq "b2: lagging transcript, capture present: one reviewer request" 1 \
   "$(( $(request_count) - before ))"
 
-echo "== (d) worker with the capture absent"
+echo "== (d) worker with the capture absent: no review (codex parity, no transcript fallback)"
 write_transcript sess-d1 prompt-d1 "$PROMPT"
 pre_tool_json "sess-d1" prompt-d1 "go test ./..." >"$WORK/pre-d1.json"
 before=$(request_count)
 run_worker "$WORK/pre-d1.json"
-assert_eq "d1: no capture, transcript matches: deny as before" deny \
-  "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.permissionDecision // empty' 2>/dev/null)"
-assert_eq "d1: no capture, transcript matches: one reviewer request" 1 \
+assert_eq "d1: no capture, transcript matches: rc 0" 0 "$RC"
+assert_eq "d1: no capture, transcript matches: no output (no deny)" "" "$OUT"
+assert_eq "d1: no capture, transcript matches: no reviewer request" 0 \
   "$(( $(request_count) - before ))"
-assert_eq "d1: rc 0" 0 "$RC"
 
 pre_tool_json "sess-d2" prompt-d2 "go test ./..." >"$WORK/pre-d2.json"
 before=$(request_count)
@@ -265,6 +275,58 @@ assert_eq "d2: no capture, no transcript: rc 0" 0 "$RC"
 assert_eq "d2: no capture, no transcript: no output" "" "$OUT"
 assert_eq "d2: no capture, no transcript: no reviewer request" 0 \
   "$(( $(request_count) - before ))"
+
+echo "== (g) consumed capture: removed when the validator rejects, restored when the claim fails"
+# g1: capture stored under this turn's key with another turn_id. The validator rejects it.
+S=sess-g1
+write_transcript "$S" prompt-g1 "$PROMPT" >/dev/null
+user_prompt_json "$S" prompt-g1x "$PROMPT" >"$WORK/in-g1.json"
+run_writer "$WORK/in-g1.json"
+mv -- "$(capture_file "$S" prompt-g1x)" "$(capture_file "$S" prompt-g1)"
+pre_tool_json "$S" prompt-g1 "go test ./..." >"$WORK/pre-g1.json"
+before=$(request_count)
+run_worker "$WORK/pre-g1.json"
+assert_eq "g1: validator rejects: rc 0" 0 "$RC"
+assert_eq "g1: validator rejects: no output" "" "$OUT"
+assert_eq "g1: validator rejects: no reviewer request" 0 "$(( $(request_count) - before ))"
+assert_eq "g1: validator rejects: no consumed leftover" 0 "$(consumed_leftovers "$S")"
+assert_eq "g1: validator rejects: capture not left in place" 0 \
+  "$([ -e "$(capture_file "$S" prompt-g1)" ] && echo 1 || echo 0)"
+
+# g2: the claim cannot be created after validation. A stub validator creates the claim, standing
+# in for a racing claimant. The worker must put the capture back under its own name, and a later
+# run must review it. The stub lives in a copy of the hook tree; the real worker runs from it.
+S=sess-g2 P=prompt-g2
+RACE_ROOT="$WORK/hooks-race"
+cp -R -- "$HOOK_ROOT" "$RACE_ROOT"
+cat >"$RACE_ROOT/lib/turn_capture_validator.py" <<'PY'
+import json
+import os
+import sys
+
+open(os.environ["RACE_CLAIM"], "w").close()
+sys.stdout.write(json.load(sys.stdin)["prompt"])
+PY
+user_prompt_json "$S" "$P" "$PROMPT" >"$WORK/in-g2.json"
+run_writer "$WORK/in-g2.json"
+pre_tool_json "$S" "$P" "go test ./..." >"$WORK/pre-g2.json"
+RACE_CLAIM="$PROOF_DIR/pre-reviewer/$S/claim-turn-$(turn_key "$P")"
+before=$(request_count)
+OUT=$(env -i PATH=/usr/bin:/bin HOME="$HOME_DIR" CLAUDE_PROOF_ROOT="$PROOF_DIR" \
+  CLAUDE_EDIT_PRE_REVIEWER="$MOCK_URL" RACE_CLAIM="$RACE_CLAIM" \
+  bash "$RACE_ROOT/lib/edit-bash-pre-reviewer-worker.sh" <"$WORK/pre-g2.json" 2>/dev/null)
+RC=$?
+assert_eq "g2: claim not created: rc 0" 0 "$RC"
+assert_eq "g2: claim not created: no output" "" "$OUT"
+assert_eq "g2: claim not created: no reviewer request" 0 "$(( $(request_count) - before ))"
+assert_eq "g2: claim not created: capture restored under its own name" 1 \
+  "$([ -f "$(capture_file "$S" "$P")" ] && echo 1 || echo 0)"
+assert_eq "g2: claim not created: no consumed leftover" 0 "$(consumed_leftovers "$S")"
+rm -f -- "$RACE_CLAIM"
+run_worker "$WORK/pre-g2.json"
+assert_eq "g2: restored capture is reviewed on the next call" deny \
+  "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.permissionDecision // empty' 2>/dev/null)"
+assert_eq "g2: restored capture: one reviewer request" 1 "$(( $(request_count) - before ))"
 
 echo "== (f) prune: expired turn state removed, fresh kept"
 # Epoch-0 mtime is older than the one-hour retention for any real clock: no flakiness.
