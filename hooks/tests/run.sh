@@ -1037,6 +1037,72 @@ test_eci_gate_blocks_working_doc_hardlink_alias() {
   run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
 }
 
+# The alias scan covers every session dir, not only active ones: a plain-named
+# file hard-linked to an inactive session's eci_wait is denied. Dual side: an
+# unlinked file with the same content is allowed.
+test_eci_gate_blocks_hardlink_to_inactive_session_control() {
+  local home pdir other input out
+  home="$(fresh_home eci-g4a)"
+  pdir="$(proof_dir_in_home "$home" t00-session)"
+  other="$(proof_dir_in_home "$home" t01-other)"
+  printf 'wait\n' >"$other/eci_wait" || return 1
+  ln "$other/eci_wait" "$pdir/notes.txt" || return 1
+  input="$TMP_ROOT/eci-g4a.json"
+  out="$TMP_ROOT/eci-g4a.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:$p,content:"x"}}' --arg p "$pdir/notes.txt"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && is_pretool_deny "$out" || return 1
+  printf 'notes\n' >"$pdir/plain.txt" || return 1
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:$p,content:"x"}}' --arg p "$pdir/plain.txt"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
+}
+
+# An own-session working document that is a hard link to an inactive session's
+# eci_wait is an alias: the alias check runs before the working-doc exemption.
+test_eci_gate_blocks_own_working_doc_hardlink_to_inactive_control() {
+  local home pdir other input out
+  home="$(fresh_home eci-g4b)"
+  pdir="$(proof_dir_in_home "$home" t00-session)"
+  other="$(proof_dir_in_home "$home" t01-other)"
+  printf 'wait\n' >"$other/eci_wait" || return 1
+  ln "$other/eci_wait" "$pdir/proof.md" || return 1
+  input="$TMP_ROOT/eci-g4b.json"
+  out="$TMP_ROOT/eci-g4b.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:$p,content:"x"}}' --arg p "$pdir/proof.md"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && is_pretool_deny "$out"
+}
+
+# A hard link into the reserved proof/eci namespace is an alias with no session
+# involved: that namespace is coordinator-owned, so any file under it counts.
+# Dual side: an unlinked file in the same work dir is allowed.
+test_eci_gate_blocks_hardlink_into_reserved_namespace() {
+  local home reserved work input out
+  home="$(fresh_home eci-r1)"
+  reserved="$home/.cache/claude-proof/eci"
+  work="$home/work"
+  mkdir -p "$reserved" "$work" || return 1
+  printf 'state\n' >"$reserved/state.json" || return 1
+  ln "$reserved/state.json" "$work/alias.go" || return 1
+  input="$TMP_ROOT/eci-r1.json"
+  out="$TMP_ROOT/eci-r1.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$work/alias.go"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && is_pretool_deny "$out" || return 1
+  printf 'plain\n' >"$work/plain.go" || return 1
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$work/plain.go"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
+}
+
+# A plain (single-link) own-session proof.md is the working-document exemption:
+# allowed while the session's marker is active.
+test_eci_gate_allows_plain_own_proof_doc() {
+  local home pdir input out
+  home="$(eci_active_home eci-own-proof)"
+  pdir="$home/.cache/claude-proof/t00-session"
+  input="$TMP_ROOT/eci-own-proof.json"
+  out="$TMP_ROOT/eci-own-proof.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:$p,content:"x"}}' --arg p "$pdir/proof.md"
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
+}
+
 # Every string path in tool_input is checked: a benign file_path must not mask a
 # control notebook_path. Dual side: two benign paths stay allowed.
 test_eci_gate_checks_every_target_key() {
@@ -2263,6 +2329,14 @@ run_case "ECI gate blocks reserved proof-dir descendant, allows nested non-reser
   test_eci_gate_blocks_reserved_proof_dir_descendant
 run_case "ECI gate blocks hard-link alias to active marker" \
   test_eci_gate_blocks_hardlink_alias_to_marker
+run_case "ECI gate blocks hard-link to inactive session's control file from a plain name" \
+  test_eci_gate_blocks_hardlink_to_inactive_session_control
+run_case "ECI gate blocks own working doc hard-linked to inactive session's control file" \
+  test_eci_gate_blocks_own_working_doc_hardlink_to_inactive_control
+run_case "ECI gate blocks hard-link into reserved proof namespace" \
+  test_eci_gate_blocks_hardlink_into_reserved_namespace
+run_case "ECI gate allows plain own-session proof.md" \
+  test_eci_gate_allows_plain_own_proof_doc
 run_case "ECI gate blocks symlink resolving to control file" \
   test_eci_gate_blocks_symlink_to_control_file
 run_case "ECI gate skips on unsafe session_id" \

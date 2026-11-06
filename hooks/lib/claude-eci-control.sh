@@ -6,9 +6,10 @@
 # .codex-proof-alias directories, ~/.codex/sessions owner lookup, eci
 # accidental-override records, and the stop-gate root cache.
 #
-# Marker trust: Claude eci_active markers carry no session_id/cwd fields
-# (they hold "task:"/"engaged:" lines), so a marker is trusted by location
-# alone: a regular, non-symlink <root>/<session>/eci_active in a safe root.
+# Alias scope: hard links and symlinks to control files are checked against
+# every session dir under the proof root, active or not, plus the reserved
+# namespaces (claude_path_is_eci_control_alias). Session activity is never
+# consulted, so no marker has to be trusted.
 
 . "${BASH_SOURCE[0]%/*}/claude-proof-state.sh"
 
@@ -60,22 +61,6 @@ claude_proof_root_is_safe() {
   return 0
 }
 
-claude_session_dir_is_safe() {
-  local root="$1"
-  local session_id="$2"
-  local dir
-
-  claude_valid_session_id "$session_id" || return 1
-  [ "$root" = "$(claude_resolved_proof_root)" ] || return 1
-  claude_proof_root_is_safe || return 1
-  dir="$root/$session_id"
-  [ ! -L "$dir" ] || return 1
-  if [ -e "$dir" ] || [ -L "$dir" ]; then
-    [ -d "$dir" ] || return 1
-  fi
-  return 0
-}
-
 claude_reserved_proof_dir() {
   case "${1:-}" in
     activity|audit|eci|history|pre-reviewer|reviewer|reviewer-dumps|security-warnings-*|side-stop|skip-stop|skills)
@@ -100,38 +85,44 @@ claude_eci_control_basename() {
   esac
 }
 
-# Marker check by location only (see header). Returns 0 when the path is the
-# active marker of a valid session directory in the safe canonical root.
-claude_eci_marker_is_active() {
-  local marker="$1" session_id="$2" root
-
-  claude_valid_session_id "$session_id" || return 1
-  claude_proof_root_is_safe || return 1
-  root="$(claude_resolved_proof_root)"
-  claude_session_dir_is_safe "$root" "$session_id" || return 1
-  [ "$marker" = "$root/$session_id/eci_active" ] || return 1
-  [ -f "$marker" ] && [ ! -L "$marker" ] || return 1
-  [ "$(realpath -e -- "$marker" 2>/dev/null || true)" = "$marker" ] || return 1
-}
-
-# A shared edit target can alias a live coordinator control. Single-link
-# files cannot, so ordinary edits do not scan the proof root. Compare shared
-# targets only against control files in active session directories.
+# Alias check for a shared edit target. Single-link files cannot alias, so
+# ordinary edits do not scan. A multi-link file is an alias when a control
+# file under the configured or default proof root has the same inode (hard
+# link). Scope, regardless of session activity:
+#   - one level under each valid session dir: control basenames only;
+#   - the full subtree of each reserved namespace (coordinator-owned);
+#   - the full subtree of each claim dir in a session dir (coordinator-owned).
+# find -quit stops each scan at its first match.
 claude_path_is_eci_control_alias() {
-  local path="${1:-}" root marker candidate session links
+  local path="${1:-}" links default_root root dir name candidate claim
+  local -a roots
   [ -f "$path" ] && [ ! -L "$path" ] || return 1
   links="$(stat -Lc '%h' -- "$path" 2>/dev/null || true)"
   [[ "$links" =~ ^[0-9]+$ ]] && [ "$links" -gt 1 ] || return 1
-  root="$(claude_resolved_proof_root)"
-  [ -d "$root" ] && [ ! -L "$root" ] || return 1
-  for marker in "$root"/*/eci_active; do
-    session="${marker%/*}"
-    session="${session##*/}"
-    claude_eci_marker_is_active "$marker" "$session" || continue
-    for candidate in "${marker%/*}"/* "${marker%/*}"/.eci-*; do
-      claude_eci_control_basename "${candidate##*/}" || continue
-      [ -f "$candidate" ] && [ ! -L "$candidate" ] || continue
-      [ "$candidate" -ef "$path" ] && return 0
+
+  roots=("$(claude_resolved_proof_root)")
+  default_root="$(cd -- "${HOME:-}/.cache/claude-proof" 2>/dev/null && pwd -P || true)"
+  if [ -n "$default_root" ] && [ "$default_root" != "${roots[0]}" ]; then
+    roots+=("$default_root")
+  fi
+
+  for root in "${roots[@]}"; do
+    [ -d "$root" ] && [ ! -L "$root" ] || continue
+    for dir in "$root"/*; do
+      [ -d "$dir" ] && [ ! -L "$dir" ] || continue
+      name="${dir##*/}"
+      if claude_reserved_proof_dir "$name"; then
+        [ -n "$(find "$dir" -type f -samefile "$path" -print -quit 2>/dev/null)" ] && return 0
+        continue
+      fi
+      claude_valid_session_id "$name" || continue
+      while IFS= read -r candidate; do
+        claude_eci_control_basename "${candidate##*/}" && return 0
+      done < <(find "$dir" -maxdepth 1 -type f -samefile "$path" 2>/dev/null)
+      for claim in "$dir/.eci-accidental-mistake-override.claim" "$dir/eci-wait-repair-authorize.claim"; do
+        [ -d "$claim" ] && [ ! -L "$claim" ] || continue
+        [ -n "$(find "$claim" -type f -samefile "$path" -print -quit 2>/dev/null)" ] && return 0
+      done
     done
   done
   return 1
