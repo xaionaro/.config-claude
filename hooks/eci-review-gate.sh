@@ -190,7 +190,7 @@ allow_aggregate_current_target_or_refresh() {
 }
 
 phase="${1:-}"
-session_id="${2:-${CLAUDE_SESSION_ID:-}}"
+session_id="${2:-${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-}}}"
 case "$phase" in
   commit|final|off|prewrite) ;;
   *) usage; exit 2 ;;

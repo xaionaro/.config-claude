@@ -137,6 +137,10 @@ new_case
 EXTRA_ENV=(CLAUDE_SESSION_ID="$SID")
 run_gate "$repo" commit
 check "CLAUDE_SESSION_ID env accepted, no manifest passes" 0 stdout "refresh needed: phase=commit"
+new_case
+EXTRA_ENV=(CLAUDE_CODE_SESSION_ID="$SID")
+run_gate "$repo" commit
+check "CLAUDE_CODE_SESSION_ID env accepted, no manifest passes" 0 stdout "refresh needed: phase=commit"
 
 echo "== proof root and session dir"
 new_case
