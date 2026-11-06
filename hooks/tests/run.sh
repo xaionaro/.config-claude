@@ -1472,7 +1472,7 @@ test_validate_bash_marks_redirected_read_shell_activity() {
 }
 
 # Subagent guard: `eci-active off` is denied for a subagent only. The deny reason
-# is the verbatim message (it names the over-denial and how to reword).
+# is the verbatim message (it names the over-denial and says not to retry).
 test_validate_bash_blocks_subagent_eci_active_off() {
   local home input out cmd
   home="$(fresh_home bash-subagent-eci-off)"
@@ -1484,7 +1484,7 @@ test_validate_bash_blocks_subagent_eci_active_off() {
   run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" HOME="$home"
   is_pretool_deny "$out" &&
     json_field_equals "$out" '.hookSpecificOutput.permissionDecisionReason // empty' \
-      "Only the main thread/orchestrator may disengage ECI with eci-active off. Subagents must report completion or blockers to the orchestrator while ECI remains active. This check matches eci-active followed by off anywhere in the command text, quoted text and heredocs included; reword such text, for example grep 'eci-active[[:space:]]off' or git commit -F <file>."
+      'Only the main thread or orchestrator may disengage ECI with `eci-active off`. Subagents report completion or blockers to the orchestrator while ECI stays active. This check matches that phrase anywhere in command text, including quoted text, heredocs and commit messages. Do not retry in any form. Describe the action in other words in commands and commit messages.'
 }
 
 test_validate_bash_allows_main_eci_active_off() {
@@ -2989,7 +2989,7 @@ run_case "subagent allowed: grep -n off ~/.claude/bin/eci-active (off precedes e
   expect_bash_forwarded sub-fwd-13 sub-uuid 'grep -n off ~/.claude/bin/eci-active'
 run_case "subagent allowed: sed -n '/off)/,/;;/p' ~/.claude/bin/eci-active (off precedes eci-active)" \
   expect_bash_forwarded sub-fwd-14 sub-uuid "sed -n '/off)/,/;;/p' ~/.claude/bin/eci-active"
-run_case "subagent allowed: grep -n 'eci-active[[:space:]]off' (documented reword)" \
+run_case "subagent allowed: grep -n 'eci-active[[:space:]]off' (bracket class does not spell the phrase)" \
   expect_bash_forwarded sub-fwd-15 sub-uuid "grep -n 'eci-active[[:space:]]off' hooks/tests/run.sh"
 run_case "subagent allowed: echo eci-active offsets (off is a prefix of another word)" \
   expect_bash_forwarded sub-fwd-16 sub-uuid 'echo eci-active offsets'
