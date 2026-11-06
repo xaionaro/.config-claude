@@ -23,7 +23,10 @@ compose_reviewer_prompt() {
   local wrapper=$1
   local instructions="$HOME/.claude/CLAUDE.md"
   local stop_checklist="$HOME/.claude/hooks/stop-checklist.md"
-  local memory_index="$HOME/.claude/projects/-home-streaming--claude/memory/MEMORY.md"
+  # Claude Code project dir = cwd with each non-alphanumeric char replaced by '-'.
+  local project_key memory_index
+  project_key="$(printf '%s' "$PWD" | sed 's/[^A-Za-z0-9]/-/g')"
+  memory_index="$HOME/.claude/projects/$project_key/memory/MEMORY.md"
 
   [ -f "$wrapper" ] || { printf 'compose_reviewer_prompt: wrapper not found: %s\n' "$wrapper" >&2; return 1; }
   [ -f "$instructions" ] || { printf 'compose_reviewer_prompt: CLAUDE.md not found: %s\n' "$instructions" >&2; return 1; }
@@ -54,5 +57,7 @@ compose_reviewer_prompt() {
     echo
     cat "$memory_index"
     echo
+  else
+    printf 'compose_reviewer_prompt: no MEMORY.md at %s; memory section omitted\n' "$memory_index" >&2
   fi
 }
