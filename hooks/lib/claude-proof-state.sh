@@ -8,7 +8,7 @@
 # .agent_id check (see claude_hook_is_subagent_context below).
 
 claude_proof_root() {
-  printf '%s\n' "${CLAUDE_PROOF_ROOT:-$HOME/.cache/claude-proof}"
+  printf '%s\n' "${CLAUDE_PROOF_ROOT:-${HOME:-}/.cache/claude-proof}"
 }
 
 claude_valid_session_id() {
