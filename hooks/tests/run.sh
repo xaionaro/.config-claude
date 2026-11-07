@@ -86,9 +86,8 @@ run_hook() {
     bash "$hook" <"$input_file" >"$out" 2>"$out.err"
 }
 
-# Like run_hook but runs the hook with cwd set to $dir. Required for stop-gate.sh
-# which calls `git status --porcelain` against the current shell cwd (not against
-# input.cwd via `git -C`); the test repo must be the cwd to get an honest answer.
+# Like run_hook but runs the hook with cwd set to $dir, for hooks whose result
+# depends on the current shell cwd rather than on input.cwd.
 run_hook_in_dir() {
   local dir="$1" out="$2" hook="$3" input_file="$4"; shift 4
   local env_args=()
@@ -113,141 +112,13 @@ json_field_not_contains() { ! json_field_contains "$@"; }
 is_pretool_deny() {
   json_field_equals "$1" '.hookSpecificOutput.permissionDecision // empty' "deny"
 }
-is_pretool_allow() {
-  ! is_pretool_deny "$1"
-}
-is_stop_block() {
-  json_field_equals "$1" '.decision // empty' "block"
-}
 expect_no_output() {
   [ ! -s "$1" ]
-}
-expect_silent_or_no_decision() {
-  # Hook either exited silently or emitted nothing parseable as a decision.
-  local d
-  d=$(jq -r '.hookSpecificOutput.permissionDecision // .decision // "no-decision"' "$1" 2>/dev/null)
-  [ -z "$d" ] && d="no-decision"
-  [ "$d" = "no-decision" ]
 }
 
 with_cwd_fixture() {
   local src="$1" dst="$2"
   jq --arg cwd "$ROOT" '.cwd = $cwd' "$src" >"$dst"
-}
-with_cwd_path() {
-  local src="$1" dst="$2" cwd="$3"
-  jq --arg cwd "$cwd" '.cwd = $cwd' "$src" >"$dst"
-}
-
-make_git_repo() {
-  local name="$1"
-  local repo="$TMP_ROOT/git-$name"
-  mkdir -p "$repo" || return 1
-  git -C "$repo" init -q || return 1
-  git -C "$repo" config user.email "hooks-test@example.invalid" || return 1
-  git -C "$repo" config user.name "Hooks Test" || return 1
-  printf 'base\n' >"$repo/file.txt"
-  git -C "$repo" add file.txt || return 1
-  git -C "$repo" commit -qm "initial" || return 1
-  printf '%s\n' "$repo"
-}
-
-# Like make_git_repo but seeds a .go file so the stop-gate's
-# "code-changes" filter (which excludes .txt/.md/etc) sees changes
-# when the test mutates file.go.
-make_git_repo_with_code() {
-  local name="$1"
-  local repo="$TMP_ROOT/git-$name"
-  mkdir -p "$repo" || return 1
-  git -C "$repo" init -q || return 1
-  git -C "$repo" config user.email "hooks-test@example.invalid" || return 1
-  git -C "$repo" config user.name "Hooks Test" || return 1
-  printf 'package main\nfunc main() {}\n' >"$repo/file.go"
-  git -C "$repo" add file.go || return 1
-  git -C "$repo" commit -qm "initial" || return 1
-  printf '%s\n' "$repo"
-}
-
-make_fake_gitleaks() {
-  local name="$1"
-  local bin_dir="$TMP_ROOT/bin-$name"
-  mkdir -p "$bin_dir" || return 1
-  cat >"$bin_dir/gitleaks" <<'SCRIPT'
-#!/usr/bin/env bash
-set -u
-
-report=""
-source="."
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --report-path|-r)
-      shift
-      report="${1:-}"
-      ;;
-    --source|-s)
-      shift
-      source="${1:-.}"
-      ;;
-  esac
-  shift || break
-done
-
-if [ -z "$report" ]; then
-  printf '%s\n' "missing report path" >&2
-  exit 2
-fi
-
-if [ "${FAKE_GITLEAKS_MODE:-}" = "error" ]; then
-  printf '%s\n' "scanner exploded" >&2
-  exit 2
-fi
-
-if [ -d "$source" ] && grep -R "FAKE_SECRET" "$source" >/dev/null 2>&1; then
-  cat >"$report" <<'JSON'
-[
-  {
-    "Description": "Fake secret",
-    "StartLine": 2,
-    "File": "file.txt",
-    "RuleID": "fake-secret"
-  }
-]
-JSON
-  exit 1
-fi
-
-printf '[]\n' >"$report"
-exit 0
-SCRIPT
-  chmod +x "$bin_dir/gitleaks" || return 1
-  printf '%s\n' "$bin_dir"
-}
-
-install_proof_fixture() {
-  local proof_root="$1" fixture="$2"
-  mkdir -p "$proof_root/t00-session" || return 1
-  cp "$fixture" "$proof_root/t00-session/proof.md"
-}
-
-# Run stop-gate once with a complete proof to seed the freshness oracle
-# history file, then restore proof.md and baseline_head (cleanup wipes
-# them on accept). After this returns, the next stop-gate run will see
-# PREV_SHA matching the audit fingerprint.
-seed_freshness_oracle() {
-  local home="$1" repo="$2" sid="$3" fixture="$4"
-  local sd input out
-  sd="$home/tmp/agent/proof/$sid"
-  mkdir -p "$sd"
-  cp "$fixture" "$sd/proof.md"
-  git -C "$repo" rev-parse HEAD >"$sd/baseline_head"
-  input=$(jq -n --arg sid "$sid" --arg cwd "$repo" --arg tr "/tmp/seed.jsonl" \
-    '{session_id:$sid,transcript_path:$tr,stop_hook_active:false,cwd:$cwd}')
-  out="$TMP_ROOT/seed-$sid.out"
-  ( cd "$repo" && printf '%s' "$input" | env -i HOME="$home" PATH="$PATH" \
-      bash "$ROOT/hooks/stop-gate.sh" >"$out" 2>"$out.err" ) || true
-  # Re-install proof + baseline (the hook's accept-cleanup wiped them).
-  cp "$fixture" "$sd/proof.md"
-  git -C "$repo" rev-parse HEAD >"$sd/baseline_head"
 }
 
 # write a baseline_head referring to the repo's current HEAD
@@ -257,163 +128,9 @@ seed_baseline_head() {
   git -C "$repo" rev-parse HEAD >"$proof_dir/baseline_head" 2>/dev/null
 }
 
-write_transcript_with_activity() {
-  local path="$1"
-  cat >"$path" <<'EOF'
-{"type":"user","message":{"role":"user","content":"do something"}}
-{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"ls"}}]}}
-EOF
-}
-
 # ===========================================================================
 # ORIGINAL 15 TESTS — preserved verbatim from the start-here scaffold.
 # ===========================================================================
-
-test_stop_gate_exempts_subagent_with_agent_id() {
-  local proof_root tr input_file out decision
-  proof_root="$(fresh_proof_root subagent-exempt)"
-  tr="$TMP_ROOT/subagent-transcript.jsonl"
-  write_transcript_with_activity "$tr"
-
-  input_file="$TMP_ROOT/subagent-stop-input.json"
-  jq --arg tr "$tr" --arg cwd "$ROOT" \
-    '. + {agent_id:"sub-uuid", session_id:"t00-sub", transcript_path:$tr, cwd:$cwd}' \
-    "$FIXTURES/stop-basic.json" >"$input_file"
-
-  mkdir -p "$proof_root/t00-sub"
-  git rev-parse HEAD >"$proof_root/t00-sub/baseline_head" 2>/dev/null || \
-    printf '%s' "0000000000000000000000000000000000000000" >"$proof_root/t00-sub/baseline_head"
-
-  out="$TMP_ROOT/subagent-stop.out"
-  run_hook "$out" "$ROOT/hooks/stop-gate.sh" "$input_file" \
-    CLAUDE_PROOF_ROOT="$proof_root"
-  decision=$(jq -r '.decision // "no-decision"' <"$out" 2>/dev/null)
-  [ -z "$decision" ] && decision="no-decision"
-
-  if [ "$decision" = "no-decision" ]; then
-    pass "stop-gate exempts subagent with agent_id (no CLAUDE_ROLE)"
-  else
-    fail "stop-gate exempts subagent with agent_id (no CLAUDE_ROLE)" \
-         "decision=$decision; expected silent exit. Output: $(head -c 300 "$out")"
-  fi
-}
-
-test_stop_gate_does_not_exempt_agent_type_only() {
-  # agent_type alone is a main-thread --agent session (Claude docs); only agent_id marks a subagent.
-  local proof_root tr input_file out decision
-  proof_root="$(fresh_proof_root subagent-by-type)"
-  tr="$TMP_ROOT/agent-type-transcript.jsonl"
-  write_transcript_with_activity "$tr"
-
-  input_file="$TMP_ROOT/subagent-type-input.json"
-  jq --arg tr "$tr" --arg cwd "$ROOT" \
-    '{session_id:"t00-by-type",transcript_path:$tr,cwd:$cwd,permission_mode:"bypassPermissions",agent_type:"general-purpose",hook_event_name:"Stop",stop_hook_active:false,last_assistant_message:"done"}' \
-    <<<'{}' >"$input_file"
-
-  mkdir -p "$proof_root/t00-by-type"
-  git rev-parse HEAD >"$proof_root/t00-by-type/baseline_head" 2>/dev/null || \
-    printf '%s' "0000000000000000000000000000000000000000" >"$proof_root/t00-by-type/baseline_head"
-
-  out="$TMP_ROOT/subagent-type.out"
-  run_hook "$out" "$ROOT/hooks/stop-gate.sh" "$input_file" \
-    CLAUDE_PROOF_ROOT="$proof_root"
-  decision=$(jq -r '.decision // "no-decision"' <"$out" 2>/dev/null)
-  [ -z "$decision" ] && decision="no-decision"
-
-  if [ "$decision" = "block" ]; then
-    pass "stop-gate does not exempt agent_type-only main thread (no agent_id)"
-  else
-    fail "stop-gate does not exempt agent_type-only main thread (no agent_id)" \
-         "decision=$decision; expected block. Output: $(head -c 300 "$out")"
-  fi
-}
-
-test_stop_gate_blocks_main_thread_with_activity() {
-  local proof_root tr input_file out decision
-  proof_root="$(fresh_proof_root main-thread-block)"
-  tr="$TMP_ROOT/main-transcript.jsonl"
-  write_transcript_with_activity "$tr"
-
-  input_file="$TMP_ROOT/main-stop-input.json"
-  jq --arg tr "$tr" --arg cwd "$ROOT" \
-    '. + {session_id:"t00-main", transcript_path:$tr, cwd:$cwd}' \
-    "$FIXTURES/stop-basic.json" >"$input_file"
-
-  mkdir -p "$proof_root/t00-main"
-  git rev-parse HEAD >"$proof_root/t00-main/baseline_head" 2>/dev/null || \
-    printf '%s' "0000000000000000000000000000000000000000" >"$proof_root/t00-main/baseline_head"
-
-  out="$TMP_ROOT/main-stop.out"
-  run_hook "$out" "$ROOT/hooks/stop-gate.sh" "$input_file" \
-    CLAUDE_PROOF_ROOT="$proof_root"
-  decision=$(jq -r '.decision // "no-decision"' <"$out" 2>/dev/null)
-  [ -z "$decision" ] && decision="no-decision"
-
-  if [ "$decision" = "block" ]; then
-    pass "stop-gate blocks main thread (no agent_id, no CLAUDE_ROLE) with transcript activity"
-  else
-    fail "stop-gate blocks main thread (no agent_id, no CLAUDE_ROLE) with transcript activity" \
-         "decision=$decision; expected 'block'. Output: $(head -c 300 "$out")"
-  fi
-}
-
-test_stop_gate_exempts_subordinate_role() {
-  local proof_root tr input_file out decision
-  proof_root="$(fresh_proof_root role-exempt)"
-  tr="$TMP_ROOT/role-transcript.jsonl"
-  write_transcript_with_activity "$tr"
-
-  input_file="$TMP_ROOT/role-stop-input.json"
-  jq --arg tr "$tr" --arg cwd "$ROOT" \
-    '. + {session_id:"t00-role", transcript_path:$tr, cwd:$cwd}' \
-    "$FIXTURES/stop-basic.json" >"$input_file"
-
-  mkdir -p "$proof_root/t00-role"
-  git rev-parse HEAD >"$proof_root/t00-role/baseline_head" 2>/dev/null || \
-    printf '%s' "0000000000000000000000000000000000000000" >"$proof_root/t00-role/baseline_head"
-
-  out="$TMP_ROOT/role-stop.out"
-  run_hook "$out" "$ROOT/hooks/stop-gate.sh" "$input_file" \
-    CLAUDE_PROOF_ROOT="$proof_root" CLAUDE_ROLE="executor"
-  decision=$(jq -r '.decision // "no-decision"' <"$out" 2>/dev/null)
-  [ -z "$decision" ] && decision="no-decision"
-
-  if [ "$decision" = "no-decision" ]; then
-    pass "stop-gate exempts CLAUDE_ROLE=executor (subordinate role)"
-  else
-    fail "stop-gate exempts CLAUDE_ROLE=executor (subordinate role)" \
-         "decision=$decision; expected silent exit. Output: $(head -c 300 "$out")"
-  fi
-}
-
-test_stop_gate_blocks_team_lead_role() {
-  local proof_root tr input_file out decision
-  proof_root="$(fresh_proof_root lead-block)"
-  tr="$TMP_ROOT/lead-transcript.jsonl"
-  write_transcript_with_activity "$tr"
-
-  input_file="$TMP_ROOT/lead-stop-input.json"
-  jq --arg tr "$tr" --arg cwd "$ROOT" \
-    '. + {session_id:"t00-lead", transcript_path:$tr, cwd:$cwd}' \
-    "$FIXTURES/stop-basic.json" >"$input_file"
-
-  mkdir -p "$proof_root/t00-lead"
-  git rev-parse HEAD >"$proof_root/t00-lead/baseline_head" 2>/dev/null || \
-    printf '%s' "0000000000000000000000000000000000000000" >"$proof_root/t00-lead/baseline_head"
-
-  out="$TMP_ROOT/lead-stop.out"
-  run_hook "$out" "$ROOT/hooks/stop-gate.sh" "$input_file" \
-    CLAUDE_PROOF_ROOT="$proof_root" CLAUDE_ROLE="lead"
-  decision=$(jq -r '.decision // "no-decision"' <"$out" 2>/dev/null)
-  [ -z "$decision" ] && decision="no-decision"
-
-  if [ "$decision" = "block" ]; then
-    pass "stop-gate blocks CLAUDE_ROLE=lead with transcript activity"
-  else
-    fail "stop-gate blocks CLAUDE_ROLE=lead with transcript activity" \
-         "decision=$decision; expected 'block'. Output: $(head -c 300 "$out")"
-  fi
-}
 
 test_validate_edit_write_blocks_singular_import_dir() {
   local input out decision
@@ -639,27 +356,6 @@ EOF
   else
     fail "validate-bash allows writes under singular import/ dir" \
          "decision=$decision; expected no-decision. Output: $(head -c 300 "$out")"
-  fi
-}
-
-test_stop_gate_skips_ephemeral_session() {
-  local proof_root input_file out decision
-  proof_root="$(fresh_proof_root ephemeral-skip)"
-
-  input_file="$TMP_ROOT/ephemeral-stop-input.json"
-  jq --arg cwd "$ROOT" '. + {cwd:$cwd}' "$FIXTURES/stop-ephemeral.json" >"$input_file"
-
-  out="$TMP_ROOT/ephemeral-stop.out"
-  run_hook "$out" "$ROOT/hooks/stop-gate.sh" "$input_file" \
-    CLAUDE_PROOF_ROOT="$proof_root"
-  decision=$(jq -r '.decision // "no-decision"' <"$out" 2>/dev/null)
-  [ -z "$decision" ] && decision="no-decision"
-
-  if [ "$decision" = "no-decision" ]; then
-    pass "stop-gate skips ephemeral session (transcript_path null)"
-  else
-    fail "stop-gate skips ephemeral session (transcript_path null)" \
-         "decision=$decision; expected silent exit. Output: $(head -c 300 "$out")"
   fi
 }
 
@@ -1170,19 +866,6 @@ test_eci_gate_denies_edit_with_non_object_tool_input() {
   [ "$rc" -eq 0 ] && expect_no_output "$out"
 }
 
-# Broadening: skill-marker-gate must enforce required-skill markers on
-# NotebookEdit too. Fixture targets src/foo.py (requires coding-python)
-# without the marker file present.
-test_skill_marker_gate_blocks_notebookedit_without_marker() {
-  local home out
-  home="$(fresh_home skill-marker-notebook)"
-  # No marker dir created — skill not yet invoked, gate must deny.
-  out="$TMP_ROOT/skill-marker-notebook.out"
-  run_hook "$out" "$ROOT/hooks/skill-marker-gate.sh" "$FIXTURES/notebookedit-skill-marker-deny.json" HOME="$home"
-  is_pretool_deny "$out" &&
-    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "coding-python"
-}
-
 # ---- ATE orchestrator gate ----
 
 test_ate_gate_allows_edits_for_lead() {
@@ -1529,13 +1212,11 @@ pipe_hazard_row() {
 
 # Files the static check reads: every hooks/*.sh and bin/* that sets pipefail,
 # and every hooks/lib/*.sh, which hooks source and which then run under their
-# pipefail. stop-gate.sh is left out on purpose: no settings.json event runs it
-# any more (Codex has no Stop hook), and it is frozen as a retired hook.
+# pipefail.
 pipefail_scanned_files() {
   local file
   for file in "$ROOT"/hooks/*.sh "$ROOT"/bin/*; do
     [ -f "$file" ] || continue
-    [ "${file##*/}" = stop-gate.sh ] && continue
     sets_pipefail "$file" && printf '%s\n' "$file"
   done
   printf '%s\n' "$ROOT"/hooks/lib/*.sh
@@ -1625,15 +1306,12 @@ test_pipefail_scripts_never_pipe_into_grep_or_an_early_exit_reader() {
   pipe_hazard_row clean $'return cmd ~ /^(cat|cut|grep|head|rg)$/' || return 1
   pipe_hazard_row clean $'printf %s "$V" |' $'  # a grep follows' $'  tr -d x' || return 1
   # Every file the check reads, and only those: the pinned ones must be among
-  # them, so a broken sets_pipefail cannot skip the files this guards, and
-  # stop-gate.sh must not be.
+  # them, so a broken sets_pipefail cannot skip the files this guards.
   scanned="$(pipefail_scanned_files)" || return 1
   for pinned in hooks/system-prompt-reviewer.sh hooks/validate-edit-write.sh hooks/validate-bash.sh \
-    hooks/lib/claude-pre-reviewer-state.sh hooks/validate-apply-patch.sh hooks/pretooluse-edit-dispatch.sh \
-    bin/eci-active; do
+    hooks/validate-apply-patch.sh hooks/pretooluse-edit-dispatch.sh bin/eci-active; do
     case $'\n'"$scanned"$'\n' in *$'\n'"$ROOT/$pinned"$'\n'*) ;; *) note "     $pinned is not scanned"; return 1 ;; esac
   done
-  case "$scanned" in *"/stop-gate.sh"*) note "     stop-gate.sh is scanned"; return 1 ;; esac
   while IFS= read -r file; do
     hazards="$(pipe_hazards_in "$file")" && {
       note "     ${file#"$ROOT"/}: ${hazards//$'\n'/; }"
@@ -1641,29 +1319,6 @@ test_pipefail_scripts_never_pipe_into_grep_or_an_early_exit_reader() {
     }
   done <<<"$scanned"
   [ "$bad" = 0 ]
-}
-
-# ---- eci-pending-set ----
-# With ECI active for the session, the main thread arms $PROOF_DIR/eci_teammate_pending
-# on an Agent dispatch; a subagent (non-empty .agent_id, jq `//` semantics) does not.
-# Args: name armed(yes|no) identity-fields-json.
-expect_eci_pending_marker() {
-  local home pdir input out marker
-  home="$(fresh_home "$1")" || return 1
-  pdir="$(proof_dir_in_home "$home" t00-session)" || return 1
-  : >"$pdir/eci_active" || return 1
-  marker="$pdir/eci_teammate_pending"
-  input="$TMP_ROOT/$1.json"
-  jq -cn --argjson identity "$3" \
-    '{session_id:"t00-session",tool_name:"Agent",tool_input:{prompt:"x"}} + $identity' >"$input" || return 1
-  out="$TMP_ROOT/$1.out"
-  run_hook "$out" "$ROOT/hooks/eci-pending-set.sh" "$input" HOME="$home" || return 1
-  expect_no_output "$out" || return 1
-  case "$2" in
-  yes) [ -e "$marker" ] ;;
-  no) [ ! -e "$marker" ] ;;
-  *) return 1 ;;
-  esac
 }
 
 # ---- validate-bash ----
@@ -2707,327 +2362,6 @@ test_prompt_state_emits_eci_reminder_when_marker_exists() {
     grep -q "porting tests" "$out"
 }
 
-# ---- stop-gate (proof.md / git / gitleaks / activity / freshness) ----
-
-test_stop_gate_blocks_missing_proof_sections() {
-  local home repo input out
-  home="$(fresh_home stop-missing)"
-  repo="$(make_git_repo stop-missing)" || return 1
-  install_proof_fixture "$home/tmp/agent/proof" "$FIXTURES/proof-missing-sections.md"
-  input="$TMP_ROOT/stop-missing.json"
-  with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
-  out="$TMP_ROOT/stop-missing.out"
-  run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" HOME="$home" CLAUDE_STOP_REVIEWER=""
-  is_stop_block "$out" &&
-    json_field_contains "$out" '.reason // empty' "missing required sections"
-}
-
-test_stop_gate_accepts_complete_proof() {
-  local home repo input out
-  home="$(fresh_home stop-accept)"
-  repo="$(make_git_repo stop-accept)" || return 1
-  install_proof_fixture "$home/tmp/agent/proof" "$FIXTURES/proof-complete.md"
-  input="$TMP_ROOT/stop-accept.json"
-  with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
-  out="$TMP_ROOT/stop-accept.out"
-  run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" HOME="$home" CLAUDE_STOP_REVIEWER=""
-  # Proof was processed (no "missing required sections"). Claude blocks once
-  # to print the summary; hook returns silently on the second invocation.
-  ! json_field_contains "$out" '.reason // empty' "missing required sections"
-}
-
-test_stop_gate_blocks_clean_scan_empty_source() {
-  local home repo input out
-  home="$(fresh_home stop-empty-source)"
-  repo="$(make_git_repo stop-empty-source)" || return 1
-  install_proof_fixture "$home/tmp/agent/proof" "$FIXTURES/proof-audit-clean-empty-source.md"
-  input="$TMP_ROOT/stop-empty-source.json"
-  with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
-  out="$TMP_ROOT/stop-empty-source.out"
-  run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" HOME="$home" CLAUDE_STOP_REVIEWER=""
-  is_stop_block "$out" &&
-    json_field_contains "$out" '.reason // empty' "three non-empty sources"
-}
-
-test_stop_gate_blocks_blocker_missing_input() {
-  local home repo input out
-  home="$(fresh_home stop-blocker-input)"
-  repo="$(make_git_repo stop-blocker-input)" || return 1
-  install_proof_fixture "$home/tmp/agent/proof" "$FIXTURES/proof-audit-blocker-missing-input.md"
-  input="$TMP_ROOT/stop-blocker-input.json"
-  with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
-  out="$TMP_ROOT/stop-blocker-input.out"
-  run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" HOME="$home" CLAUDE_STOP_REVIEWER=""
-  is_stop_block "$out" &&
-    json_field_contains "$out" '.reason // empty' "blocker missing"
-}
-
-test_stop_gate_blocks_blocker_missing_command() {
-  local home repo input out
-  home="$(fresh_home stop-blocker-cmd)"
-  repo="$(make_git_repo stop-blocker-cmd)" || return 1
-  install_proof_fixture "$home/tmp/agent/proof" "$FIXTURES/proof-audit-blocker-missing-command.md"
-  input="$TMP_ROOT/stop-blocker-cmd.json"
-  with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
-  out="$TMP_ROOT/stop-blocker-cmd.out"
-  run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" HOME="$home" CLAUDE_STOP_REVIEWER=""
-  is_stop_block "$out" &&
-    json_field_contains "$out" '.reason // empty' "blocker missing"
-}
-
-test_stop_gate_blocks_placeholder_blocker_command() {
-  local home repo input out
-  home="$(fresh_home stop-placeholder)"
-  repo="$(make_git_repo stop-placeholder)" || return 1
-  install_proof_fixture "$home/tmp/agent/proof" "$FIXTURES/proof-audit-blocker-placeholder-command.md"
-  input="$TMP_ROOT/stop-placeholder.json"
-  with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
-  out="$TMP_ROOT/stop-placeholder.out"
-  run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" HOME="$home" CLAUDE_STOP_REVIEWER=""
-  is_stop_block "$out" &&
-    json_field_contains "$out" '.reason // empty' "placeholder"
-}
-
-test_stop_gate_blocks_fake_audit_commit() {
-  local home repo input out
-  home="$(fresh_home stop-fake-commit)"
-  repo="$(make_git_repo stop-fake-commit)" || return 1
-  install_proof_fixture "$home/tmp/agent/proof" "$FIXTURES/proof-audit-fake-commit.md"
-  input="$TMP_ROOT/stop-fake-commit.json"
-  with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
-  out="$TMP_ROOT/stop-fake-commit.out"
-  run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" HOME="$home" CLAUDE_STOP_REVIEWER=""
-  is_stop_block "$out" &&
-    json_field_contains "$out" '.reason // empty' "unreachable"
-}
-
-# DROPPED: test_stop_gate_blocks_identical_audit_without_rescanned
-# Real Claude bug, NOT a test/adaptation issue. claude/hooks/stop-gate.sh:659
-# uses `grep ... | head -n1` inside `$(...)` while `set -euo pipefail` is
-# active. When the audit has no `rescanned:` line (the case under test),
-# grep returns 1, pipefail propagates, and `set -e` silently exits the hook
-# BEFORE the "byte-identical" block can fire. Codex's equivalent uses awk
-# instead, so codex's test passes. Reproduces deterministically with a fresh
-# proof, identical re-submission, and an unchanged repo — see commit body.
-
-test_stop_gate_accepts_identical_audit_with_rescanned() {
-  local home repo input out
-  home="$(fresh_home stop-identical-rescan)"
-  repo="$(make_git_repo stop-identical-rescan)" || return 1
-  install_proof_fixture "$home/tmp/agent/proof" "$FIXTURES/proof-complete-rescanned.md"
-  input="$TMP_ROOT/stop-id-rescan-1.json"
-  with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
-  run_hook_in_dir "$repo" "$TMP_ROOT/stop-id-rescan-1.out" "$ROOT/hooks/stop-gate.sh" "$input" \
-    HOME="$home" CLAUDE_STOP_REVIEWER="" || true
-  install_proof_fixture "$home/tmp/agent/proof" "$FIXTURES/proof-complete-rescanned.md"
-  out="$TMP_ROOT/stop-id-rescan-2.out"
-  run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" HOME="$home" CLAUDE_STOP_REVIEWER=""
-  ! json_field_contains "$out" '.reason // empty' "byte-identical"
-}
-
-test_stop_gate_continues_clean_inactive_turn() {
-  local home repo input out
-  home="$(fresh_home stop-clean)"
-  repo="$(make_git_repo stop-clean)" || return 1
-  input="$TMP_ROOT/stop-clean.json"
-  with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
-  out="$TMP_ROOT/stop-clean.out"
-  run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" HOME="$home" CLAUDE_STOP_REVIEWER=""
-  ! is_stop_block "$out" || json_field_contains "$out" '.reason // empty' "Verification proof accepted"
-}
-
-# Regression for the cleanup that runs at PROOF_DIR on every stop. The
-# context-ledger skill mandates project-understanding.md,
-# high_level_log.md, and latest-status-report.md persist across stops;
-# everything else (proof.md, baseline_head, scratch dirs, etc.) must be
-# cleared. Extracts the live find cleanup line(s) from stop-gate.sh,
-# substitutes PROOF_DIR for a scratch dir, and asserts dual-sided behavior.
-# Also asserts both occurrences of the cleanup line are byte-identical so a
-# single check covers both.
-test_stop_gate_cleanup_preserves_ledger_files() {
-  local dir lines uniq line cmd
-  lines=$(grep -F '[ -d "$PROOF_DIR" ] && find "$PROOF_DIR" -mindepth 1 -maxdepth 1' "$ROOT/hooks/stop-gate.sh" || true)
-  [ -n "$lines" ] || return 1
-  [ "$(printf '%s\n' "$lines" | wc -l)" -ge 2 ] || return 1
-  uniq=$(printf '%s\n' "$lines" | sed 's/^[[:space:]]*//' | sort -u | wc -l)
-  [ "$uniq" -eq 1 ] || return 1
-
-  dir="$TMP_ROOT/stop-cleanup-ledger"
-  rm -rf "$dir"
-  mkdir -p "$dir/research"
-  printf 'ledger\n' >"$dir/project-understanding.md"
-  printf 'history\n' >"$dir/high_level_log.md"
-  printf 'report\n' >"$dir/latest-status-report.md"
-  printf 'scratch\n' >"$dir/baseline_head"
-  printf 'p\n' >"$dir/proof.md"
-  printf 'r\n' >"$dir/research/r1.md"
-
-  line=$(printf '%s\n' "$lines" | head -n1 | sed 's/^[[:space:]]*//')
-  cmd=${line//\$PROOF_DIR/$dir}
-  bash -c "$cmd" || true
-
-  # Good behavior IS happening: all three ledger files preserved.
-  [ -f "$dir/project-understanding.md" ] || return 1
-  [ -f "$dir/high_level_log.md" ] || return 1
-  [ -f "$dir/latest-status-report.md" ] || return 1
-  # Bad behavior is NOT happening: non-ledger entries cleared.
-  [ ! -e "$dir/baseline_head" ] || return 1
-  [ ! -e "$dir/proof.md" ] || return 1
-  [ ! -e "$dir/research" ] || return 1
-}
-
-test_stop_gate_blocks_dirty_git_state() {
-  local home repo input out
-  home="$(fresh_home stop-dirty)"
-  repo="$(make_git_repo stop-dirty)" || return 1
-  printf 'dirty\n' >>"$repo/file.txt"
-  input="$TMP_ROOT/stop-dirty.json"
-  with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
-  out="$TMP_ROOT/stop-dirty.out"
-  run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" HOME="$home" CLAUDE_STOP_REVIEWER=""
-  is_stop_block "$out"
-}
-
-# DROPPED: test_stop_gate_blocks_committed_state_without_proof
-# Real Claude vs Codex semantic difference. Claude's stop-gate.sh:386 checks
-# only the worktree (`git status --porcelain`) for the activity-empty fast-
-# continue gate; a clean worktree + no transcript activity → silent allow
-# even when HEAD advanced past the recorded baseline_head. Codex's gate
-# compares baseline..HEAD and blocks. Not portable as-is.
-
-test_stop_gate_blocks_gitleaks_findings_dirty() {
-  local home repo bin_dir input out
-  home="$(fresh_home stop-gl-dirty)"
-  repo="$(make_git_repo_with_code stop-gl-dirty)" || return 1
-  bin_dir="$(make_fake_gitleaks stop-gl-dirty)" || return 1
-  printf 'FAKE_SECRET\n' >>"$repo/file.go"
-  input="$TMP_ROOT/stop-gl-dirty.json"
-  with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
-  out="$TMP_ROOT/stop-gl-dirty.out"
-  run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" \
-    HOME="$home" PATH="$bin_dir:$PATH" CLAUDE_STOP_REVIEWER=""
-  is_stop_block "$out" &&
-    json_field_contains "$out" '.reason // empty' "secret"
-}
-
-# DROPPED: test_stop_gate_blocks_gitleaks_findings_untracked
-# Real Claude vs Codex semantic difference. Claude's CODE_CHANGES detection
-# (stop-gate.sh:771-780) only inspects `git diff` and `git diff --cached`,
-# not `git ls-files --others --exclude-standard`, so an untracked .go file
-# with FAKE_SECRET goes through the no-code-changes branch and the gitleaks
-# scan is skipped. Codex's stop-gate scans the worktree directly via
-# `gitleaks protect --source $repo`, so the untracked file is caught.
-
-test_stop_gate_blocks_gitleaks_execution_failure() {
-  local home repo bin_dir input out
-  home="$(fresh_home stop-gl-error)"
-  repo="$(make_git_repo_with_code stop-gl-error)" || return 1
-  bin_dir="$(make_fake_gitleaks stop-gl-error)" || return 1
-  printf 'ordinary change\n' >>"$repo/file.go"
-  input="$TMP_ROOT/stop-gl-error.json"
-  with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
-  out="$TMP_ROOT/stop-gl-error.out"
-  run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" \
-    HOME="$home" PATH="$bin_dir:$PATH" CLAUDE_STOP_REVIEWER="" FAKE_GITLEAKS_MODE=error
-  is_stop_block "$out" &&
-    json_field_contains "$out" '.reason // empty' "Automated secret scan could not complete"
-}
-
-test_stop_gate_blocks_eci_active_state() {
-  local home pdir repo input out
-  home="$(fresh_home stop-eci-active)"
-  pdir="$(proof_dir_in_home "$home" t00-session)"
-  printf 'task: test\n' >"$pdir/eci_active"
-  repo="$(make_git_repo stop-eci-active)" || return 1
-  input="$TMP_ROOT/stop-eci-active.json"
-  with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
-  out="$TMP_ROOT/stop-eci-active.out"
-  run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" HOME="$home" CLAUDE_STOP_REVIEWER=""
-  is_stop_block "$out" &&
-    json_field_contains "$out" '.reason // empty' "ECI active and no teammate awaited"
-}
-
-test_stop_gate_allows_session_skip_state() {
-  local home pdir repo input out
-  home="$(fresh_home stop-skip)"
-  pdir="$(proof_dir_in_home "$home" t00-session)"
-  touch "$pdir/skip_stop"
-  repo="$(make_git_repo stop-skip)" || return 1
-  input="$TMP_ROOT/stop-skip.json"
-  with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
-  out="$TMP_ROOT/stop-skip.out"
-  run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" HOME="$home" CLAUDE_STOP_REVIEWER=""
-  ! is_stop_block "$out"
-}
-
-test_stop_gate_validates_proof_when_stop_hook_active() {
-  local home repo input out
-  home="$(fresh_home stop-active-validates)"
-  repo="$(make_git_repo stop-active-validates)" || return 1
-  install_proof_fixture "$home/tmp/agent/proof" "$FIXTURES/proof-missing-sections.md"
-  input="$TMP_ROOT/stop-active-validates.json"
-  jq --arg cwd "$repo" '.cwd = $cwd | .stop_hook_active = true' "$FIXTURES/stop-basic.json" >"$input"
-  out="$TMP_ROOT/stop-active-validates.out"
-  run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" HOME="$home" CLAUDE_STOP_REVIEWER=""
-  is_stop_block "$out" &&
-    json_field_contains "$out" '.reason // empty' "missing required sections"
-}
-
-test_stop_gate_blocks_preexisting_commit_after_head_advance() {
-  local home repo input out old_commit
-  home="$(fresh_home stop-old-commit)"
-  repo="$(make_git_repo stop-old-commit)" || return 1
-  old_commit="$(git -C "$repo" rev-parse HEAD)"
-  install_proof_fixture "$home/tmp/agent/proof" "$FIXTURES/proof-complete.md"
-  input="$TMP_ROOT/stop-old-commit-1.json"
-  with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
-  run_hook_in_dir "$repo" "$TMP_ROOT/stop-old-commit-1.out" "$ROOT/hooks/stop-gate.sh" "$input" \
-    HOME="$home" CLAUDE_STOP_REVIEWER="" || true
-  printf 'new\n' >>"$repo/file.txt"
-  git -C "$repo" add file.txt && git -C "$repo" commit -qm "advance"
-  mkdir -p "$home/tmp/agent/proof/t00-session"
-  sed "s/__OLD_COMMIT__/$old_commit/g" "$FIXTURES/proof-audit-old-commit-template.md" \
-    >"$home/tmp/agent/proof/t00-session/proof.md"
-  out="$TMP_ROOT/stop-old-commit-2.out"
-  run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" HOME="$home" CLAUDE_STOP_REVIEWER=""
-  is_stop_block "$out" &&
-    json_field_contains "$out" '.reason // empty' "pre-existing"
-}
-
-test_stop_gate_adds_loop_reminder_after_five_blocks() {
-  local home pdir repo input out i
-  home="$(fresh_home stop-loop)"
-  pdir="$(proof_dir_in_home "$home" t00-session)"
-  printf 'task: test\n' >"$pdir/eci_active"
-  repo="$(make_git_repo stop-loop)" || return 1
-  input="$TMP_ROOT/stop-loop.json"
-  with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
-  out="$TMP_ROOT/stop-loop.out"
-  for i in 1 2 3 4 5; do
-    run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" HOME="$home" CLAUDE_STOP_REVIEWER="" || return 1
-  done
-  is_stop_block "$out" &&
-    json_field_contains "$out" '.reason // empty' "LOOP DETECTED"
-}
-
-# Regression test for stop-gate.sh:659 silent-exit bug: under set -euo pipefail,
-# `RESCAN_LINE=$(...|grep ...|head -n1)` exits silently when grep returns 1,
-# bypassing the byte-identical-audit-without-rescanned block. Pre-fix: silent
-# exit (no JSON output). Post-fix: block fires citing missing rescanned line
-# (clean tree) or dirty-tree variant.
-test_stop_gate_blocks_identical_audit_without_rescanned() {
-  local home repo input out
-  home="$(fresh_home stop-identical-no-rescan)"
-  repo="$(make_git_repo stop-identical-no-rescan)" || return 1
-  seed_freshness_oracle "$home" "$repo" t00-session "$FIXTURES/proof-complete.md"
-  input="$TMP_ROOT/stop-identical-no-rescan.json"
-  with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
-  out="$TMP_ROOT/stop-identical-no-rescan.out"
-  run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" HOME="$home" CLAUDE_STOP_REVIEWER="" || return 1
-  is_stop_block "$out" &&
-    json_field_contains "$out" '.reason // empty' "byte-identical to the prior stop"
-}
-
 # ---- claude-tmp lib (disk-pressure resilience) ----
 
 test_claude_init_tmp_uses_writable_target() {
@@ -3078,13 +2412,6 @@ test_claude_fail_open_trap_exits_zero_on_err() {
 # Run all tests
 # ===========================================================================
 
-# Original 15 tests — these call pass/fail inline (legacy style).
-test_stop_gate_exempts_subagent_with_agent_id
-test_stop_gate_does_not_exempt_agent_type_only
-test_stop_gate_blocks_main_thread_with_activity
-test_stop_gate_exempts_subordinate_role
-test_stop_gate_blocks_team_lead_role
-test_stop_gate_skips_ephemeral_session
 test_validate_edit_write_blocks_singular_import_dir
 test_validate_edit_write_blocks_plural_imports_dir
 test_validate_edit_write_blocks_vendor_dir
@@ -3174,8 +2501,6 @@ run_case "ECI gate skips on missing cwd, denies same payload with cwd" \
   test_eci_gate_skips_missing_cwd
 run_case "ECI gate skips non-Edit/Write/MultiEdit/NotebookEdit tools" \
   test_eci_gate_skips_non_edit_tool
-run_case "skill-marker gate blocks NotebookEdit on protected path without marker" \
-  test_skill_marker_gate_blocks_notebookedit_without_marker
 
 # ATE orchestrator gate tests
 run_case "ATE gate allows edits for lead role" \
@@ -3226,16 +2551,6 @@ run_case "validate-edit-write allows a large go.mod remote replace when a temp f
   test_validate_edit_write_allows_large_remote_gomod_replace_when_a_temp_file_cannot_be_written
 run_case "no script that runs under pipefail pipes into grep, head, sed q or awk exit" \
   test_pipefail_scripts_never_pipe_into_grep_or_an_early_exit_reader
-
-# eci-pending-set
-run_case "eci-pending-set arms the teammate marker for the main thread (no agent_id)" \
-  expect_eci_pending_marker pending-main yes '{}'
-run_case "eci-pending-set arms the teammate marker for agent_type without agent_id" \
-  expect_eci_pending_marker pending-type-only yes '{"agent_type":"general-purpose"}'
-run_case "eci-pending-set arms the teammate marker for agent_id null" \
-  expect_eci_pending_marker pending-null yes '{"agent_id":null}'
-run_case "eci-pending-set leaves the teammate marker unset for a subagent (agent_id)" \
-  expect_eci_pending_marker pending-subagent no '{"agent_id":"sub-uuid"}'
 
 # validate-bash tests
 run_case "validate-bash allows redirect to vendor paths (planner receives input)" \
@@ -3546,78 +2861,9 @@ run_case "prompt state emits no skill-reload reminder for default role" \
 run_case "prompt state emits ECI reminder when marker exists" \
   test_prompt_state_emits_eci_reminder_when_marker_exists
 
-# stop-gate (proof / git / gitleaks / loop)
-run_case "stop gate blocks proof missing required sections" \
-  test_stop_gate_blocks_missing_proof_sections
-run_case "stop gate accepts complete proof fixture" \
-  test_stop_gate_accepts_complete_proof
-run_case "stop gate blocks clean-scan empty source" \
-  test_stop_gate_blocks_clean_scan_empty_source
-run_case "stop gate blocks blocker missing input" \
-  test_stop_gate_blocks_blocker_missing_input
-run_case "stop gate blocks blocker missing command" \
-  test_stop_gate_blocks_blocker_missing_command
-run_case "stop gate blocks placeholder blocker command" \
-  test_stop_gate_blocks_placeholder_blocker_command
-run_case "stop gate blocks fake audit commit" \
-  test_stop_gate_blocks_fake_audit_commit
-# DROPPED: stop gate blocks identical audit without rescanned — real claude
-# bug (see comment above test_stop_gate_blocks_identical_audit_without_rescanned).
-run_case "stop gate accepts identical audit with rescanned" \
-  test_stop_gate_accepts_identical_audit_with_rescanned
-run_case "stop gate continues clean inactive turn" \
-  test_stop_gate_continues_clean_inactive_turn
-run_case "stop gate cleanup preserves both ledger files and removes everything else" \
-  test_stop_gate_cleanup_preserves_ledger_files
-run_case "stop gate blocks dirty git state" \
-  test_stop_gate_blocks_dirty_git_state
-# DROPPED: stop gate blocks committed state without proof — semantic difference,
-# see test_stop_gate_blocks_committed_state_without_proof comment above.
-run_case "stop gate blocks gitleaks findings from dirty state" \
-  test_stop_gate_blocks_gitleaks_findings_dirty
-# DROPPED: stop gate blocks gitleaks findings from untracked state — semantic
-# difference, see test_stop_gate_blocks_gitleaks_findings_untracked comment.
-run_case "stop gate blocks gitleaks execution failure" \
-  test_stop_gate_blocks_gitleaks_execution_failure
-run_case "stop gate blocks ECI active state" \
-  test_stop_gate_blocks_eci_active_state
-run_case "stop gate allows session-scoped skip marker" \
-  test_stop_gate_allows_session_skip_state
-run_case "stop gate validates proof while stop_hook_active is true" \
-  test_stop_gate_validates_proof_when_stop_hook_active
-run_case "stop gate blocks pre-existing commit after HEAD advance" \
-  test_stop_gate_blocks_preexisting_commit_after_head_advance
-run_case "stop gate adds loop reminder after five blocks" \
-  test_stop_gate_adds_loop_reminder_after_five_blocks
-run_case "stop gate blocks byte-identical audit without rescanned: line" \
-  test_stop_gate_blocks_identical_audit_without_rescanned
-
 # ===========================================================================
 # /side stop marker (codex parity): prompt writes it, stop gate honours it.
 # ===========================================================================
-
-# Stop input for session $1 in cwd $2 with transcript activity (blocks without a marker).
-side_stop_input() {
-  local sid="$1" repo="$2" tr="$3" input="$4"
-  write_transcript_with_activity "$tr"
-  jq --arg sid "$sid" --arg cwd "$repo" --arg tr "$tr" \
-    '. + {session_id:$sid, transcript_path:$tr, cwd:$cwd}' \
-    "$FIXTURES/stop-basic.json" >"$input"
-}
-
-# Write a cwd-scoped /side marker for parent $3 in repo $2 (format from prompt-task-reminder.sh).
-seed_side_stop_cwd_marker() {
-  local home="$1" repo="$2" parent="$3" dir
-  dir="$(env -i HOME="$home" PATH="$PATH" bash -c \
-    '. "$HOME/.claude/hooks/lib/claude-proof-state.sh" && claude_ensure_cwd_state_dir side-stop "$1"' _ "$repo")" || return 1
-  [ -n "$dir" ] || return 1
-  {
-    printf 'command: /side\n'
-    printf 'parent_session_id: %s\n' "$parent"
-    printf 'cwd: %s\n' "$repo"
-    date -u '+created_utc: %Y-%m-%dT%H:%M:%SZ'
-  } >"$dir/side_stop"
-}
 
 test_prompt_side_writes_marker() {
   local home input out sd cwd_marker
@@ -3651,49 +2897,10 @@ test_prompt_non_side_writes_no_marker() {
     [ "$(find "$home/tmp/agent/proof" -name side_stop 2>/dev/null | wc -l)" -eq 0 ]
 }
 
-test_stop_gate_side_marker_allows_child_not_parent() {
-  local home repo tr input out
-  home="$(fresh_home stop-side-allow)"
-  repo="$(make_git_repo stop-side-allow)" || return 1
-  seed_side_stop_cwd_marker "$home" "$repo" t00-parent || return 1
-
-  # Child session (not the marker's parent) stops: allowed, silent.
-  tr="$TMP_ROOT/stop-side-child-transcript.jsonl"
-  input="$TMP_ROOT/stop-side-child.json"
-  side_stop_input t00-side-child "$repo" "$tr" "$input"
-  out="$TMP_ROOT/stop-side-child.out"
-  run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" HOME="$home" CLAUDE_STOP_REVIEWER="" || return 1
-  expect_no_output "$out" || return 1
-
-  # Marker's own parent session is not exempted by it: still blocked.
-  tr="$TMP_ROOT/stop-side-parent-transcript.jsonl"
-  input="$TMP_ROOT/stop-side-parent.json"
-  side_stop_input t00-parent "$repo" "$tr" "$input"
-  out="$TMP_ROOT/stop-side-parent.out"
-  run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" HOME="$home" CLAUDE_STOP_REVIEWER=""
-  is_stop_block "$out"
-}
-
-test_stop_gate_without_side_marker_still_blocks() {
-  local home repo tr input out
-  home="$(fresh_home stop-no-side)"
-  repo="$(make_git_repo stop-no-side)" || return 1
-  tr="$TMP_ROOT/stop-no-side-transcript.jsonl"
-  input="$TMP_ROOT/stop-no-side.json"
-  side_stop_input t00-side-child "$repo" "$tr" "$input"
-  out="$TMP_ROOT/stop-no-side.out"
-  run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" HOME="$home" CLAUDE_STOP_REVIEWER=""
-  is_stop_block "$out"
-}
-
 run_case "prompt /side writes side_stop marker (session and cwd)" \
   test_prompt_side_writes_marker
 run_case "prompt without leading /side writes no side_stop marker" \
   test_prompt_non_side_writes_no_marker
-run_case "stop gate allows child under /side marker, parent still blocked" \
-  test_stop_gate_side_marker_allows_child_not_parent
-run_case "stop gate blocks child with transcript activity and no /side marker" \
-  test_stop_gate_without_side_marker_still_blocks
 
 # claude-tmp lib (disk-pressure resilience)
 run_case "claude_init_tmp uses writable target" \
@@ -3702,143 +2909,6 @@ run_case "claude_init_tmp returns nonzero on unwritable target" \
   test_claude_init_tmp_unwritable_target_returns_nonzero
 run_case "claude_install_fail_open_trap exits zero on ERR" \
   test_claude_fail_open_trap_exits_zero_on_err
-
-# ===========================================================================
-# sendmessage-roster-gate.sh: SendMessage recipient validation
-# ===========================================================================
-
-# Build a sandboxed teams root with teamA(alice,bob) + teamB(carol).
-seed_sm_teams_sandbox() {
-  local name="$1"
-  local dir="$TMP_ROOT/sm-teams-$name"
-  rm -rf "$dir"
-  mkdir -p "$dir/teamA" "$dir/teamB" || return 1
-  cat >"$dir/teamA/config.json" <<'JSON'
-{"name":"teamA","members":[
-  {"name":"alice","agentId":"alice@teamA","agentType":"general-purpose"},
-  {"name":"bob","agentId":"bob@teamA","agentType":"general-purpose"}
-]}
-JSON
-  cat >"$dir/teamB/config.json" <<'JSON'
-{"name":"teamB","members":[
-  {"name":"carol","agentId":"carol@teamB","agentType":"general-purpose"}
-]}
-JSON
-  printf '%s\n' "$dir"
-}
-
-test_sm_gate_allows_valid_name_any_team() {
-  local sandbox out
-  sandbox="$(seed_sm_teams_sandbox valid-name)" || return 1
-  out="$TMP_ROOT/sm-valid-name.out"
-  run_hook "$out" "$ROOT/hooks/sendmessage-roster-gate.sh" \
-    "$FIXTURES/sendmessage-valid-name.json" \
-    CLAUDE_TEAMS_ROOT="$sandbox"
-  is_pretool_allow "$out" && expect_no_output "$out"
-}
-
-test_sm_gate_allows_valid_agentid_any_team() {
-  local sandbox out
-  sandbox="$(seed_sm_teams_sandbox valid-aid)" || return 1
-  out="$TMP_ROOT/sm-valid-aid.out"
-  run_hook "$out" "$ROOT/hooks/sendmessage-roster-gate.sh" \
-    "$FIXTURES/sendmessage-valid-agentid.json" \
-    CLAUDE_TEAMS_ROOT="$sandbox"
-  is_pretool_allow "$out" && expect_no_output "$out"
-}
-
-test_sm_gate_blocks_invalid_recipient_any_team() {
-  local sandbox out reason
-  sandbox="$(seed_sm_teams_sandbox invalid)" || return 1
-  out="$TMP_ROOT/sm-invalid.out"
-  run_hook "$out" "$ROOT/hooks/sendmessage-roster-gate.sh" \
-    "$FIXTURES/sendmessage-invalid-recipient.json" \
-    CLAUDE_TEAMS_ROOT="$sandbox"
-  is_pretool_deny "$out" || return 1
-  reason=$(jq -r '.hookSpecificOutput.permissionDecisionReason // ""' "$out")
-  case "$reason" in
-    *charlie*not\ in*roster*alice*bob*carol*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-test_sm_gate_allows_team_scoped_valid() {
-  local sandbox out
-  sandbox="$(seed_sm_teams_sandbox team-valid)" || return 1
-  out="$TMP_ROOT/sm-team-valid.out"
-  run_hook "$out" "$ROOT/hooks/sendmessage-roster-gate.sh" \
-    "$FIXTURES/sendmessage-team-scoped-valid.json" \
-    CLAUDE_TEAMS_ROOT="$sandbox"
-  is_pretool_allow "$out" && expect_no_output "$out"
-}
-
-test_sm_gate_blocks_team_scoped_invalid() {
-  local sandbox out reason
-  sandbox="$(seed_sm_teams_sandbox team-invalid)" || return 1
-  out="$TMP_ROOT/sm-team-invalid.out"
-  # alice exists in teamA but the call addresses teamB; must be denied.
-  run_hook "$out" "$ROOT/hooks/sendmessage-roster-gate.sh" \
-    "$FIXTURES/sendmessage-team-scoped-invalid.json" \
-    CLAUDE_TEAMS_ROOT="$sandbox"
-  is_pretool_deny "$out" || return 1
-  reason=$(jq -r '.hookSpecificOutput.permissionDecisionReason // ""' "$out")
-  case "$reason" in
-    *alice*not\ in\ roster\ of\ team*teamB*carol*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-test_sm_gate_blocks_unknown_team() {
-  local sandbox out reason
-  sandbox="$(seed_sm_teams_sandbox unknown-team)" || return 1
-  out="$TMP_ROOT/sm-unknown-team.out"
-  run_hook "$out" "$ROOT/hooks/sendmessage-roster-gate.sh" \
-    "$FIXTURES/sendmessage-unknown-team.json" \
-    CLAUDE_TEAMS_ROOT="$sandbox"
-  is_pretool_deny "$out" || return 1
-  reason=$(jq -r '.hookSpecificOutput.permissionDecisionReason // ""' "$out")
-  case "$reason" in
-    *team*ghost*has\ no\ config*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-test_sm_gate_ignores_non_sendmessage_tool() {
-  local sandbox out
-  sandbox="$(seed_sm_teams_sandbox other-tool)" || return 1
-  out="$TMP_ROOT/sm-other-tool.out"
-  run_hook "$out" "$ROOT/hooks/sendmessage-roster-gate.sh" \
-    "$FIXTURES/sendmessage-not-sendmessage-tool.json" \
-    CLAUDE_TEAMS_ROOT="$sandbox"
-  expect_silent_or_no_decision "$out" && expect_no_output "$out"
-}
-
-test_sm_gate_ignores_missing_recipient() {
-  local sandbox out
-  sandbox="$(seed_sm_teams_sandbox missing-recipient)" || return 1
-  out="$TMP_ROOT/sm-missing-recipient.out"
-  run_hook "$out" "$ROOT/hooks/sendmessage-roster-gate.sh" \
-    "$FIXTURES/sendmessage-missing-recipient.json" \
-    CLAUDE_TEAMS_ROOT="$sandbox"
-  expect_silent_or_no_decision "$out" && expect_no_output "$out"
-}
-
-run_case "sm-gate allows valid name (any team)" \
-  test_sm_gate_allows_valid_name_any_team
-run_case "sm-gate allows valid agentId (any team)" \
-  test_sm_gate_allows_valid_agentid_any_team
-run_case "sm-gate blocks invalid recipient (any team) with global roster" \
-  test_sm_gate_blocks_invalid_recipient_any_team
-run_case "sm-gate allows team-scoped valid recipient" \
-  test_sm_gate_allows_team_scoped_valid
-run_case "sm-gate blocks team-scoped recipient absent from that team" \
-  test_sm_gate_blocks_team_scoped_invalid
-run_case "sm-gate blocks unknown team_name with config-missing reason" \
-  test_sm_gate_blocks_unknown_team
-run_case "sm-gate ignores non-SendMessage tool" \
-  test_sm_gate_ignores_non_sendmessage_tool
-run_case "sm-gate ignores SendMessage with no recipient field" \
-  test_sm_gate_ignores_missing_recipient
 
 # ---- pretooluse-edit-dispatch.sh (Codex edit dispatch) ----
 # The dispatch runs validate-edit-write.sh and eci-active-gate.sh on the same
