@@ -1618,12 +1618,13 @@ test_validate_bash_marks_redirected_read_shell_activity() {
     [ -s "$home/.cache/claude-proof/activity/sessions/t00-session/shell" ]
 }
 
-# Shell-activity marker for a non-read-only command, written for the main thread
-# only. Runs the hook for a write command (planner stub in place, so the hook
-# reaches the marking step) and requires the planner to receive the input
-# unchanged. Marker path: $home/.cache/claude-proof/activity/sessions/t00-session/shell.
-# Args: home name agent_id (empty agent_id is the main thread).
-run_bash_write_command() {
+# Allow outcome for a write command (make build): the hook prints nothing and the
+# stub planner receives the input unchanged. Callers then check the shell-activity
+# marker, $home/.cache/claude-proof/activity/sessions/t00-session/shell, which only
+# the main thread gets. The hook writes that marker before it calls the planner,
+# so the stub does not make marking happen; it shows that nothing denied the
+# command first. Args: home name agent_id (empty agent_id is the main thread).
+expect_write_command_forwarded() {
   local home="$1" input out
   make_planner_stub "$home" || return 1
   input="$TMP_ROOT/$2.json"
@@ -1636,14 +1637,14 @@ run_bash_write_command() {
 test_validate_bash_main_write_command_marks_shell_activity() {
   local home
   home="$(fresh_home bash-main-write-marker)" || return 1
-  run_bash_write_command "$home" bash-main-write-marker '' &&
+  expect_write_command_forwarded "$home" bash-main-write-marker '' &&
     [ -s "$home/.cache/claude-proof/activity/sessions/t00-session/shell" ]
 }
 
 test_validate_bash_subagent_write_command_leaves_no_shell_activity() {
   local home
   home="$(fresh_home bash-subagent-write-marker)" || return 1
-  run_bash_write_command "$home" bash-subagent-write-marker sub-uuid &&
+  expect_write_command_forwarded "$home" bash-subagent-write-marker sub-uuid &&
     [ ! -e "$home/.cache/claude-proof/activity/sessions/t00-session/shell" ]
 }
 
@@ -1717,7 +1718,7 @@ expect_bash_forwarded() {
 # The command is the disengage text, so the verdict shows in the outcome: a
 # subagent is denied before the planner, the main thread is forwarded to it
 # unchanged. jq's `//` treats null and false as absent; "" is empty; 0 and any
-# string are present. Args: name verdict(deny|forward) identity-fields-json.
+# non-empty string are present. Args: name verdict(deny|forward) identity-fields-json.
 expect_bash_identity_fields_verdict() {
   local home input out
   home="$(fresh_home "$1")" || return 1
