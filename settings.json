@@ -12,11 +12,23 @@
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "",
+        "matcher": "startup|resume|clear",
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/.claude/hooks/session-snapshot.sh"
+            "command": "bash -lc 'exec \"$HOME/.claude/hooks/session-snapshot.sh\"'",
+            "statusMessage": "Loading Claude session rules"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'exec \"$HOME/.claude/hooks/eci-post-compact-refresh.sh\"'",
+            "statusMessage": "Refreshing ECI rules after compaction"
           }
         ]
       }
@@ -27,88 +39,45 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/.claude/hooks/prompt-task-reminder.sh"
-          },
-          {
-            "type": "command",
-            "command": "$HOME/.claude/hooks/eci-pending-clear.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/hooks/pre-reviewer-prompt-capture.sh"
+            "command": "bash -lc 'exec \"$HOME/.claude/hooks/prompt-task-reminder.sh\"'"
           }
         ]
       }
     ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "matcher": "^Bash$",
         "hooks": [
           {
             "type": "command",
-            "command": "$HOME/.claude/hooks/skill-marker-gate.sh"
+            "command": "bash \"$HOME/.claude/hooks/validate-bash.sh\"",
+            "timeout": 75,
+            "statusMessage": "Checking shell command"
+          }
+        ]
+      },
+      {
+        "matcher": "^apply_patch$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/pretooluse-edit-dispatch.sh\"",
+            "statusMessage": "Checking edit gates"
+          }
+        ]
+      },
+      {
+        "matcher": "^(Edit|Write|MultiEdit|NotebookEdit)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/pretooluse-edit-dispatch.sh\"",
+            "statusMessage": "Checking edit gates"
           },
           {
             "type": "command",
-            "command": "$HOME/.claude/hooks/eci-active-gate.sh"
-          },
-          {
-            "type": "command",
-            "command": "$HOME/.claude/hooks/ate-orchestrator-gate.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/hooks/validate-edit-write.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/hooks/validate-bash.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Edit|Write|MultiEdit|Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/hooks/edit-bash-pre-reviewer.sh"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Skill",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/hooks/skill-marker-record.sh"
-          }
-        ]
-      }
-    ],
-    "PostCompact": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/hooks/eci-post-compact-refresh.sh"
+            "command": "bash \"$HOME/.claude/hooks/eci-active-gate.sh\"",
+            "statusMessage": "Checking ECI control targets"
           }
         ]
       }
