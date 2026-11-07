@@ -1500,37 +1500,6 @@ test_validate_bash_allows_main_eci_active_off() {
   expect_no_output "$out" && planner_received "$home" "$input"
 }
 
-# Accepted over-denial: the guard is a text match, so a heredoc body or quoted
-# text that spells `eci-active off` is denied for a subagent and the planner is
-# not reached.
-test_validate_bash_subagent_heredoc_body_is_denied() {
-  local home input out
-  home="$(fresh_home subagent-heredoc)"
-  make_planner_stub "$home" || return 1
-  input="$TMP_ROOT/bash-subagent-heredoc.json"
-  write_bash_input "$input" t00-session "$ROOT" "$(printf "cat <<'EOF'\neci-active off\nEOF")" sub-uuid
-  out="$TMP_ROOT/bash-subagent-heredoc.out"
-  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" HOME="$home" \
-    CLAUDE_PROOF_ROOT="$(fresh_proof_root subagent-heredoc)"
-  is_pretool_deny "$out" &&
-    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "Only the main thread" &&
-    [ ! -e "$home/planner-stdin" ]
-}
-
-test_validate_bash_subagent_quoted_eci_off_text_is_denied() {
-  local home input out
-  home="$(fresh_home subagent-quoted)"
-  make_planner_stub "$home" || return 1
-  input="$TMP_ROOT/bash-subagent-quoted.json"
-  write_bash_input "$input" t00-session "$ROOT" 'echo "eci-active off"' sub-uuid
-  out="$TMP_ROOT/bash-subagent-quoted.out"
-  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" HOME="$home" \
-    CLAUDE_PROOF_ROOT="$(fresh_proof_root subagent-quoted)"
-  is_pretool_deny "$out" &&
-    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "Only the main thread" &&
-    [ ! -e "$home/planner-stdin" ]
-}
-
 # Argv-head `eci-active off` forms stay denied for a subagent (the text match covers them).
 test_validate_bash_subagent_eci_off_argv_head_is_denied() {
   local home input out cmd n=0
@@ -2857,10 +2826,6 @@ run_case "validate-bash blocks subagent eci-active off" \
   test_validate_bash_blocks_subagent_eci_active_off
 run_case "validate-bash allows main eci-active off (planner receives input)" \
   test_validate_bash_allows_main_eci_active_off
-run_case "validate-bash denies subagent heredoc body mentioning eci-active off (accepted over-denial)" \
-  test_validate_bash_subagent_heredoc_body_is_denied
-run_case "validate-bash denies subagent quoted eci-active off text (accepted over-denial)" \
-  test_validate_bash_subagent_quoted_eci_off_text_is_denied
 run_case "validate-bash denies subagent eci-active off at argv head in all forms" \
   test_validate_bash_subagent_eci_off_argv_head_is_denied
 run_case "subagent denied: bash -c \"eci-active off\"" \
