@@ -41,7 +41,15 @@ json_query() {
 SESSION_ID="$(json_query '.session_id // empty')"
 CWD="$(json_query '.cwd // empty')"
 COMMAND="$(json_query '.tool_input.command // empty')"
-AGENT_ID="$(json_query '.agent_id // empty')"
+
+# The subagent test is claude_hook_is_subagent_context on the whole input
+# (staged file or in-memory copy). </dev/null keeps an empty input from making
+# the predicate read stdin, which is already consumed.
+IS_SUBAGENT=false
+if claude_hook_is_subagent_context "$INPUT${tmp:+$(cat -- "$tmp")}" </dev/null; then
+  IS_SUBAGENT=true
+fi
+
 PROOF_ROOT="${CLAUDE_PROOF_ROOT:-${HOME:-}/.cache/claude-proof}"
 ECI_MARKER="$PROOF_ROOT/$SESSION_ID/eci_active"
 
@@ -547,9 +555,8 @@ if [ -n "$COMMAND" ] && [ "$(detect_git_push 2>/dev/null)" = "1" ]; then
   deny 'git push is blocked. No task in this environment requires git push, and no task is blocked by its absence. If you believe push is needed, that judgment is wrong — commit locally and proceed.'
 fi
 
-# Block subagents from disengaging ECI via `eci-active off`. Same test as
-# claude_hook_is_subagent_context: a non-empty agent_id.
-if [ -n "$AGENT_ID" ] && command_mentions_eci_off "$COMMAND"; then
+# Block subagents from disengaging ECI via `eci-active off`.
+if [ "$IS_SUBAGENT" = true ] && command_mentions_eci_off "$COMMAND"; then
   deny 'Only the main thread or orchestrator may disengage ECI with `eci-active off`. Subagents report completion or blockers to the orchestrator while ECI stays active. This check matches that phrase anywhere in command text, including quoted text, heredocs and commit messages. Do not retry the disengage in any form. When the phrase is only text, such as a commit message or search pattern, describe it in other words.'
 fi
 
@@ -561,14 +568,14 @@ if command_is_read_only "$COMMAND"; then
 fi
 
 # Mark shell activity for non-subagent, non-read-only commands.
-if [ -z "$AGENT_ID" ] && [ "$read_only" != true ]; then
+if [ "$IS_SUBAGENT" != true ] && [ "$read_only" != true ]; then
   claude_mark_activity "$SESSION_ID" "$CWD" shell || true
 fi
 
 # ECI command plan: the Codex planner decides (codex parity). Its output and
 # exit code pass through unchanged unless the fail-closed rules below apply.
 unset CODEX_HOOK_IS_SUBAGENT
-[ -n "$AGENT_ID" ] && export CODEX_HOOK_IS_SUBAGENT=1
+[ "$IS_SUBAGENT" = true ] && export CODEX_HOOK_IS_SUBAGENT=1
 export CODEX_PROOF_ROOT="$PROOF_ROOT"
 [ -n "$tmp" ] || eci_planner_unavailable "cannot stage hook input (mktemp under ${TMPDIR:-${HOME:-}/tmp} failed)"
 case "${HOME:-}" in
