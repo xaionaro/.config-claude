@@ -28,10 +28,8 @@ if [ -z "$TRANSCRIPT_PATH" ]; then
   exit 0
 fi
 
-# Subagent exemption: .agent_id only, through the shared predicate
-# claude_hook_is_subagent_context. Claude docs: agent_id identifies a
-# subagent or in-process teammate; agent_type is also present for a
-# main-thread session started with --agent, so it does not mark a subagent.
+# Subagent exemption. What counts as a subagent, and why, is defined once in
+# claude_hook_is_subagent_context (hooks/lib/claude-proof-state.sh).
 if claude_hook_is_subagent_context "$INPUT"; then
   exit 0
 fi

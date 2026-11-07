@@ -17,9 +17,9 @@ case "$SESSION_ID" in
   *[!A-Za-z0-9_-]*) exit 0 ;;
 esac
 
-# Subagent calls do not run ECI; only the main thread's marker matters.
-# agent_id only, through the shared predicate claude_hook_is_subagent_context
-# (agent_type is also set for a main-thread --agent session).
+# Subagent calls do not run ECI; only the main thread's marker matters. What
+# counts as a subagent is defined once in claude_hook_is_subagent_context
+# (hooks/lib/claude-proof-state.sh).
 claude_hook_is_subagent_context "$INPUT" && exit 0
 
 PROOF_DIR="$HOME/.cache/claude-proof/$SESSION_ID"
