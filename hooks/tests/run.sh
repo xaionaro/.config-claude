@@ -2960,6 +2960,10 @@ run_case "subagent denied: eci-active \$\"off\" r.md (locale-quoted subcommand)"
   expect_subagent_bash_denied sub-deny-43 sub-uuid 'eci-active $"off" r.md'
 run_case "subagent denied: backslash-newline inside the phrase (eci-active \\<newline> off r.md)" \
   expect_subagent_bash_denied sub-deny-44 sub-uuid "$(printf 'eci-active \\\n off r.md')"
+run_case "subagent denied: backslash-newline inside the word off (eci-active o\\<newline>ff r.md)" \
+  expect_subagent_bash_denied sub-deny-46 sub-uuid "$(printf 'eci-active o\\\nff r.md')"
+run_case "subagent denied: backslash-newline inside the word eci-active (eci-ac\\<newline>tive off r.md)" \
+  expect_subagent_bash_denied sub-deny-47 sub-uuid "$(printf 'eci-ac\\\ntive off r.md')"
 run_case "main thread forwarded: \$'eci-active' \$'off' r.md (guard is subagent-only)" \
   expect_bash_forwarded main-fwd-06 '' "\$'eci-active' \$'off' r.md"
 run_case "subagent allowed: eci-active status" \
@@ -2976,6 +2980,8 @@ run_case "subagent allowed: echo eci-active offsets (off is a prefix of another 
   expect_bash_forwarded sub-fwd-16 sub-uuid 'echo eci-active offsets'
 run_case "subagent allowed: echo inactive off (inactive is not eci-active)" \
   expect_bash_forwarded sub-fwd-17 sub-uuid 'echo inactive off'
+run_case "subagent allowed: backslash-newline inside another word (eci-active st\\<newline>atus joins to status)" \
+  expect_bash_forwarded sub-fwd-18 sub-uuid "$(printf '~/.claude/bin/eci-active st\\\natus')"
 run_case "validate-bash denies git push with ECI active" \
   test_validate_bash_denies_git_push_with_eci_active
 run_case "validate-bash denies chained git push without ECI" \

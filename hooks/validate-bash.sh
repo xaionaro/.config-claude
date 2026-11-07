@@ -194,15 +194,17 @@ PY
 }
 
 # Match the text `eci-active off` anywhere in a command (subagent guard). This
-# is a text match, not a parse of an invocation: it drops the `$` of ANSI-C
-# ($'..') and locale ($"..") quotes so that the quote strip leaves the word and
-# not a variable name ($off), deletes quotes and backslashes, then looks for
-# eci-active, whitespace, then the word off. Quoting forms, line continuations,
-# wrappers (env, stdbuf, nice, sudo) and nested shells (bash -c, env -S)
-# therefore all match. This replaces an argv-head parser that missed wrapper
-# and continuation forms; ECI guards accidental deviation, not adversarial
-# input, so a text match is enough. Accepted over-denial: the same text in
-# echo, heredoc bodies, grep patterns and commit messages. Not detected:
+# is a text match, not a parse of an invocation: it deletes backslash-newline
+# pairs first (bash joins them also inside a word: o\<newline>ff is off), drops
+# the `$` of ANSI-C ($'..') and locale ($"..") quotes so that the quote strip
+# leaves the word and not a variable name ($off), deletes quotes and
+# backslashes, then looks for eci-active, whitespace, then the word off.
+# Quoting forms, line continuations, wrappers (env, stdbuf, nice, sudo) and
+# nested shells (bash -c, env -S) therefore all match. This replaces an
+# argv-head parser that missed wrapper and continuation forms; ECI guards
+# accidental deviation, not adversarial input, so a text match is enough.
+# Accepted over-denial: the same text in echo, heredoc bodies, grep patterns
+# and commit messages. Not detected:
 # indirection (E=...eci-active; "$E" off), escapes inside $'..' ($'o\x66f') or
 # a script file that runs it. Two more known gaps, both allowed for subagents:
 #   - eci-active off$'\0x' r.md. Bash cuts the word at the NUL escape, so this
@@ -212,6 +214,7 @@ PY
 #   - Brace expansion: eci-active {off,}. The text match never handled it.
 command_mentions_eci_off() {
   local text="$1"
+  text=${text//$'\\\n'/}
   text=${text//\$\'/\'}
   text=${text//\$\"/\"}
   text="$(printf '%s' "$text" | tr -d '\\"'"'")"
