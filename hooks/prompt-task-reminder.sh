@@ -1,98 +1,91 @@
-#!/bin/bash
-# UserPromptSubmit hook: enforces mandatory skill routing on every user message,
-# AND records HEAD-at-this-prompt so the reviewer hook can show the cumulative
-# diff for the whole turn (all commits since this prompt) instead of just
-# HEAD~1..HEAD.
+#!/usr/bin/env bash
+# UserPromptSubmit hook: emit the status-report reminder and write the /side stop marker; never scan transcript history.
 
-# Stdin is the hook event JSON; consume it once and reuse.
-HOOK_INPUT=$(cat 2>/dev/null || true)
+set -euo pipefail
 
-# Proof root from its single definition in lib/claude-proof-state.sh. Without
-# the lib, the proof-root steps below are skipped (fail open).
-PROOF_ROOT=""
-if . "$HOME/.claude/hooks/lib/claude-proof-state.sh" 2>/dev/null; then
-  PROOF_ROOT="$(claude_configured_proof_root)"
-fi
-
-cat <<'EOF'
-PRE-WORK: TaskCreate if new request. Size→skill: medium→ECI, large→ATE. Walk CLAUDE.md Mandatory Skills (0-10), invoke all applicable. Follow system prompt. Tag claims T1-T5 (T5→promote or discard). No implementation before skills invoked.
-EOF
-
-# Record HEAD of ~/.claude at the moment of this prompt. Sibling dir under
-# $PROOF_ROOT/reviewer/ — that dir survives stop-gate's $PROOF_DIR
-# wipe (see feedback_proof_dir_wiped memory).
-SESSION_ID=$(printf '%s' "$HOOK_INPUT" | jq -r '.session_id // empty' 2>/dev/null)
-# A missing or unsafe session id, or no proof root, clears SESSION_ID, so every
-# proof-root step below is skipped.
-case "$SESSION_ID" in
-  ""|*[!A-Za-z0-9_-]*) SESSION_ID="" ;;
-esac
-[ -n "$PROOF_ROOT" ] || SESSION_ID=""
-case "$SESSION_ID" in
-  "") ;; # skip recording
-  *)
-    REVIEWER_DIR="$PROOF_ROOT/reviewer/$SESSION_ID"
-    mkdir -p "$REVIEWER_DIR"
-    git -C "$HOME/.claude" rev-parse HEAD >"$REVIEWER_DIR/prompt_head" 2>/dev/null || true
-
-    # Bypass markers (stop-reviewer and pre-reviewer) are ephemeral —
-    # they only apply to the turn in which the user touches them. Clear
-    # on every new user prompt so a stale bypass can't keep silencing
-    # gates indefinitely.
-    rm -f "$REVIEWER_DIR/bypass" 2>/dev/null
-    rm -f "$PROOF_ROOT/pre-reviewer/$SESSION_ID/bypass" 2>/dev/null
-    ;;
-esac
-
-# Remind coordinator/lead/snitch to re-read the skill after context compaction
-if [ "${CLAUDE_ROLE:-}" = "coordinator" ] || [ "${CLAUDE_ROLE:-}" = "lead" ] || [ "${CLAUDE_ROLE:-}" = "snitch" ]; then
-  cat <<'EOF'
-SKILL RELOAD CHECK: If you cannot recall agent-teams-execution (roles, protocols, rules), re-invoke via Skill tool, skill "agent-teams-execution". Compaction may have evicted it.
-EOF
-fi
-
-# ECI activation persists on disk but its skill content does not survive
-# context compaction. When the eci_active marker exists, surface it on
-# every user prompt so the agent re-engages even after compaction.
-if [ -n "${SESSION_ID:-}" ]; then
-  ECI_MARKER="$PROOF_ROOT/$SESSION_ID/eci_active"
-  if [ -f "$ECI_MARKER" ]; then
-    cat <<EOF
-ECI ACTIVE for this session — code edits go through subagents per the explore-critique-implement skill (eci-active-gate denies direct edits only to ECI control and ledger files). Marker contents:
-$(cat "$ECI_MARKER")
-If you cannot recall the explore-critique-implement flow, re-invoke via Skill tool, skill "explore-critique-implement". Compaction may have evicted it. Disengage only when the scope is closed via: ~/.claude/bin/eci-active off <disengage-report.md>
-EOF
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export LC_ALL=C
+input_file="$(mktemp)" || exit 0
+trap 'rm -f "$input_file"' EXIT
+head -c 65537 >"$input_file" || exit 0
+if (( $(wc -c <"$input_file") > 65536 )); then exit 0; fi
+if (( $(tr -d '\000' <"$input_file" | wc -c) != $(wc -c <"$input_file") )); then exit 0; fi
+iconv -f UTF-8 -t UTF-8 "$input_file" >/dev/null 2>&1 || exit 0
+jq -se 'length == 1 and (.[0] | type == "object")' "$input_file" >/dev/null 2>&1 || exit 0
+prompt=$(jq -r 'if (.prompt? | type) == "string" then .prompt else "" end' "$input_file" 2>/dev/null || true)
+normalized_prompt="${prompt,,}"
+explicit_report='(^|[^[:alpha:]])(give|show|provide|write|send|want|need|request|get|what[[:space:]]+is)([[:space:]]+(me|us|a|an|the|my|our|proper|current|full|detailed|quick|brief|please|latest|updated|comprehensive))*[[:space:]]+(status([[:space:]]+and[[:space:]]+progress)?|progress)[[:space:]]+(report|update)'
+reminder=false
+while IFS= read -r clause; do
+  if [[ "$clause" =~ ^[[:space:]]*what[[:space:]]+is[[:space:]]+(a|an)[[:space:]]+(status([[:space:]]+and[[:space:]]+progress)?|progress)[[:space:]]+(report|update)([[:space:]]+and[[:space:]]+.*)?[[:space:]]*$ ]] ||
+     [[ "$clause" =~ ^[[:space:]]*how[[:space:]]+(do|can)[[:space:]]+(i|we)[[:space:]]+get[[:space:]]+(a|an)[[:space:]]+(status([[:space:]]+and[[:space:]]+progress)?|progress)[[:space:]]+(report|update)([[:space:]]+and[[:space:]]+.*)?[[:space:]]*$ ]]; then
+    continue
   fi
+  if [[ "$clause" =~ $explicit_report ]]; then
+    remainder="${clause#*"${BASH_REMATCH[0]}"}"
+    # A following noun makes the report a modifier (for example, a template).
+    if [[ "$remainder" =~ ^[[:space:]]*$ ]] ||
+       [[ "$remainder" =~ ^[[:space:]]+(on|about|for|of|with|please|now|and|right[[:space:]]+now)([[:space:]]|$) ]]; then
+      reminder=true
+      break
+    fi
+    continue
+  fi
+  if [[ "$clause" =~ (fix|repair|change|modify|implement).*(status|progress)[[:space:]]+report ]] ||
+     [[ "$clause" =~ how.*(status|progress)[[:space:]]+report.*(works|work|implemented) ]] ||
+     [[ "$clause" =~ (status|progress)[[:space:]]+report[[:space:]]+(renderer|tool|generator) ]]; then
+    continue
+  fi
+  if [[ "$clause" =~ ^[[:space:]]*(current[[:space:]]+)?(status|sitrep|progress|checkpoint)([[:space:]]+update)?([[:space:]]+please)?[[:space:]]*$ ]] ||
+     [[ "$clause" =~ (give|show|provide|write|send|want|need|request|what.s|what[[:space:]]+is|how.s|how[[:space:]]+is).*(status|progress|sitrep|checkpoint)[[:space:]]*$ ]] ||
+     [[ "$clause" =~ ^[[:space:]]*(a[[:space:]]+)?(current[[:space:]]+|updated[[:space:]]+|comprehensive[[:space:]]+)?(status|progress)[[:space:]]+report([[:space:]]+please)?[[:space:]]*$ ]]; then
+    reminder=true
+    break
+  fi
+done < <(printf '%s\n' "$normalized_prompt" | sed -E 's/[,;.!?]/\n/g; s/[[:space:]]+then[[:space:]]+/\n/g; s/[[:space:]]+and[[:space:]]+(show|give|provide|write|send|what|how|where|can[[:space:]]+you)[[:space:]]+/\n\1 /g')
+if [[ "$reminder" == true ]]; then
+  jq -n '{hookSpecificOutput:{hookEventName:"UserPromptSubmit",additionalContext:"For the requested status report, load writing-status-reports; reconcile YAML, validate, render with status-report render, and publish the full rendered result. Correct known missing sections in YAML and rerender; use the documented incomplete fallback only if structural failure prevents rendering."}}'
 fi
 
-# /side stop marker (codex parity): a prompt starting with /side marks this
-# session and its cwd so stop-gate.sh lets the side conversation stop.
-# Same marker format as codex prompt-task-reminder.sh:63-89. Fail-open.
+# Keep the independent, nonblocking reminder even if the steps below fail.
+trap 'exit 0' ERR
+. "$HOOK_DIR/lib/eci-runtime-sync.sh" || exit 0
+helper="$(eci_runtime_hook_helper_path)" || exit 0
+input="$("$helper" stdin <"$input_file")" || exit 0
+rm -f "$input_file"
+trap - EXIT
+. "$HOOK_DIR/lib/codex-proof-state.sh"
+
+session_id=$(printf '%s' "$input" | jq -r 'if (.session_id? | type) == "string" then .session_id else "" end' 2>/dev/null || true)
+cwd=$(printf '%s' "$input" | jq -r 'if (.cwd? | type) == "string" then .cwd else "" end' 2>/dev/null || true)
+root="$(codex_proof_root)"
+
 write_side_stop_marker() {
-  local dir="$1" cwd="$2"
-  mkdir -p "$dir" || return 1
+  local dir="$1"
+  mkdir -p "$dir"
   {
     printf 'command: /side\n'
-    printf 'parent_session_id: %s\n' "$SESSION_ID"
+    printf 'parent_session_id: %s\n' "$session_id"
     [ -n "$cwd" ] && printf 'cwd: %s\n' "$cwd"
     date -u '+created_utc: %Y-%m-%dT%H:%M:%SZ'
   } >"$dir/side_stop"
 }
 
-mark_side_stop() {
-  local prompt cwd side_dir
-  prompt=$(printf '%s' "$HOOK_INPUT" | jq -r 'if (.prompt? | type) == "string" then .prompt else "" end' 2>/dev/null) || return 0
-  printf '%s\n' "$prompt" | grep -Eq '^[[:space:]]*/side([[:space:]]|$)' || return 0
-  case "$SESSION_ID" in
-    ""|*[!A-Za-z0-9_-]*) return 0 ;;
-  esac
-  cwd=$(printf '%s' "$HOOK_INPUT" | jq -r 'if (.cwd? | type) == "string" then .cwd else "" end' 2>/dev/null) || cwd=""
-  write_side_stop_marker "$(claude_session_state_dir side-stop "$SESSION_ID")" "$cwd" || return 0
-  if [ -n "$cwd" ]; then
-    side_dir="$(claude_ensure_cwd_state_dir side-stop "$cwd" 2>/dev/null)" &&
-      [ -n "$side_dir" ] && write_side_stop_marker "$side_dir" "$cwd"
+if codex_valid_session_id "$session_id"; then
+  reviewer_dir="$root/reviewer/$session_id"
+  mkdir -p "$reviewer_dir"
+  head=$(git -C "$HOME/.codex" rev-parse HEAD 2>/dev/null || true)
+  if [ -n "$head" ]; then
+    printf '%s\n' "$head" >"$reviewer_dir/prompt_head"
   fi
-  return 0
-}
-mark_side_stop || true
-exit 0
+  rm -f "$reviewer_dir/bypass"
+
+  if printf '%s\n' "$prompt" | grep -Eq '^[[:space:]]*/side([[:space:]]|$)'; then
+    write_side_stop_marker "$root/side-stop/sessions/$session_id"
+    if [ -n "$cwd" ]; then
+      side_dir="$(codex_ensure_cwd_state_dir side-stop "$cwd" 2>/dev/null || true)"
+      [ -n "$side_dir" ] && write_side_stop_marker "$side_dir"
+    fi
+  fi
+
+fi

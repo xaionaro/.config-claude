@@ -11,9 +11,8 @@ go_installer_deny() {
 }
 
 usage() {
-  local argv="$1"
   go_installer_deny "GO_HOOK_USAGE_INVALID" "go-hook-install" \
-    "cwd=$(eci_diagnostic_value "$PWD"),argv=$(eci_diagnostic_value "$argv")" \
+    "cwd=$(eci_diagnostic_value "$PWD"),argv=$(eci_diagnostic_value "$*")" \
     "usage: $0 [--repair-hardlink PEER_REPOSITORY]" \
     'invoke the installer with no arguments or --repair-hardlink followed by a peer repository'
 }
@@ -26,27 +25,12 @@ repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || {
   exit 2
 }
 repo_root=$(cd "$repo_root" && pwd -P)
-if [[ ! -f $repo_root/go.mod && ! -f $repo_root/go.work ]]; then
-  go_installer_deny "GO_HOOK_NOT_GO_MODULE" "go-hook-install" \
-    "repo=$(eci_diagnostic_value "$repo_root")" \
-    "go.mod hook installer: no go.mod or go.work at $repo_root" \
-    'run the installer from a Go module root, then retry'
-  exit 2
-fi
 checker=$repo_root/hooks/pre-commit-go-mod.sh
 if [[ ! -f $checker || ! -x $checker ]]; then
   go_installer_deny "GO_HOOK_CHECKER_MISSING" "go-hook-install" \
     "repo=$(eci_diagnostic_value "$repo_root"),checker=$(eci_diagnostic_value "$checker")" \
     "go.mod hook installer: expected executable checker at $checker" \
     'restore an executable hooks/pre-commit-go-mod.sh, then retry'
-  exit 2
-fi
-lib_file=$repo_root/hooks/lib/eci-diagnostic.sh
-if [[ ! -f $lib_file ]]; then
-  go_installer_deny "GO_HOOK_LIB_MISSING" "go-hook-install" \
-    "repo=$(eci_diagnostic_value "$repo_root"),lib=$(eci_diagnostic_value "$lib_file")" \
-    "go.mod hook installer: expected diagnostic library at $lib_file" \
-    'copy hooks/lib/eci-diagnostic.sh into the repository, then retry'
   exit 2
 fi
 
@@ -79,7 +63,7 @@ elif [[ $# -eq 2 && $1 == --repair-hardlink ]]; then
     exit 2
   fi
 else
-  usage "$*"
+  usage
   exit 2
 fi
 
