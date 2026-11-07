@@ -30,19 +30,19 @@ Supervisor-only ECI lifecycle. Load the shared coordinator runtime before this m
 - If any forecast is missing or stale, say so and reconcile it alongside safe work without delaying the update.
 - Forecasts are advisory. They never gate work, grant or deny permissions, require artifacts or receipts, create blockers, require parsers, or require per-command ceremony.
 - Use the [`forecast-target-history.tsv` audit contract](../../context-ledger/SKILL.md#forecast-target-history) for every root-target transition. It is audit-only and never a gate.
-- Assign new tracked repository contributions, including policy and documentation, to a Producer for authorship, checks, and commit; do not author or commit them as Supervisor. Preserve existing authorized Supervisor-authored tracked content with exact provenance and transfer its bounded scope to a Producer for integration, checking, and commit. If no Producer is free, queue the assignment and continue other admitted work; capacity alone is not a user blocker. The Supervisor may maintain session-local coordination records, ledgers, plans, status reports, handoffs, and proof notes outside the tracked repository. Resolve routing edge cases through explicit session coordination. Do not call retired self-edit helpers; Producer ownership and index rules still apply.
+- Assign new tracked repository contributions, including policy and documentation, to a Producer for authorship, checks, and commit; do not author or commit them as Supervisor. Preserve existing authorized Supervisor-authored tracked content with exact provenance and transfer its bounded scope to a Producer for integration, checking, and commit. If no Producer is free, queue the assignment and continue other admitted work; capacity alone is not a user blocker. The Supervisor may maintain session-local coordination records, ledgers, plans, status reports, handoffs, and proof notes outside the tracked repository. Resolve routing edge cases through explicit session coordination while hook migration is deferred. Do not call retired self-edit helpers; Producer ownership and index rules still apply.
 - Apply [ECI fast path](fast-path.md) at task launch and throughout shared-tree coordination, evidence rerouting, review, and closure.
 - Follow the shared pause-all-work and stop-recovery modules only on their exact predicates. Load policy-pressure-tests only for workflow-policy changes.
 
 ## Engagement lifecycle (Claude mechanics)
 
-The Supervisor owns the `eci-active` calls; Workers do not engage or disengage ECI. Claude keeps the `eci-active on/off` marker because its Stop hook depends on it for continuation; Codex retires the marker for native goals. Hooks read the marker and arm or clear only `eci_teammate_pending`. Keep ordinary session coordination records for ownership, scope, review, and teardown.
+The Supervisor owns the `eci-active` calls; Workers do not engage or disengage ECI. Claude has no native goals, so this lifecycle replaces the Codex native goal lifecycle. The `eci-active on/off` marker records engagement state; it provides no continuation, because no Stop hook is registered. The prompt reminder and the Bash gate read it ([Claude mechanics](../SKILL.md#engagement-marker-and-hooks)). Keep ordinary session coordination records for ownership, scope, review, and teardown.
 
 - On ECI activation, before Step 1, run `~/.claude/bin/eci-active status`. If no marker exists, run `~/.claude/bin/eci-active on "<task + scope>"` with the full requested ECI outcome as the task. Record the engagement and its owning lifecycle in session coordination state. Repeated activation preserves that ownership; engage at most once per ECI lifecycle.
 - Preserve any marker belonging to another lifecycle. Associate ECI with an existing marker only when its scope covers the requested outcome; association does not transfer ownership. For an unrelated marker, report that engagement is unavailable while it remains and continue authorized ECI work without modifying it.
 - Child Jobs, additive outcomes, iterations, and ECI nested within an existing ECI lifecycle reuse that lifecycle's engagement. ECI nested under ATE follows the activation rule for its bounded ECI scope: reuse a covering outer marker without disengage authority, or engage when none exists. Include every admitted outcome at every descendant depth in the owning lifecycle's completion check.
 - `eci-active off <report.md>` is the last step of the [teardown sequence](#teardown-sequence-claude-mechanics). Run it for this lifecycle's owned marker only when its entire objective is achieved, every owned Job is closed, every outcome required to achieve that objective is accepted, and all task-owned Writers are stopped; or on root user closure with a `user-closed:` certificate. A child clean pass, Fast completion, idle Worker, or zero running Workers alone never disengages.
-- Cancelling a child Job leaves the marker. Cancellation, withdrawal, or replacement of the root is user closure: it disengages with a `user-closed:` certificate and claims no achievement. If the marker's scope no longer matches the owned lifecycle, leave it unchanged. Do not disengage to enable a successor before teardown completes.
+- Cancelling a child Job leaves the marker. Cancellation, withdrawal, or replacement of the root is user closure: it disengages with a `user-closed:` certificate and claims no achievement. If the marker's scope no longer matches the owned lifecycle, leave it unchanged. Do not disengage to enable a successor.
 - If `eci-active` fails (for example, report validation rejects it), report the exact error and continue safe ECI work. Do not fabricate success, hand-edit the marker (the gate denies it), or change another lifecycle's marker. Teardown failure leaves the lifecycle unfinished.
 
 ## Step 4 — Review coordination
@@ -85,9 +85,9 @@ Status uses human-readable role/lane names, parent-child trees for nested Helper
 
 ## Provider coordination
 
-Agent coordination uses only the Agent tool (spawning), `SendMessage`, completion notifications (the Claude counterpart of `wait`; normally bounded by the next [active Job review](task-orchestrator.md#active-job-compliance) when due), cancellation-only `TaskStop`, and `ListAgents` for roster maintenance only. Never poll `ListAgents` in a loop. If standard tools are unavailable, hard-escalate rather than shell-launch a `claude` process. Spawning a subagent starts a new role; `SendMessage` to a named agent resumes it from its transcript when it is finished or idle, and queues for its next tool round when it is running. The Supervisor follows an Orchestrator only under the [publication and report-drain rules](task-orchestrator.md#publication-transfer-and-report-drain). Label every spawned/resumed role and immediately update the roster as `<role label>: <runtime name> [type]`. Subagent model and `TeamCreate` substitution: [Claude mechanics](../SKILL.md#claude-mechanics).
+Agent coordination uses only the Agent tool (spawning), `SendMessage`, completion notifications (the Claude counterpart of `wait`; normally bounded by the next [active Job review](task-orchestrator.md#active-job-compliance) when due), cancellation-only `TaskStop`, and `ListAgents` for roster maintenance only (unverified tool; see [port status](../SKILL.md#port-status)). Never poll `ListAgents` in a loop. If standard tools are unavailable, hard-escalate rather than shell-launch a `claude` process. Spawning a subagent starts a new role; `SendMessage` to a named agent resumes it from its transcript when it is finished or idle, and queues for its next tool round when it is running. The Supervisor follows an Orchestrator only under the [publication and report-drain rules](task-orchestrator.md#publication-transfer-and-report-drain). Label every spawned/resumed role and immediately update the roster as `<role label>: <runtime name> [type]`. Subagent model and `TeamCreate` substitution: [Claude mechanics](../SKILL.md#claude-mechanics).
 
-Before Step 1, follow the [engagement lifecycle](#engagement-lifecycle-claude-mechanics). While engaged, assign every new tracked repository contribution to a Producer for authoring, checks, and commit. The Supervisor may directly maintain session-local coordination records outside the tracked repository; ordinary routing coordination does not override Producer ownership or authorize staging, index mutation, or commit. Keep ECI active through blocker work, nested paths, review, and acceptance; user cancellation/withdraw/replacement/ATE switch is user closure only after completing the successor handoff or scope removal. After compaction the Supervisor re-invokes the full router via the Skill tool, then rereads its exact assigned modules before the next decision. While the marker exists, the UserPromptSubmit reminder prompts this; the PostCompact hook is a no-op.
+Before Step 1, follow the [engagement lifecycle](#engagement-lifecycle-claude-mechanics). While engaged, assign every new tracked repository contribution to a Producer for authoring, checks, and commit. The Supervisor may directly maintain session-local coordination records outside the tracked repository; ordinary routing coordination does not override Producer ownership or authorize staging, index mutation, or commit. Keep ECI active through blocker work, nested paths, review, and acceptance; user cancellation/withdraw/replacement/ATE switch is user closure only after completing the successor handoff or scope removal. After compaction the Supervisor re-invokes the full router via the Skill tool, then rereads its exact assigned modules before the next decision. Claude mechanics: while the marker exists, the UserPromptSubmit reminder prompts this in place of the Codex PostCompact signal; the PostCompact hook is a no-op.
 
 Every Producer assignment says fresh-target treatment: Explorer rereads every referenced file; the Implementer Producer rereads every intended target. Every report/submission tags factual claims; E2E evidence identifies exact tool output/log/screenshot/state rather than bare “green.” Code/debug submissions follow debugging-discipline's proportionate evidence and reporting requirements and explain why the diff repairs the established local defect; unknown repair rationale is not submittable. The Supervisor independently verifies every committed range before routing it as evidence or starting dependent review/work.
 
@@ -109,15 +109,13 @@ Use one fresh loop-breaker per change when three gate retries in a cycle, three 
 
 ## Teardown sequence (Claude mechanics)
 
-Run in this exact order on root clean pass or root user closure. Stopping mid-sequence keeps the Stop-hook block armed; teardown failure leaves the lifecycle unfinished.
+Run in this exact order on root clean pass or root user closure. It replaces the Codex teardown and native goal synchronization (Claude has no native goals). Teardown failure leaves the lifecycle unfinished.
 
 1. Apply [both-producer closure](fast-path.md#adoption-review-and-closure): observe the Implementer Producer, the Fast Owner Producer, and their task-owned write-capable Helpers stopped or finished. On user closure, stop task-owned Writers with `TaskStop`, preserving changes and evidence.
-2. Write the disengage report ([format](#disengage-report-claude-mechanics)).
-3. `SendMessage` the Implementer Producer: commit any uncommitted checked work and confirm a clean tree for its scope. Observe its confirmation.
+2. Write the disengage report ([format](#disengage-report-claude-mechanics)) to `~/.agent/context/sessions/$CLAUDE_CODE_SESSION_ID/disengage-report.md`. Keep it outside `$PROOF_DIR`, where the edit gate denies control names such as `disengage.md`.
+3. `SendMessage` the Implementer Producer to request its final confirmation; observe it.
 4. Record each role as completed, idle, cancelled, or still running. A timeout or silence is nonterminal. Never close a terminal agent to finish teardown, and do not originate `shutdown_request`.
-5. Run `~/.claude/bin/eci-active off <report.md>` last, so a partial teardown leaves the gate armed.
-
-If the Supervisor's next Stop blocks for proof, copy the report to `$PROOF_DIR/proof.md`.
+5. Run `~/.claude/bin/eci-active off ~/.agent/context/sessions/$CLAUDE_CODE_SESSION_ID/disengage-report.md` last, so a partial teardown leaves the marker, its prompt reminder, and the fail-closed Bash gate in place.
 
 ### Disengage report (Claude mechanics)
 
@@ -136,6 +134,7 @@ clean-pass: <evidence>        # or user-closed: <evidence>; exactly one such lin
 - Adversarial self-critique: ...
 - Assumed blockers: ...
 - Rule-compliance self-audit: ...
+- Background processes: ...
 - Testing: ...
 
 ## Incomplete compliance
@@ -151,7 +150,7 @@ The bin rejects a report missing the `Stop checklist walkthrough` or `Incomplete
 - A critic prompt lacks lineage/full chain, original requirements, concrete winner text, or applies a defer/debt as implementation.
 - A fresh critic is replaced by a producer, a same-role followup, or serial review.
 - A known bug is sent to BRP before debugging discipline/attempt record.
-- A stable reusable producer is replaced while idle, or a special/fresh critic is upgraded by a `SendMessage` followup.
+- A stable reusable producer is replaced while idle, or a special/fresh critic is upgraded by a `SendMessage` followup. (Claude mechanics: the Codex `send_message`-starts-a-turn clause is dropped because `SendMessage` resumes idle agents.)
 - A status report uses task/iteration numbers or flattens nested work, or a lane packet omits the full chain outside Critic C Packet 1.
 - An ordinary repository-code edit reaches any denial path instead of an automatic bounded Producer handoff or queue.
 - A normal command or routing step waits on an artifact, receipt, hash, allowlist, raw spelling, or shell punctuation without a concrete accidental destructive effect.

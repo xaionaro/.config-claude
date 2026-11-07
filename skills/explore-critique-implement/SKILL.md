@@ -1,6 +1,6 @@
 ---
 name: explore-critique-implement
-description: Use when a non-trivial task needs ECI (medium coding task, investigation, single-feature implementation, "why does X not work?", uncertain solution space, two plausible approaches) or active ATE routes bounded work through ECI
+description: Use when CLAUDE.md selects ECI (medium coding task, investigation, single-feature implementation, "why does X not work?", uncertain solution space, two plausible approaches) or active ATE routes bounded work through ECI
 ---
 
 # Explore-Critique-Implement
@@ -15,20 +15,23 @@ Ported from the Codex ECI skill (Supervisor / Job Orchestrator version). Text fo
 | --- | --- |
 | Roles ported | Supervisor, Job (J/N counts), Job Orchestrator (J > 1), Orchestrator, Explorer, Step 2 Critic, Implementer Producer, Fast Owner Producer, Critic A/B/C, E2E, Helper, brainstormer, feasibility validator, loop-breaker |
 | Modules ported | `references/`: coordinator, task-orchestrator, fast-path, fast-continuation-cases, explore, critique, implement, review, coverage-map |
-| Deviation: engagement marker | Claude keeps `eci-active on/off` and the Stop-hook marker. Codex retires markers for native goals. See [Claude mechanics](#claude-mechanics) |
+| Deviation: engagement marker | Claude has no native goals. The Supervisor keeps `~/.claude/bin/eci-active` (`on`, `off`, `status`) and its `eci_active` marker, which Codex retires for native goals. No Stop hook is registered, so nothing provides continuation. See [Claude mechanics](#claude-mechanics) |
+| Deviation: activation trigger | The description and activation name `CLAUDE.md` where Codex names `CODEX` |
 | Deviation: no TeamCreate | `TeamCreate` is unavailable in this environment. Every role is an Agent-tool subagent addressed with `SendMessage`; teammates and `TeamDelete` are not used |
-| Deviation: tool names | Codex spawn/`write agent://`/`send_message`/`interrupt_agent`/`wait`/`proc://` map to Agent / `SendMessage` / `TaskStop` / completion notifications / `ListAgents`. `SendMessage` also resumes a finished named agent |
-| Deviation: models | Codex `model-selection.yaml` becomes the Agent `model` parameter. The tool has no reasoning-effort parameter, so `max` and `higher` both map to `opus` |
-| Deviation: Git | Codex `eci-worker-git` has no Claude counterpart; Worker Git steps are manual native Git on exact owned paths |
-| Not ported | Native goal calls (replaced by the engagement lifecycle); the Codex-format alternative disengage report |
-| Open dependency | `CODEX.md` anchors became `CLAUDE.md` anchors, as in the sibling ports: `#concurrent-tasks`, `#work-estimates`, `#engineering-priorities`, `#clean-system-and-repair`, `#decisions` (security follow-ups). `CLAUDE.md` has no such sections yet. Ledger links target `../context-ledger/`, while `CLAUDE.md` names `maintaining-context-ledger`. Claude `eci-active` lists only `on`, `off`, `status`, so the `requirement-assignment` subcommand that `context-ledger` names does not exist yet |
-| Open conflict | `CLAUDE.md` Git rule (amend an unpushed bad commit) vs. ECI immutable checkpoint range (repair in a new commit after handoff). The ECI rule is kept as written |
+| Deviation: tool names | Codex spawn / `write agent://` / `send_message` / `interrupt_agent` / `wait` map to the Agent tool / `SendMessage` / `SendMessage` / `TaskStop` / completion notifications. `SendMessage` resumes an idle or finished named agent and queues for a running one, so Codex clauses that forbid `send_message` to an idle agent are dropped. Codex `read proc://` maps to `ListAgents`: unverified, because the `SendMessage` tool text names it but no `ListAgents` tool was available when this port was checked. `TaskList` and `TaskGet` are unverified; do not use them |
+| Deviation: models | Profiles come from `~/.claude/model-selection.yaml`; the Agent tool sets only `model`. Reviewers always run on `opus` (supervisor rule). See [Model selection](#model-selection) |
+| Deviation: Git | Codex `eci-worker-git` (typed operations and `run-once`) has no Claude counterpart. Worker Git steps are manual native Git on exact owned paths; the user-authorized one-use exception runs the exact native command |
+| Deviation: disengage report | `eci-active off` checks for the `Stop checklist walkthrough` and `Incomplete compliance` headers, so the Codex-format alternative report is not ported. The walkthrough adds `Background processes` from `~/.claude/hooks/stop-checklist.md` |
+| Not ported: native goals | Claude has no native goals. Codex `get_goal`, `create_goal`, `update_goal`, and goal synchronization are replaced by the [engagement lifecycle](references/coordinator.md#engagement-lifecycle-claude-mechanics) and `eci-active off` |
+| Not ported: Codex-only subcommand | `eci-active requirement-assignment` (named by the Codex `context-ledger`). Claude `eci-active` has only `on`, `off`, `status`; see [task-orchestrator](references/task-orchestrator.md#authority-and-reporting) |
+| CLAUDE.md anchors | `CODEX.md` links target `CLAUDE.md` sections ported from `CODEX.md`: `#concurrent-tasks`, `#work-estimates`, `#engineering-priorities`, `#clean-system-and-repair`, `#decisions` (security follow-ups). Ledger links target `../context-ledger/`, which `CLAUDE.md` routes (Mandatory Skills item 21) |
+| Amend rule | While ECI is engaged, a checkpoint is immutable (repair in a new commit). Outside ECI, an unpushed bad commit may be amended (`CLAUDE.md` Git amend rule). The user-authorized one-use Git exception still applies |
 
 ## Activation and invariants
 
-Start only when the session selects ECI (`CLAUDE.md` routes medium coding tasks, investigations, and "why does X not work?" questions here) or active ATE explicitly routes bounded work through it. Loading this router alone does not start ECI. Use ECI for non-mechanical work with uncertainty, future behavior/routing/protocol risk, or two plausible approaches; classify by decision complexity and risk, not diff size. A one-line/local change is still non-trivial when it changes instructions, prompts, routing, protocols, public contracts, security, persistence, concurrency, architecture, or reviewer/agent behavior. Skip only a mechanical answer whose consequences are obvious, directly verifiable, and carry no future behavior or routing risk.
+Start only when `CLAUDE.md` selects ECI or active ATE explicitly routes bounded work through it. Loading this router alone does not start ECI. Use ECI for non-mechanical work with uncertainty, future behavior/routing/protocol risk, or two plausible approaches; classify by decision complexity and risk, not diff size. A one-line/local change is still non-trivial when it changes instructions, prompts, routing, protocols, public contracts, security, persistence, concurrency, architecture, or reviewer/agent behavior. Skip only a mechanical answer whose consequences are obvious, directly verifiable, and carry no future behavior or routing risk.
 
-On activation and closure, the Supervisor follows the [engagement lifecycle](references/coordinator.md#engagement-lifecycle-claude-mechanics) (`eci-active on/off`; see [Claude mechanics](#claude-mechanics)).
+On activation and closure, the Supervisor follows the [engagement lifecycle](references/coordinator.md#engagement-lifecycle-claude-mechanics) (`eci-active on/off`). Claude mechanics: it replaces the Codex native goal lifecycle, because Claude has no native goals ([Claude mechanics](#claude-mechanics)).
 
 - Maintain requirement lineage and a project-understanding ledger. The active ECI/ATE lifecycle owns normal work; ATE may contain normal ECI. Keep forecast values in `forecasts.yaml`; project-understanding may link to it but must not duplicate them.
 - Apply [concurrent task scheduling](../../CLAUDE.md#concurrent-tasks) to new Jobs, independent progress, outcome-local gates, and root closure. Each outcome keeps its scope and Producer identities; ownership follows the [Job Orchestrator contract](references/task-orchestrator.md).
@@ -74,15 +77,17 @@ Every early, Fast, Producer-final, and independent-final E2E report records `sta
 
 ## Model selection
 
-At each new spawn, pass the `model` the profile table maps to (Agent tool `model` parameter) on a fresh agent: any `subagent_type` other than `fork`, so it inherits no conversation. The Agent tool has no reasoning-effort parameter. Keep existing launch settings and reusable owners. If a new activity needs another profile, assign a correctly configured helper. Keep independent reviewer assignments self-contained and blind to producer findings. If a requested model is unavailable, record the limitation and continue with the available provider. Do not assume effective-model telemetry. Profile selection does not change role authority or reviewer independence.
+At each new spawn, read `~/.claude/model-selection.yaml` and pass the profile's `model` as the Agent tool `model` parameter on a fresh agent (any `subagent_type` other than `fork`, so it inherits no conversation). Claude mechanics: the Agent tool has no reasoning-effort parameter, so the profile's `reasoning_effort` is recorded but has no effect. Keep existing launch settings and reusable owners. If a new activity needs another profile, assign a correctly configured helper. Keep independent reviewer assignments self-contained and blind to producer findings. If a requested model or selector is unavailable, record the limitation and continue with the available provider. Treat the file as a routing reference; do not assume native auto-loading or effective-model telemetry. Profile selection does not change role authority or reviewer independence.
 
-Choose by assigned activity; mixed assignments use the highest applicable profile.
+Supervisor rule (Claude deviation): reviewers and critics always run on `opus`, whatever profile applies. This covers the Step 2 critic, Critics A/B/C, independent Step 4 E2E, and every other independent review.
 
-| Profile | Agent `model` | Activities |
+Choose by assigned activity; mixed assignments use the highest applicable profile. The yaml is authoritative; the values below mirror it.
+
+| Profile | yaml `model` / `reasoning_effort` | Activities |
 | --- | --- | --- |
-| `max` | `opus` | Solution design; unresolved RCA work; design review, including Step 2; long-term health review, including Critic C. |
-| `higher` | `opus` | Other independent reviews, including Critics A/B, settled RCA review, and independent Step 4 E2E. |
-| `default` | `sonnet` | Implementation; routine work; producer E2E. |
+| `max` | `opus` / `high` | Solution design; unresolved RCA work; design review, including Step 2; long-term health review, including Critic C. |
+| `higher` | `haiku` / `max` | Other independent reviews, including Critics A/B, settled RCA review, and independent Step 4 E2E. These reviews run on `opus` under the supervisor rule. |
+| `default` | `haiku` / `high` | Implementation; routine work; producer E2E. |
 
 ## Module routing
 
@@ -110,19 +115,20 @@ Before Step 4 or dependent work on another implementation iteration, the Supervi
 
 ## Claude mechanics
 
-Claude-only deviations from the Codex source. Everything outside this section and the other labelled "Claude mechanics" blocks follows Codex.
+Claude-only deviations from the Codex source. Everything outside this section, the other labelled "Claude mechanics" blocks, and the [port status](#port-status) rows follows Codex.
 
 ### Engagement marker and hooks
 
+Claude has no native goals, and no Stop hook is registered. The marker records engagement state only; it provides no continuation.
+
 | Piece | Behavior |
 | --- | --- |
-| Engage / disengage | The Supervisor runs `~/.claude/bin/eci-active on "<task + scope>"` before Step 1 of the first iteration and `~/.claude/bin/eci-active off <disengage-report.md>` as the last teardown step ([engagement lifecycle](references/coordinator.md#engagement-lifecycle-claude-mechanics), [teardown](references/coordinator.md#teardown-sequence-claude-mechanics)). Workers never run `eci-active`. Do not disengage mid-task to make a direct edit; route it to a Producer. |
-| Marker | `eci-active on` writes `$PROOF_DIR/eci_active` (`$PROOF_DIR` = `~/.cache/claude-proof/$SESSION_ID`) with `scope`, `cwd`, `session_id`. |
-| PreToolUse gate | `~/.claude/hooks/eci-active-gate.sh` denies Edit/Write/MultiEdit/NotebookEdit only when the target is an ECI control or ledger file, including the marker. It does not read the marker for source edits and exempts no subagent. Routing every tracked contribution through a Producer is a skill rule, not gate-enforced. |
-| Stop hook | `~/.claude/hooks/stop-gate.sh` hard-blocks an idle stop while the marker exists. One auto-release: `eci-pending-set.sh` (PreToolUse on Agent, SendMessage, Monitor; main thread only) arms `$PROOF_DIR/eci_teammate_pending`, and stops release silently until `eci-pending-clear.sh` clears it on the next user prompt or reply. |
-| Block while a Worker runs | A mid-flight user message can clear the marker. Confirm the Worker still runs (Agent status or `ListAgents`), then `touch $PROOF_DIR/eci_teammate_pending`. Verify first; never arm blindly. |
-| Genuine stall | Surface the blocker to the user with AskUserQuestion; do not stop to ask. |
-| Compaction | While the marker exists, every user prompt prints its contents and a reminder to re-invoke this skill via the Skill tool. `eci-post-compact-refresh.sh` is a no-op. |
+| Engage / disengage | The Supervisor runs `~/.claude/bin/eci-active on "<task + scope>"` before Step 1 of the first iteration and `~/.claude/bin/eci-active off <report path>` as the last teardown step ([engagement lifecycle](references/coordinator.md#engagement-lifecycle-claude-mechanics), [teardown](references/coordinator.md#teardown-sequence-claude-mechanics)). Workers never run `eci-active`; `~/.claude/hooks/validate-bash.sh` denies a subagent Bash command that mentions `eci-active off`. Do not disengage mid-task to make a direct edit; route it to a Producer. |
+| Marker | `eci-active on` writes `$PROOF_DIR/eci_active` (`$PROOF_DIR` = `~/tmp/agent/proof/$CLAUDE_CODE_SESSION_ID`) with `scope`, `cwd`, `session_id`. |
+| Edit gate | `~/.claude/hooks/eci-active-gate.sh` (PreToolUse on Edit/Write/MultiEdit/NotebookEdit) denies an edit whose target is an ECI control or ledger file under `$PROOF_DIR`, including the marker and `disengage.md`. It does not read the marker for source edits and exempts no subagent. Routing every tracked contribution through a Producer is a skill rule, not gate-enforced. |
+| Bash gate | `~/.claude/hooks/validate-bash.sh` (PreToolUse on Bash) passes every Bash command to the Codex command planner (`eci-command-plan` under `~/.codex`). While the marker exists, a planner that cannot run or exits non-zero denies the command (fail closed). Without the marker, an unavailable planner only prints a stderr advisory. |
+| Genuine stall | Surface the blocker to the user with AskUserQuestion (`CLAUDE.md` Questions via tool). |
+| Compaction | While the marker exists, `~/.claude/hooks/prompt-task-reminder.sh` (UserPromptSubmit) prints the marker contents and a reminder to re-invoke this skill via the Skill tool on every user prompt. `eci-post-compact-refresh.sh` (PostCompact) is a no-op. |
 
 ### Subagent model (`TeamCreate` unavailable)
 
@@ -132,21 +138,9 @@ Claude-only deviations from the Codex source. Everything outside this section an
 - Use `subagent_type: general-purpose` for every role. `feature-dev:*` agents lack `SendMessage` and `Bash`; `Explore` and `Plan` lack `Agent`, `Edit`, and `Write`.
 - A subagent's final result returns to its spawner. Ownership transfers change the logical owner, so Workers also report explicitly with `SendMessage` to the current owner; `to: "main"` reaches the Supervisor.
 
-### `CLAUDE_ROLE`
+### `CLAUDE_ROLE` (not used)
 
-Agent-tool subagents carry an `agent_id`; the Stop hook exempts them, so no role env applies. `CLAUDE_ROLE` matters only for an independent `claude` process launched as `~/.claude/bin/claude-as-role <role>`. Setting it in a prompt has no effect. The Stop hook gates only an empty role, `lead`, `team-lead`, and `teamlead`; every other value is exempt. Keep this table, `hooks/stop-gate.sh`, and `bin/claude-as-role` in sync.
-
-| Role | `CLAUDE_ROLE` |
-| --- | --- |
-| Supervisor | none (main session, gated) |
-| Orchestrator | `coordinator` |
-| Explorer | `explorer` |
-| Implementer Producer, Fast Owner Producer | `eci-implementer` |
-| Step 2 critic, Critic A/B/C, feasibility validator, loop-breaker | `reviewer` |
-| E2E | `verifier` |
-| Brainstormer | `brainstormer` |
-
-Orchestrator, Fast Owner Producer, and feasibility validator are not in the allowlist; they map to the nearest listed role.
+ECI does not use `CLAUDE_ROLE` or `~/.claude/bin/claude-as-role`. Every role is an Agent-tool subagent, and [provider coordination](references/coordinator.md#provider-coordination) forbids shell-launching a `claude` process. Setting `CLAUDE_ROLE` in a prompt has no effect.
 
 ## Relationship to other skills
 
@@ -169,4 +163,4 @@ Maintenance provenance: [coverage map](references/coverage-map.md).
 
 ## After compaction
 
-After each ECI compaction, the Supervisor re-invokes this skill via the Skill tool and rereads its exact assigned modules before the next decision. Then refresh the latest status report and print a proper status report to the user using [writing-status-reports](../writing-status-reports/SKILL.md). Compaction alone does not trigger queue-item critique. Resume safe work after reporting.
+After each ECI compaction, the Supervisor re-invokes this skill via the Skill tool and rereads its exact assigned modules before the next decision (Claude mechanics: the prompt reminder replaces the Codex PostCompact signal). Then refresh the structured YAML status report and print a proper status report to the user using [writing-status-reports](../writing-status-reports/SKILL.md). Compaction alone does not trigger queue-item critique. Resume safe work after reporting.
