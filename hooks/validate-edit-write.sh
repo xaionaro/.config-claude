@@ -131,17 +131,25 @@ if [ -n "$FILE_PATH" ]; then
   claude_install_fail_open_trap validate-edit-write
 fi
 
+# The policy checks below test a variable with `grep -q ... <<<"$VAR"`, never
+# `echo "$VAR" | grep -q`. Under pipefail, grep -q exits at the first match;
+# bash writes a multi-line value one line at a time, so the writer can still be
+# writing, die of SIGPIPE (rc 141), make the pipeline read as failed and skip
+# the deny. A here-string has no writer process. The static check
+# test_validate_edit_write_has_no_echo_grep_pipeline in hooks/tests/run.sh pins
+# this.
+#
 # Block edits to vendored code: source must be edited, then revendored.
 # Covers all common vendored-dir conventions, case-insensitive:
 #   import/ imports/ vendor/                        (Go + xaionaro-go)
 #   3rdparty/ 3rd_party/ 3rd-party/ "3rd party/"    (numeric prefix)
 #   thirdparty/ third_party/ third-party/ "third party/" (word prefix)
-if [ -n "$FILE_PATH" ] && printf '%s\n' "$FILE_PATH" | grep -Eiq '(^|/)(import|imports|vendor|(3rd|third)[ _-]?party)(/|$)'; then
+if [ -n "$FILE_PATH" ] && grep -Eiq '(^|/)(import|imports|vendor|(3rd|third)[ _-]?party)(/|$)' <<<"$FILE_PATH"; then
   deny 'Do not edit files under import/, imports/, vendor/, or any third-party/3rdparty variant directly. Edit the original source and revendor the files. Worst case: edit the originals and rsync them into the vendored dir.'
 fi
 
 # Block plan-file edits under docs/plans or docs/superpowers/plans. Plans go to /tmp/claude-plans.
-if [ -n "$FILE_PATH" ] && printf '%s\n' "$FILE_PATH" | grep -Eq '(^|/)docs/(superpowers/)?plans/'; then
+if [ -n "$FILE_PATH" ] && grep -Eq '(^|/)docs/(superpowers/)?plans/' <<<"$FILE_PATH"; then
   BASENAME=$(basename "$FILE_PATH")
   deny "Plans must not be saved inside the repo. Save to /tmp/claude-plans/$BASENAME instead."
 fi
@@ -165,6 +173,6 @@ else
 fi
 
 # Check for local path replace: => ../ or => ./
-if echo "$TEXT" | grep -qE '=>\s*\.\.?/'; then
+if grep -qE '=>\s*\.\.?/' <<<"$TEXT"; then
   deny 'Do not add local-path replace directives (=> ../something or => ./something) to go.mod. Use go.work for local module resolution. Remote fork replaces are fine.'
 fi

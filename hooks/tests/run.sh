@@ -1335,6 +1335,29 @@ test_validate_edit_write_allows_remote_multiedit_gomod_replace() {
   expect_no_output "$out"
 }
 
+# True when a non-comment line of file $1 pipes echo or printf into grep. Under
+# pipefail, grep -q exits at the first match and the writer can die of SIGPIPE
+# (rc 141), which turns a matching `if` false and skips the deny. A static pin,
+# not a timing test: that failure needs a scheduling race to show.
+writer_grep_pipeline_in() {
+  awk '
+    !/^[[:space:]]*#/ && /(^|[^[:alnum:]_])(echo|printf)[^|]*\|[[:space:]]*(grep|egrep|fgrep)([^[:alnum:]_]|$)/ { found = 1 }
+    END { exit found ? 0 : 1 }
+  ' "$1"
+}
+
+test_validate_edit_write_has_no_echo_grep_pipeline() {
+  local probe="$TMP_ROOT/writer-grep-probe.sh"
+  # Detector falsification: known-bad lines are flagged, known-good lines are not.
+  printf '%s\n' 'if echo "$TEXT" | grep -qE x; then' >"$probe"
+  writer_grep_pipeline_in "$probe" || return 1
+  printf '%s\n' 'if [ -n "$P" ] && printf "%s\n" "$P" | grep -Eiq x; then' >"$probe"
+  writer_grep_pipeline_in "$probe" || return 1
+  printf '%s\n' 'if grep -qE x <<<"$TEXT"; then' '# echo "$T" | grep -q x' 'T=$(echo "$I" | jq -r .a)' >"$probe"
+  ! writer_grep_pipeline_in "$probe" || return 1
+  ! writer_grep_pipeline_in "$ROOT/hooks/validate-edit-write.sh"
+}
+
 # ---- validate-bash ----
 # validate-bash runs the Claude guards (git push, git reset gate, subagent
 # eci-active off), then delegates the ECI command plan to the Codex planner.
@@ -2785,6 +2808,8 @@ run_case "validate-edit-write allows remote Write go.mod replace" \
   test_validate_edit_write_allows_remote_write_gomod_replace
 run_case "validate-edit-write allows remote MultiEdit go.mod replace" \
   test_validate_edit_write_allows_remote_multiedit_gomod_replace
+run_case "validate-edit-write pipes no echo or printf into grep (SIGPIPE under pipefail skips a deny)" \
+  test_validate_edit_write_has_no_echo_grep_pipeline
 
 # validate-bash tests
 run_case "validate-bash allows redirect to vendor paths (planner receives input)" \
