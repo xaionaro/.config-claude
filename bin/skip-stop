@@ -8,7 +8,7 @@
 # Session discovery:
 #   1. If $CLAUDE_SESSION_ID is set, use it directly.
 #   2. Otherwise, pick the most-recently-modified session directory under
-#      ~/.cache/claude-proof/ whose name matches a UUID.
+#      ~/tmp/agent/proof/ whose name matches a UUID.
 #
 # Edge cases: if two Claude sessions are active concurrently and neither
 # exports CLAUDE_SESSION_ID, this script resolves to whichever session was
@@ -16,7 +16,7 @@
 
 set -euo pipefail
 
-CACHE_DIR="$HOME/.cache/claude-proof"
+CACHE_DIR="$HOME/tmp/agent/proof"
 ACTION="${1:-}"
 
 resolve_session_dir() {

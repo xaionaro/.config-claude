@@ -346,7 +346,7 @@ Ported from ~/.codex/CODEX.md. Qt, Android, IP addresses, LAN DNAT, Ollama, and 
 
 # Execution
 
-- **Stop hook**: When blocked by the stop hook, check `~/.cache/claude-proof/$SESSION_ID/` — read `summary-to-print.md` (print it to user then stop), `instructions.md` (verification protocol), or `~/.claude/hooks/stop-checklist.md` (acceptance criteria). Whichever file exists tells you what to do.
+- **Stop hook**: When blocked by the stop hook, check `~/tmp/agent/proof/$SESSION_ID/` — read `summary-to-print.md` (print it to user then stop), `instructions.md` (verification protocol), or `~/.claude/hooks/stop-checklist.md` (acceptance criteria). Whichever file exists tells you what to do.
 - **Questions via tool**: Always use the AskUserQuestion tool for questions and confirmations — this keeps the conversation flowing instead of blocking on your turn.
 - **Defer questions until necessary**: Ask only after exhausting work that does not depend on the answer. Do all unblocked work first; batch the question with whatever other genuine ambiguity remains.
 - **Delegate to subagents**: Prefer subagents for implementation, research, and investigation tasks. The main thread is for orchestration — understanding the user's intent, planning, and reviewing subagent results. This preserves the main context window and enables parallelism. "Too large" or "not a quick fix" is one more reason to use a subagent.

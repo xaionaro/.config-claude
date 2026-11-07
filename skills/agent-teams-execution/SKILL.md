@@ -9,7 +9,7 @@ Phased agent team with adversarial review loops and tiered information trust.
 
 ## When to use
 
-**Project-understanding ledger.** Coordinator owns `~/.cache/claude-proof/$SESSION_ID/project-understanding.md` per the `context-ledger` skill (path, schema, timing, validity). Coordinator updates after: findings, design approval, task code/test approval, blocker resolution, user correction; before QA spawn, user-waiting stop, shutdown. Lead + snitch remind on forgetting: every phase transition, hourly audit, and any activity burst (multiple transitions, decisions, corrections, or messages) without update. Invalid ledger blocks QA spawn.
+**Project-understanding ledger.** Coordinator owns `~/tmp/agent/proof/$SESSION_ID/project-understanding.md` per the `context-ledger` skill (path, schema, timing, validity). Coordinator updates after: findings, design approval, task code/test approval, blocker resolution, user correction; before QA spawn, user-waiting stop, shutdown. Lead + snitch remind on forgetting: every phase transition, hourly audit, and any activity burst (multiple transitions, decisions, corrections, or messages) without update. Invalid ledger blocks QA spawn.
 
 **Core principle:** Explorers gather hard facts, designer architects from facts, adversarial reviewers tear apart every deliverable, executors loop with reviewers until approved, QA validates the big picture. Coordinator manages logistics, lead audits rule compliance. Neither implements.
 
