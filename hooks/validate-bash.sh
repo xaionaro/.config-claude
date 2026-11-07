@@ -545,7 +545,7 @@ fi
 # Block subagents from disengaging ECI via `eci-active off`. Same test as
 # claude_hook_is_subagent_context: a non-empty agent_id.
 if [ -n "$AGENT_ID" ] && command_mentions_eci_off "$COMMAND"; then
-  deny 'Only the main thread or orchestrator may disengage ECI with `eci-active off`. Subagents report completion or blockers to the orchestrator while ECI stays active. This check matches that phrase anywhere in command text, including quoted text, heredocs and commit messages. Do not retry in any form. Describe the action in other words in commands and commit messages.'
+  deny 'Only the main thread or orchestrator may disengage ECI with `eci-active off`. Subagents report completion or blockers to the orchestrator while ECI stays active. This check matches that phrase anywhere in command text, including quoted text, heredocs and commit messages. Do not retry the disengage in any form. When the phrase is only text, such as a commit message or search pattern, describe it in other words.'
 fi
 
 enforce_git_reset_gate

@@ -1484,7 +1484,7 @@ test_validate_bash_blocks_subagent_eci_active_off() {
   run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" HOME="$home"
   is_pretool_deny "$out" &&
     json_field_equals "$out" '.hookSpecificOutput.permissionDecisionReason // empty' \
-      'Only the main thread or orchestrator may disengage ECI with `eci-active off`. Subagents report completion or blockers to the orchestrator while ECI stays active. This check matches that phrase anywhere in command text, including quoted text, heredocs and commit messages. Do not retry in any form. Describe the action in other words in commands and commit messages.'
+      'Only the main thread or orchestrator may disengage ECI with `eci-active off`. Subagents report completion or blockers to the orchestrator while ECI stays active. This check matches that phrase anywhere in command text, including quoted text, heredocs and commit messages. Do not retry the disengage in any form. When the phrase is only text, such as a commit message or search pattern, describe it in other words.'
 }
 
 test_validate_bash_allows_main_eci_active_off() {
