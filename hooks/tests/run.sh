@@ -49,12 +49,18 @@ fresh_proof_root() {
   printf '%s' "$dir"
 }
 
+# The fake HOME that fresh_home builds for test name $1. Use it to inspect a HOME
+# after the run; the layout lives only here.
+home_dir_for_test() {
+  printf '%s' "$TMP_ROOT/home-$1"
+}
+
 # Build an isolated HOME for ported tests. Symlinks .claude → real one so the
 # hooks can `source $HOME/.claude/hooks/lib/claude-proof-state.sh`. The fake
 # HOME's $HOME/.cache/claude-proof remains entirely test-controlled.
 fresh_home() {
-  local name="$1"
-  local dir="$TMP_ROOT/home-$name"
+  local dir
+  dir="$(home_dir_for_test "$1")"
   rm -rf "$dir"
   mkdir -p "$dir/.cache/claude-proof"
   ln -s "$HOME/.claude" "$dir/.claude"
@@ -1449,11 +1455,11 @@ test_pipefail_hooks_never_pipe_into_grep() {
 # on an Agent dispatch; a subagent (non-empty .agent_id, jq `//` semantics) does not.
 # Args: name armed(yes|no) identity-fields-json.
 expect_eci_pending_marker() {
-  local home input out marker
+  local home pdir input out marker
   home="$(fresh_home "$1")" || return 1
-  mkdir -p "$home/.cache/claude-proof/t00-session" || return 1
-  : >"$home/.cache/claude-proof/t00-session/eci_active" || return 1
-  marker="$home/.cache/claude-proof/t00-session/eci_teammate_pending"
+  pdir="$(proof_dir_in_home "$home" t00-session)" || return 1
+  : >"$pdir/eci_active" || return 1
+  marker="$pdir/eci_teammate_pending"
   input="$TMP_ROOT/$1.json"
   jq -cn --argjson identity "$3" \
     '{session_id:"t00-session",tool_name:"Agent",tool_input:{prompt:"x"}} + $identity' >"$input" || return 1
@@ -1494,6 +1500,15 @@ SYNC
 # True when the stub planner received exactly the bytes of file $2.
 planner_received() {
   cmp -s "$1/planner-stdin" "$2"
+}
+
+# True when hook output file $1 is the subagent-guard deny (verdict deny, reason
+# starts "Only the main thread") and the stub planner in HOME $2 never ran, so
+# the guard denied before the planner.
+subagent_guard_denied() {
+  is_pretool_deny "$1" &&
+    json_field_contains "$1" '.hookSpecificOutput.permissionDecisionReason // empty' "Only the main thread" &&
+    [ ! -e "$2/planner-stdin" ]
 }
 
 # Writes a PreToolUse Bash input. Args: out session cwd command [agent_id].
@@ -1666,9 +1681,7 @@ EOF" \
     out="$TMP_ROOT/bash-subagent-argv-$n.out"
     run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" HOME="$home" \
       CLAUDE_PROOF_ROOT="$(fresh_proof_root "subagent-argv-$n")"
-    is_pretool_deny "$out" &&
-      json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "Only the main thread" || return 1
-    [ ! -e "$home/planner-stdin" ] || return 1
+    subagent_guard_denied "$out" "$home" || return 1
   done
 }
 
@@ -1684,9 +1697,7 @@ expect_subagent_bash_denied() {
   out="$TMP_ROOT/$1.out"
   run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" HOME="$home" \
     CLAUDE_PROOF_ROOT="$(fresh_proof_root "$1")"
-  is_pretool_deny "$out" &&
-    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "Only the main thread" &&
-    [ ! -e "$home/planner-stdin" ]
+  subagent_guard_denied "$out" "$home"
 }
 
 expect_bash_forwarded() {
@@ -1718,11 +1729,7 @@ expect_bash_identity_fields_verdict() {
   run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" HOME="$home" \
     CLAUDE_PROOF_ROOT="$(fresh_proof_root "$1")"
   case "$2" in
-  deny)
-    is_pretool_deny "$out" &&
-      json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "Only the main thread" &&
-      [ ! -e "$home/planner-stdin" ]
-    ;;
+  deny) subagent_guard_denied "$out" "$home" ;;
   forward) expect_no_output "$out" && planner_received "$home" "$input" ;;
   *) return 1 ;;
   esac
@@ -2047,9 +2054,7 @@ run_bash_unstageable() {
 expect_unstageable_subagent_denied() {
   local out="$TMP_ROOT/$1.out"
   run_bash_unstageable "$1" sub-uuid "$2" || return 1
-  is_pretool_deny "$out" &&
-    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "Only the main thread" &&
-    [ ! -e "$TMP_ROOT/home-$1/planner-stdin" ]
+  subagent_guard_denied "$out" "$(home_dir_for_test "$1")"
 }
 
 # No guard fires: no stdout, the "cannot stage" advisory on stderr, planner never runs.
@@ -2058,7 +2063,7 @@ expect_unstageable_fails_open() {
   local out="$TMP_ROOT/$1.out"
   run_bash_unstageable "$1" "$2" "$3" || return 1
   expect_no_output "$out" && grep -q 'ECI planner unavailable: cannot stage hook input' "$out.err" &&
-    [ ! -e "$TMP_ROOT/home-$1/planner-stdin" ]
+    [ ! -e "$(home_dir_for_test "$1")/planner-stdin" ]
 }
 
 # Active ECI marker: the same unstageable input denies, as for any unusable planner.
@@ -2341,10 +2346,7 @@ test_validate_edit_write_blocks_edit_when_file_parent_mismatches() {
 # (parens unescaped become an ERE group) and verify the deny still fires.
 test_validate_edit_write_blocks_other_sid_under_paren_home() {
   local home input out
-  home="$TMP_ROOT/home-paren (work)"
-  rm -rf "$home"
-  mkdir -p "$home/.cache/claude-proof"
-  ln -s "$HOME/.claude" "$home/.claude"
+  home="$(fresh_home "paren (work)")" || return 1
   input="$TMP_ROOT/owner-paren-home.json"
   jq -n --arg path "$home/.cache/claude-proof/bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb/foo" \
     '{session_id:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",
