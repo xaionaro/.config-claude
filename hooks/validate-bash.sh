@@ -204,12 +204,24 @@ PY
 # argv-head parser that missed wrapper and continuation forms; ECI guards
 # accidental deviation, not adversarial input, so a text match is enough.
 # Accepted over-denial: the same text in echo, heredoc bodies, grep patterns
-# and commit messages.
+# and commit messages, and three shapes in which bash reads other words than
+# the matcher does:
+#   - Single quotes and $'..' keep a backslash-newline, so 'o\<newline>ff' is
+#     the literal word o\<newline>ff, not off; the matcher deletes the pair.
+#   - o\\<newline>ff is the word o\ followed by a second command, ff; the
+#     matcher deletes the second backslash with the newline and reads off.
+#   - A newline between eci-active and off makes two commands, eci-active
+#     without an argument and then off; the matcher's whitespace class spans
+#     the newline.
 #
 # Word formation is modelled only as quote removal (plus the $' and $" prefix)
 # and backslash-newline joining. Everything else that builds a word is not
-# detected, so it is not denied by this guard (the planner still decides
-# afterwards): brace expansion (eci-active {off,}), parameter expansion
+# detected, so this guard does not deny it, and the planner does not reliably
+# deny it either: with an active marker it allowed
+# ~/.claude/bin/eci-active {off,} and ~/.claude/bin/eci-active off$'\000y',
+# for a subagent and for the main thread, and its verdict on other forms
+# depends on the executable path and the caller. The forms are brace expansion
+# (eci-active {off,}), parameter expansion
 # including $IFS (o${X}ff, eci-active${IFS}off), command substitution
 # (o"$(printf f)"f), pathname expansion (o?f beside a file named off),
 # ANSI-C expansion (escapes inside $'..', such as $'o\x66f'), and arguments
@@ -217,10 +229,12 @@ PY
 # it). Only a planner pass that evaluates the words closes these.
 #
 # A NUL escape is one such miss. Bash cuts an ANSI-C string at the NUL, so
-# eci-active off$'\0x' r.md runs eci-active off r.md; \x00, \u0000 and \c@ cut
-# it the same way. The matcher sees off0x there: the $' normalization removed
-# the $ that used to follow off and end the match, and the match needs a
-# non-word character after off.
+# eci-active off$'\0x' r.md runs eci-active off r.md. These spellings cut the
+# word the same way (each was probed): \0, \00, \000, \x0, \x00, \u0000,
+# \U00000000, \c@, \c` and \c<space>. The matcher sees off0x there (offx00,
+# offu0000, offc@ for the other spellings): the $' normalization removed the $
+# that used to follow off and end the match, and the match needs a non-word
+# character after off.
 command_mentions_eci_off() {
   local text="$1"
   text=${text//$'\\\n'/}
