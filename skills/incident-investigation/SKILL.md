@@ -9,7 +9,7 @@ Reconstruct the incident, challenge the explanation independently, and carry eve
 
 ## Ownership and records
 
-Use the existing incident/work record. Store incident-specific findings there; link existing action ownership, state and proof rather than copying mutable fields. Use [maintaining-context-ledger](../maintaining-context-ledger/SKILL.md) when maintaining a ledger.
+Use the existing incident/work record. Store incident-specific findings there; link existing action ownership, state and proof rather than copying mutable fields. Use [context-ledger](../context-ledger/SKILL.md) when maintaining a ledger.
 
 The coordinator owns incident scope, reconciliation, convergence and reporting. Investigators supply evidence; scoped implementers own changes; independent reviewers assess claims and proof; authorized service/risk owners accept residual exposure. Under an active ECI/ATE root, reuse its agents, records and acceptance authority. This skill adds incident responsibilities, not another lifecycle. Outside such a root, the coordinator owns the incident procedure and final reporting, subject to independent challenge.
 

@@ -9,7 +9,7 @@ Phased agent team with adversarial review loops and tiered information trust.
 
 ## When to use
 
-**Project-understanding ledger.** Coordinator owns `~/.cache/claude-proof/$SESSION_ID/project-understanding.md` per the `maintaining-context-ledger` skill (path, schema, timing, validity). Coordinator updates after: findings, design approval, task code/test approval, blocker resolution, user correction; before QA spawn, user-waiting stop, shutdown. Lead + snitch remind on forgetting: every phase transition, hourly audit, and any activity burst (multiple transitions, decisions, corrections, or messages) without update. Invalid ledger blocks QA spawn.
+**Project-understanding ledger.** Coordinator owns `~/.cache/claude-proof/$SESSION_ID/project-understanding.md` per the `context-ledger` skill (path, schema, timing, validity). Coordinator updates after: findings, design approval, task code/test approval, blocker resolution, user correction; before QA spawn, user-waiting stop, shutdown. Lead + snitch remind on forgetting: every phase transition, hourly audit, and any activity burst (multiple transitions, decisions, corrections, or messages) without update. Invalid ledger blocks QA spawn.
 
 **Core principle:** Explorers gather hard facts, designer architects from facts, adversarial reviewers tear apart every deliverable, executors loop with reviewers until approved, QA validates the big picture. Coordinator manages logistics, lead audits rule compliance. Neither implements.
 
@@ -119,8 +119,8 @@ Confidence: `high` (directly stated), `medium` (logically derived), `low` (indir
 | Condition | Skill |
 |-----------|-------|
 | Debugging | `superpowers:systematic-debugging` + `debugging-discipline` |
-| Go code (*.go) | `go-coding-style` |
-| Python code (*.py) | `python-coding-style` |
+| Go code (*.go) | `coding-go` |
+| Python code (*.py) | `coding-python` |
 | Tests | `testing-discipline` |
 | Code implementation | `superpowers:test-driven-development` |
 | Logic implementation | `proof-driven-development` |
@@ -541,7 +541,7 @@ Review independently first — no reading peer findings before writing your own.
 - [ ] Critique logs exist for all teammates
 - [ ] File ownership respected
 - [ ] Code quality: clean code, semantic integrity, no shortcuts, no workarounds, coding style fully followed
-- [ ] Project-understanding ledger valid per `maintaining-context-ledger`
+- [ ] Project-understanding ledger valid per `context-ledger`
 
 ## Coordinator Responsibilities
 
@@ -682,7 +682,7 @@ Format: [T<tier>: <source>, <confidence: high/medium/low>]
 Compliance:
 - Critically analyze ALL inputs. You own bugs from unverified inputs.
 - BEFORE writing code, invoke applicable skills via the Skill tool:
-  go-coding-style (Go), python-coding-style (Python), testing-discipline (tests),
+  coding-go (Go), coding-python (Python), testing-discipline (tests),
   superpowers:test-driven-development (code implementation), proof-driven-development (logic),
   superpowers:systematic-debugging + debugging-discipline (debugging).
   Follow every rule from invoked skills. Reviewer rejects non-compliance.
@@ -740,7 +740,7 @@ Compliance:
 | Coordinator shuts team down without user request | STOP. Team alive until user requests shutdown |
 | Pipeline stage skipped on user followup ("just a small fix") | Route per User Followups table. Default: more pipeline, not less |
 | Coordinator/lead asks user mid-pipeline for decision a teammate can make | Autonomy violation. Run internal unblocking first (Blocker Resolution Protocol, full loop budget). User gates: only after those exhaust, plus QA verdict + user followup |
-| Activity burst since last ledger update | Lead/snitch remind coordinator. Update per `maintaining-context-ledger` |
+| Activity burst since last ledger update | Lead/snitch remind coordinator. Update per `context-ledger` |
 | Ledger invalid at QA spawn / pre-stop / pre-shutdown | Coordinator updates first; QA blocks spawn until valid |
 | Only one design reviewer spawned in Phase 2 | Spawn both: standard Design Reviewer + Fundamentals Design Reviewer in parallel |
 | Trusting reviewer approval blindly | QA exists to catch reviewer mistakes |

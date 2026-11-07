@@ -24,7 +24,7 @@ Before stopping, verify ALL of the following. If any check fails → continue wo
 
 ## Project Understanding Ledger
 
-- If ECI or ATE was used, update the session project-understanding ledger per the `maintaining-context-ledger` skill before stopping.
+- If ECI or ATE was used, update the session project-understanding ledger per the `context-ledger` skill before stopping.
 - If no ledger update is needed, state why.
 
 ## Root cause

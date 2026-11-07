@@ -124,8 +124,8 @@ Walk through every entry below before starting work. For each, decide: does it a
 0. Create tasks? → Every user request and every discovered issue → TaskCreate immediately.
 1. Always → `caveman:caveman` (activate caveman mode every session)
 2. Debugging? (test failures, bugs, unexpected behavior, performance, build failures) → `superpowers:systematic-debugging` + `debugging-discipline`
-3. Go code? (writing, reviewing, modifying *.go) → `go-coding-style`
-4. Python code? (writing, reviewing, modifying *.py) → `python-coding-style`
+3. Go code? (writing, reviewing, modifying *.go) → `coding-go`
+4. Python code? (writing, reviewing, modifying *.py) → `coding-python`
 5. Writing or reviewing tests? → `testing-discipline`
 6. Implementing software with logic? (skip only for pure config/glue) → `proof-driven-development`
 7. Android device? (adb, fastboot, flashing, kernel updates) → `android-device`

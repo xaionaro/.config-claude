@@ -50,7 +50,7 @@ Skip this step only if the fix is purely configuration or environment-specific w
 
 ### Step 2.7 — Project understanding ledger
 
-If ECI or ATE was used, update the session project-understanding ledger per the `maintaining-context-ledger` skill and verify it passes that skill's validity rules.
+If ECI or ATE was used, update the session project-understanding ledger per the `context-ledger` skill and verify it passes that skill's validity rules.
 
 ### Step 3 — Objective proof
 

@@ -1170,7 +1170,7 @@ test_eci_gate_denies_edit_with_non_object_tool_input() {
 }
 
 # Broadening: skill-marker-gate must enforce required-skill markers on
-# NotebookEdit too. Fixture targets src/foo.py (requires python-coding-style)
+# NotebookEdit too. Fixture targets src/foo.py (requires coding-python)
 # without the marker file present.
 test_skill_marker_gate_blocks_notebookedit_without_marker() {
   local home out
@@ -1179,7 +1179,7 @@ test_skill_marker_gate_blocks_notebookedit_without_marker() {
   out="$TMP_ROOT/skill-marker-notebook.out"
   run_hook "$out" "$ROOT/hooks/skill-marker-gate.sh" "$FIXTURES/notebookedit-skill-marker-deny.json" HOME="$home"
   is_pretool_deny "$out" &&
-    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "python-coding-style"
+    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "coding-python"
 }
 
 # ---- ATE orchestrator gate ----
@@ -2835,7 +2835,7 @@ test_stop_gate_continues_clean_inactive_turn() {
 }
 
 # Regression for the cleanup that runs at PROOF_DIR on every stop. The
-# maintaining-context-ledger skill mandates project-understanding.md,
+# context-ledger skill mandates project-understanding.md,
 # high_level_log.md, and latest-status-report.md persist across stops;
 # everything else (proof.md, baseline_head, scratch dirs, etc.) must be
 # cleared. Extracts the live find cleanup line(s) from stop-gate.sh,

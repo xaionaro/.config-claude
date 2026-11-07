@@ -71,9 +71,9 @@ esac
 # Language coding style.
 case "$FILE_PATH" in
   *.go|*/go.mod|*/go.sum)
-    REQUIRED+=("go-coding-style") ;;
+    REQUIRED+=("coding-go") ;;
   *.py|*/pyproject.toml|*/setup.cfg)
-    REQUIRED+=("python-coding-style") ;;
+    REQUIRED+=("coding-python") ;;
 esac
 
 # UI files: ui-design (covers QML/Qt Quick).

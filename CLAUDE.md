@@ -84,8 +84,8 @@ Walk through every entry below before starting work. For each, decide: does it a
 0. Create tasks? → Every user request and every discovered issue → TaskCreate immediately.
 1. Always → `caveman:caveman` (activate caveman mode every session)
 2. Debugging? (test failures, bugs, unexpected behavior, performance, build failures) → `superpowers:systematic-debugging` + `debugging-discipline`
-3. Go code? (writing, reviewing, modifying *.go) → `go-coding-style`
-4. Python code? (writing, reviewing, modifying *.py) → `python-coding-style`
+3. Go code? (writing, reviewing, modifying *.go) → `coding-go`
+4. Python code? (writing, reviewing, modifying *.py) → `coding-python`
 5. Writing or reviewing tests? → `testing-discipline`
 6. Implementing software with logic? (skip only for pure config/glue) → `proof-driven-development`
 7. Android device? (adb, fastboot, flashing, kernel updates) → `android-device`
@@ -94,7 +94,7 @@ Walk through every entry below before starting work. For each, decide: does it a
 10. Writing or editing skills, system prompts, CLAUDE.md? → `harness-tuning`
 11. UI code? (writing, reviewing, modifying *.qml, *.qmldir, *.qmltypes, or any UI surface) → `ui-design`
 12. Writing a status update / sitrep / progress report? → `writing-status-reports`
-13. Project-understanding ledger / context ledger / ECI/ATE ledger updates? → `maintaining-context-ledger`
+13. Project-understanding ledger / context ledger / ECI/ATE ledger updates? → `context-ledger`
 14. Any-language code (writing, reviewing, modifying, diffs, PRs)? → `coding-common`
 15. Handover, handoff, or unfinished work at session end? → `writing-handovers`
 
