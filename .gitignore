@@ -1,5 +1,7 @@
 # Secrets & credentials
 .credentials.json*
+.*
+/security
 settings.local.json
 
 # Session logs, history & caches

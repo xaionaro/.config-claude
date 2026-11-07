@@ -95,7 +95,7 @@ claude_valid_session_id "$CODE_SID" || CODE_SID=""
 # through to the file fallback below.
 if [ -z "$PARENT_SID" ] && [ -r "/proc/$PPID/cmdline" ]; then
   ARGV_PARENT_SID=$(tr '\0' '\n' </proc/$PPID/cmdline 2>/dev/null \
-    | awk 'prev=="--parent-session-id" { print; exit } { prev=$0 }')
+    | awk 'prev=="--parent-session-id" && !seen { print; seen=1 } { prev=$0 }')
   claude_valid_session_id "$ARGV_PARENT_SID" || ARGV_PARENT_SID=""
   [ -n "$ARGV_PARENT_SID" ] && PARENT_SID="$ARGV_PARENT_SID"
 fi

@@ -127,9 +127,10 @@ claude_pre_reviewer_strip_fences() {
 }
 
 claude_pre_reviewer_run_with_timeout() {
-  local timeout_secs="$1"
+  local timeout_secs="$1" timeout_version
   shift
-  if timeout --version 2>&1 | grep -Fq 'GNU coreutils'; then
+  timeout_version=$(timeout --version 2>&1 || true)
+  if [[ "$timeout_version" == *'GNU coreutils'* ]]; then
     timeout --signal=TERM --kill-after=1s "${timeout_secs}s" "$@"
   elif command -v busybox >/dev/null 2>&1; then
     busybox timeout -s TERM -k 1 "$timeout_secs" "$@"

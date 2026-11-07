@@ -33,6 +33,11 @@ mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/invocations.log"
 log() { printf '%s pid=%d %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$" "$*" >> "$LOG"; }
 
+# Prints the first $2 bytes of $1, as `printf %s "$1" | head -c $2` would, but
+# with no writer process that an early-exiting reader could SIGPIPE. LC_ALL=C
+# makes the substring count bytes, not characters.
+first_bytes() { ( LC_ALL=C; printf '%s' "${1:0:$2}" ); }
+
 # Backend selection via CLAUDE_STOP_REVIEWER (parsed by shared helper).
 # After parse: $REVIEWER_BACKEND in {ollama, opencode-zen, claude}, plus
 # backend-specific host/model when applicable. See reviewer-backend.sh.
@@ -114,7 +119,7 @@ USER_BODY=$(mktemp)
 # When the slice exceeds 150 turn-starts, we rebase the anchor forward
 # to the last 100 — so the prefix is stable for ~50 calls between rebases
 # and Ollama can reuse the KV cache.
-TRANSCRIPT=$(find "$HOME/.claude/projects" -name "${SESSION_ID}.jsonl" -type f 2>/dev/null | head -1)
+TRANSCRIPT=$(find "$HOME/.claude/projects" -name "${SESSION_ID}.jsonl" -type f 2>/dev/null | awk 'NR == 1')
 ANCHOR_FILE="$STATE_DIR/anchor"
 ANCHOR_IDX=""
 if [ -f "$ANCHOR_FILE" ]; then
@@ -381,7 +386,7 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
             staged=$(printf '%s\n' "$porcelain" | awk '/^[MADRC]/ { n++ } END { print n + 0 }')
             untracked=$(printf '%s\n' "$porcelain" | awk '/^\?\?/ { n++ } END { print n + 0 }')
             printf '### %s (git)\nDIRTY — modified=%s staged=%s untracked=%s\n' "$repo_dir" "$modified" "$staged" "$untracked"
-            printf '%s\n\n' "$porcelain" | head -c 2048
+            first_bytes "$porcelain"$'\n\n' 2048
           fi
           ;;
         hg)
@@ -396,7 +401,7 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
             untracked=$(printf '%s\n' "$porcelain" | awk '/^\? / { n++ } END { print n + 0 }')
             missing=$(printf '%s\n' "$porcelain" | awk '/^! / { n++ } END { print n + 0 }')
             printf '### %s (hg)\nDIRTY — modified=%s added=%s removed=%s untracked=%s missing=%s\n' "$repo_dir" "$modified" "$added" "$removed" "$untracked" "$missing"
-            printf '%s\n\n' "$porcelain" | head -c 2048
+            first_bytes "$porcelain"$'\n\n' 2048
           fi
           ;;
         *)
@@ -546,8 +551,8 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
         && $0 !~ /(npm exec|context7-mcp|node .*\/mcp)/ \
         && $5 !~ /^(ps|awk|jq|grep|cat|head|tail|sed|cut|sort|tr)$/ \
         && $1 != me && $2 != me \
-        && $1 != me_pp && $2 != me_pp' \
-    | head -30
+        && $1 != me_pp && $2 != me_pp \
+        && ++shown <= 30'
   echo
 
   # TASKS — per tasks_visible_complete (MEMORY.md): the agent must not stop
@@ -641,7 +646,7 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
       local total
       total=$(printf '%s\n' "$lines" | awk '/^- / { n++ } END { print n + 0 }')
       printf '### %s %s\n' "$name" "$suffix"
-      printf '%s' "$lines" | head -n "$cap"
+      printf '%s' "$lines" | awk -v cap="$cap" 'NR <= cap'
       if [ "${total:-0}" -gt "$cap" ]; then
         printf '… (%d more %s tasks omitted)\n' "$(( total - cap ))" "$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
       fi
@@ -1182,7 +1187,7 @@ case "$VERDICT" in
     ;;
   *)
     # Malformed verdict — fail-open with diagnostic.
-    log "exit reason=malformed-verdict raw=\"$(printf '%s' "$RAW" | head -c 200)\""
+    log "exit reason=malformed-verdict raw=\"$(first_bytes "$RAW" 200)\""
     exit 0
     ;;
 esac

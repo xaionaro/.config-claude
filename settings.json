@@ -9,6 +9,7 @@
   "permissions": {
     "defaultMode": "bypassPermissions"
   },
+  "model": "haiku",
   "hooks": {
     "SessionStart": [
       {
@@ -89,15 +90,6 @@
             "command": "$HOME/.claude/hooks/edit-bash-pre-reviewer.sh"
           }
         ]
-      },
-      {
-        "matcher": "Agent|SendMessage|Monitor",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/hooks/eci-pending-set.sh"
-          }
-        ]
       }
     ],
     "PostToolUse": [
@@ -121,18 +113,11 @@
           }
         ]
       }
-    ],
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/hooks/stop-gate.sh"
-          }
-        ]
-      }
     ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "$HOME/.claude/hooks/statusline.sh"
   },
   "enabledPlugins": {
     "superpowers@superpowers-marketplace": true,
@@ -157,10 +142,12 @@
     }
   },
   "effortLevel": "high",
-  "statusLine": {
-    "type": "command",
-    "command": "$HOME/.claude/hooks/statusline.sh"
+  "modelSettings": {
+    "claude-haiku-5-5": {
+      "effortLevel": "high"
+    }
   },
   "skipDangerousModePermissionPrompt": true,
+  "theme": "dark",
   "skipAutoPermissionPrompt": true
 }

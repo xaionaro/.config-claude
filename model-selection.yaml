@@ -1,0 +1,14 @@
+# ECI model profiles for Claude Code. Ported from ~/.codex/model-selection.yaml.
+# Codex sets model and reasoning_effort. The Claude Agent tool sets only `model`
+# (opus, sonnet, haiku); it has no reasoning-effort parameter, so reasoning_effort
+# is recorded but has no effect here.
+# Reviewers and critics always run on opus, whatever profile is selected (supervisor rule).
+default:
+  model: haiku
+  reasoning_effort: high
+higher:
+  model: haiku
+  reasoning_effort: max
+max:
+  model: opus
+  reasoning_effort: high
