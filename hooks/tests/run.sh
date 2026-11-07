@@ -2906,6 +2906,10 @@ run_case "subagent denied (accepted over-denial): command -p -v eci-active off (
   expect_subagent_bash_denied sub-overdeny-09 sub-uuid 'command -p -v eci-active off'
 run_case "subagent denied (accepted over-denial): echo then eci-active off (echo argument)" \
   expect_subagent_bash_denied sub-overdeny-10 sub-uuid 'echo then eci-active off'
+run_case "subagent denied (accepted over-denial): git commit -m 'note: eci-active off' (commit message text)" \
+  expect_subagent_bash_denied sub-overdeny-11 sub-uuid "git commit -m 'note: eci-active off'"
+run_case "subagent denied: git commit -m \"x\" && eci-active off r.md (invocation chained after a commit)" \
+  expect_subagent_bash_denied sub-deny-45 sub-uuid 'git commit -m "x" && eci-active off r.md'
 run_case "main thread forwarded: if true; then eci-active off; fi (guard is subagent-only)" \
   expect_bash_forwarded main-fwd-04 '' 'if true; then eci-active off; fi'
 run_case "main thread forwarded: ~/.claude/bin/eci-active off /tmp/r.md (guard is subagent-only)" \
