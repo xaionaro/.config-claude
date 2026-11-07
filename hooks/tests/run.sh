@@ -1720,6 +1720,78 @@ test_claude_fail_open_trap_exits_zero_on_err() {
     grep -qF "hook=test-hook," "$out.err"
 }
 
+# ---- reviewer-call lib (ported from Codex hooks/lib/reviewer-call.sh) ----
+
+# Sourcing the lib sets the timeout defaults without overriding a caller's
+# value, keeps the Claude-only harness defaults, and reviewer_strip_fences
+# removes the fence lines around a JSON verdict.
+test_reviewer_call_lib_strips_fences_and_sets_defaults() {
+  local dir="$TMP_ROOT/reviewer-call-lib" out
+  out="$dir/out"
+  mkdir -p "$dir" || return 1
+  printf '%s\n' '```json' '{"verdict":"pass","violations":[]}' '```' >"$dir/fenced"
+  env -i HOME="$HOME" PATH="$PATH" CLAUDE_EDIT_PRE_REVIEWER_TIMEOUT=7 bash -c '
+    set -euo pipefail
+    . "$1"
+    reviewer_strip_fences <"$2"
+    printf "stop=%s edit=%s model=%s tokens=%s\n" "$CLAUDE_STOP_REVIEWER_TIMEOUT" \
+      "$CLAUDE_EDIT_PRE_REVIEWER_TIMEOUT" "$REVIEWER_DEFAULT_MODEL" "$REVIEWER_DEFAULT_MAX_TOKENS"
+  ' reviewer-call-lib "$ROOT/hooks/lib/reviewer-call.sh" "$dir/fenced" >"$out" 2>"$out.err" || return 1
+  [ "$(cat "$out")" = '{"verdict":"pass","violations":[]}
+stop=240 edit=7 model=qwen3.5:9b-mxfp8 tokens=8192' ]
+}
+
+# reviewer_call_chat against a stub curl on PATH (no network): the ollama
+# reply's fenced content comes back unfenced and the request temp file is
+# removed. A non-numeric or too-small timeout fails before any call.
+test_reviewer_call_chat_returns_unfenced_content() {
+  local dir="$TMP_ROOT/reviewer-call-chat" out
+  out="$dir/out"
+  mkdir -p "$dir/bin" "$dir/tmp" || return 1
+  cat >"$dir/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' '{"message":{"content":"```json\n{\"verdict\":\"pass\"}\n```"}}'
+printf '200'
+EOF
+  chmod +x "$dir/bin/curl" || return 1
+  printf 'sys\n' >"$dir/sys"
+  printf 'usr\n' >"$dir/usr"
+  env -i HOME="$HOME" PATH="$dir/bin:$PATH" TMPDIR="$dir/tmp" REVIEWER_BACKEND=ollama \
+    REVIEWER_OLLAMA_MODEL=m REVIEWER_OLLAMA_HOST=http://127.0.0.1:9 bash -c '
+    . "$1"
+    reviewer_call_chat stop_reviewer "$2/sys" "$2/usr" "$3" 10 || exit 1
+    if reviewer_call_chat stop_reviewer "$2/sys" "$2/usr" "$3" abc; then exit 2; fi
+    if reviewer_call_chat stop_reviewer "$2/sys" "$2/usr" "$3" 2; then exit 3; fi
+  ' reviewer-call-chat "$ROOT/hooks/lib/reviewer-call.sh" "$dir" "$ROOT/hooks/lib/reviewer-schema.json" \
+    >"$out" 2>"$out.err" || return 1
+  [ "$(cat "$out")" = '{"verdict":"pass"}' ] &&
+    [ -z "$(find "$dir/tmp" -name 'claude-reviewer-call.*' 2>/dev/null)" ]
+}
+
+# The unregistered system-prompt-reviewer.sh reads a fenced fake verdict
+# through reviewer_strip_fences: a fenced pass is accepted silently. Dual side:
+# an unparseable verdict reports ECI_REVIEW_VERDICT_MALFORMED.
+test_system_prompt_reviewer_accepts_fenced_fake_verdict() {
+  local home input out transcript
+  home="$(fresh_home sp-reviewer)"
+  transcript="$home/transcript.jsonl"
+  printf '%s\n' '{"type":"user","message":{"role":"user","content":"hello"}}' >"$transcript"
+  input="$TMP_ROOT/sp-reviewer.json"
+  out="$TMP_ROOT/sp-reviewer.out"
+  jq -n --arg cwd "$ROOT" --arg t "$transcript" \
+    '{session_id:"t00-session",cwd:$cwd,transcript_path:$t,hook_event_name:"Stop"}' >"$input"
+  # The hook's process listing reads $USER under set -u, as a real session sets it.
+  run_hook "$out" "$ROOT/hooks/system-prompt-reviewer.sh" "$input" HOME="$home" USER="${USER:-$(id -un)}" \
+    CLAUDE_STOP_REVIEWER="ollama:http://127.0.0.1:9:m" \
+    CLAUDE_REVIEWER_FAKE_RESULT=$'```json\n{"verdict":"pass","violations":[]}\n```' || return 1
+  expect_no_output "$out" &&
+    ! grep -qF "ECI_REVIEW_VERDICT_MALFORMED" "$out.err" &&
+    ! grep -qF "command not found" "$out.err" || return 1
+  run_hook "$out" "$ROOT/hooks/system-prompt-reviewer.sh" "$input" HOME="$home" USER="${USER:-$(id -un)}" \
+    CLAUDE_STOP_REVIEWER="ollama:http://127.0.0.1:9:m" CLAUDE_REVIEWER_FAKE_RESULT='not json' || return 1
+  expect_no_output "$out" && grep -qF "ECI_REVIEW_VERDICT_MALFORMED" "$out.err"
+}
+
 # ===========================================================================
 # Run all tests
 # ===========================================================================
@@ -2155,6 +2227,14 @@ run_case "claude_init_tmp returns nonzero on unwritable target" \
   test_claude_init_tmp_unwritable_target_returns_nonzero
 run_case "claude_install_fail_open_trap exits zero on ERR" \
   test_claude_fail_open_trap_exits_zero_on_err
+
+# reviewer-call lib (ported from Codex)
+run_case "reviewer-call lib strips fences and sets timeout defaults" \
+  test_reviewer_call_lib_strips_fences_and_sets_defaults
+run_case "reviewer_call_chat returns unfenced content from a stub backend" \
+  test_reviewer_call_chat_returns_unfenced_content
+run_case "system-prompt-reviewer accepts a fenced fake verdict" \
+  test_system_prompt_reviewer_accepts_fenced_fake_verdict
 
 # ---- pretooluse-edit-dispatch.sh (Codex edit dispatch) ----
 # The dispatch runs validate-edit-write.sh and eci-active-gate.sh on the same
