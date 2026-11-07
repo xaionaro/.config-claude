@@ -698,6 +698,31 @@ test_eci_gate_blocks_hardlink_into_reserved_namespace() {
   run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
 }
 
+# Codex 0ace2c2: a malformed callback is denied only while the bounded marker
+# scan lists real markers. Its overflow sentinel (more than 64 eci_active
+# candidates) or unsafe sentinel (proof root is not a directory) is a scan
+# limitation, not an owner, so the callback keeps the ordinary path. Dual side:
+# 64 unrelated markers still deny the same input; the 65th makes it overflow.
+test_eci_gate_malformed_identity_ignores_scan_sentinels() {
+  local home i input out
+  input="$TMP_ROOT/eci-malformed.json"
+  out="$TMP_ROOT/eci-malformed.out"
+  eci_input "$input" '{session_id:123,tool_name:"Edit",cwd:$cwd,tool_input:{file_path:"src/file.go",old_string:"a",new_string:"b"}}'
+  home="$(fresh_home eci-malformed-overflow)"
+  for i in $(seq 1 64); do
+    printf 'scope: unrelated\ncwd: /other/cwd\nsession_id: t00-unrelated-%s\n' "$i" \
+      >"$(proof_dir_in_home "$home" "t00-unrelated-$i")/eci_active" || return 1
+  done
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && is_pretool_deny "$out" &&
+    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "ECI_HOOK_IDENTITY_MALFORMED" || return 1
+  printf 'scope: unrelated\ncwd: /other/cwd\nsession_id: t00-unrelated-65\n' \
+    >"$(proof_dir_in_home "$home" t00-unrelated-65)/eci_active" || return 1
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out" || return 1
+  home="$(fresh_home eci-malformed-unsafe)"
+  rm -rf "$home/tmp/agent/proof" && printf 'not a directory\n' >"$home/tmp/agent/proof" || return 1
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
+}
+
 # ---- ATE orchestrator gate ----
 
 test_ate_gate_allows_edits_for_lead() {
@@ -1772,6 +1797,8 @@ run_case "ECI gate skips on missing cwd, denies same payload with cwd" \
   test_eci_gate_skips_missing_cwd
 run_case "ECI gate skips non-Edit/Write/MultiEdit/NotebookEdit tools" \
   test_eci_gate_skips_non_edit_tool
+run_case "ECI gate malformed identity ignores marker-scan overflow and unsafe sentinels" \
+  test_eci_gate_malformed_identity_ignores_scan_sentinels
 
 # ATE orchestrator gate tests
 run_case "ATE gate allows edits for lead role" \
