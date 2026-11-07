@@ -50,7 +50,7 @@ if claude_hook_is_subagent_context "$INPUT${tmp:+$(cat -- "$tmp")}" </dev/null; 
   IS_SUBAGENT=true
 fi
 
-PROOF_ROOT="${CLAUDE_PROOF_ROOT:-${HOME:-}/.cache/claude-proof}"
+PROOF_ROOT="$(claude_configured_proof_root)"
 ECI_MARKER="$PROOF_ROOT/$SESSION_ID/eci_active"
 
 deny() {
@@ -600,6 +600,9 @@ fi
 
 # ECI command plan: the Codex planner decides (codex parity). Its output and
 # exit code pass through unchanged unless the fail-closed rules below apply.
+# Kept Codex names: the planner is the shared runtime under ~/tmp/eci-runtime,
+# built from the ~/.codex sources. It reads CODEX_HOOK_IS_SUBAGENT and
+# CODEX_PROOF_ROOT, and it is located and rebuilt through ~/.codex.
 unset CODEX_HOOK_IS_SUBAGENT
 [ "$IS_SUBAGENT" = true ] && export CODEX_HOOK_IS_SUBAGENT=1
 export CODEX_PROOF_ROOT="$PROOF_ROOT"

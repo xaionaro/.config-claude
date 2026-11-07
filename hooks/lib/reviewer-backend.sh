@@ -25,7 +25,7 @@ reviewer_reset_backend() {
 }
 
 parse_reviewer_env() {
-  local env_name="${1:-CODEX_STOP_REVIEWER}"
+  local env_name="${1:-CLAUDE_STOP_REVIEWER}"
   local raw="${!env_name:-}"
 
   reviewer_reset_backend

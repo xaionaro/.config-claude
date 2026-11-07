@@ -45,7 +45,8 @@ deny() {
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.notebook_path // .tool_input.path // .tool_input.target_file // empty' 2>/dev/null || true)
 
 # Session-file ownership gate. Forbid editing session-scoped files owned by
-# another session: ~/.cache/claude-proof/<SID>/, ~/.claude/projects/<DIR>/<SID>.jsonl,
+# another session: <proof root>/<SID>/ (claude_configured_proof_root),
+# ~/.claude/projects/<DIR>/<SID>.jsonl,
 # ~/.claude/projects/<DIR>/<SID>/{subagents,tool-results}/..., and
 # ~/.claude/todos/<SID>-agent-<X>.json.
 #
@@ -69,11 +70,12 @@ FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.notebook
 # s-command below uses '#' as the delimiter, so '|' inside the pattern is a
 # literal ERE alternation operator with no escaping needed.
 HOME_RE=$(printf '%s' "$HOME" | sed 's|[][\\/.^$*+?(){}|]|\\&|g')
+PROOF_ROOT_RE=$(claude_configured_proof_root | sed 's|[][\\/.^$*+?(){}|]|\\&|g')
 UUID_RE='[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 extract_owner_sid() {
   local p="$1"
   printf '%s' "$p" | sed -nE \
-    -e "s#^${HOME_RE}/\\.cache/claude-proof/(${UUID_RE})(/.*)?\$#\\1#p" \
+    -e "s#^${PROOF_ROOT_RE}/(${UUID_RE})(/.*)?\$#\\1#p" \
     -e "s#^${HOME_RE}/\\.claude/projects/[^/]+/(${UUID_RE})\\.jsonl\$#\\1#p" \
     -e "s#^${HOME_RE}/\\.claude/projects/[^/]+/(${UUID_RE})/(subagents|tool-results)/.*\$#\\1#p" \
     -e "s#^${HOME_RE}/\\.claude/todos/(${UUID_RE})-agent-${UUID_RE}\\.json\$#\\1#p"
@@ -104,10 +106,10 @@ fi
 # carries no --parent-session-id flag and whose env was not seeded with
 # CLAUDE_PARENT_SESSION_ID. The orchestrator (or the user) can declare
 # the parent SID by writing it into
-# ~/.cache/claude-proof/<OWN_SID>/parent_session_id. First line of the
+# <proof root>/<OWN_SID>/parent_session_id. First line of the
 # file is treated as an additional allowed parent SID.
 if [ -z "$PARENT_SID" ] && [ -n "$OWN_SID" ]; then
-  PARENT_SID_FILE="$HOME/.cache/claude-proof/$OWN_SID/parent_session_id"
+  PARENT_SID_FILE="$(claude_configured_proof_root)/$OWN_SID/parent_session_id"
   if [ -f "$PARENT_SID_FILE" ]; then
     FILE_PARENT_SID=$(head -n1 "$PARENT_SID_FILE" 2>/dev/null | tr -d '[:space:]' || true)
     claude_valid_session_id "$FILE_PARENT_SID" || FILE_PARENT_SID=""

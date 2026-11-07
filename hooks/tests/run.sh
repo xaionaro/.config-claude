@@ -2,10 +2,11 @@
 # Hook regression test runner. Adapted from /home/streaming/.codex/hooks/tests/run.sh
 # with Claude-specific tooling, paths, and the role-exemption matrix.
 #
-# Many Claude hooks resolve state via $HOME/.cache/claude-proof/ directly (not
-# via CLAUDE_PROOF_ROOT). To isolate, ported tests run hooks under a fake HOME
+# Many Claude hooks resolve state via $HOME/tmp/agent/proof/ (the default
+# claude_configured_proof_root when CLAUDE_PROOF_ROOT is unset). To isolate,
+# ported tests run hooks under a fake HOME
 # that symlinks .claude -> the real ~/.claude (so hook source paths resolve)
-# while ~/.cache/claude-proof lives entirely in the test sandbox.
+# while ~/tmp/agent/proof lives entirely in the test sandbox.
 
 set -uo pipefail
 
@@ -37,7 +38,7 @@ run_case() {
   fi
 }
 
-# fresh proof root per test; isolated from real ~/.cache/claude-proof.
+# fresh proof root per test; isolated from the real proof root.
 # (kept for the original 15 tests — they pass CLAUDE_PROOF_ROOT for documentation
 # even though most claude hooks ignore it. Subagent/role exemptions trigger
 # before any state lookup so that path is not exercised.)
@@ -57,20 +58,20 @@ home_dir_for_test() {
 
 # Build an isolated HOME for ported tests. Symlinks .claude → real one so the
 # hooks can `source $HOME/.claude/hooks/lib/claude-proof-state.sh`. The fake
-# HOME's $HOME/.cache/claude-proof remains entirely test-controlled.
+# HOME's $HOME/tmp/agent/proof remains entirely test-controlled.
 fresh_home() {
   local dir
   dir="$(home_dir_for_test "$1")"
   rm -rf "$dir"
-  mkdir -p "$dir/.cache/claude-proof"
+  mkdir -p "$dir/tmp/agent/proof"
   ln -s "$HOME/.claude" "$dir/.claude"
   printf '%s' "$dir"
 }
 
-# proof_dir under a fake HOME for a session id (mirrors hook's $HOME/.cache/claude-proof/$SID layout).
+# proof_dir under a fake HOME for a session id (mirrors hook's $HOME/tmp/agent/proof/$SID layout).
 proof_dir_in_home() {
   local home="$1" sid="$2"
-  local d="$home/.cache/claude-proof/$sid"
+  local d="$home/tmp/agent/proof/$sid"
   mkdir -p "$d"
   printf '%s' "$d"
 }
@@ -235,7 +236,7 @@ install_proof_fixture() {
 seed_freshness_oracle() {
   local home="$1" repo="$2" sid="$3" fixture="$4"
   local sd input out
-  sd="$home/.cache/claude-proof/$sid"
+  sd="$home/tmp/agent/proof/$sid"
   mkdir -p "$sd"
   cp "$fixture" "$sd/proof.md"
   git -C "$repo" rev-parse HEAD >"$sd/baseline_head"
@@ -692,7 +693,7 @@ eci_active_home() {
 test_eci_gate_blocks_control_file_edit() {
   local home pdir input out
   home="$(eci_active_home eci-ctl-edit)"
-  pdir="$home/.cache/claude-proof/t00-session"
+  pdir="$home/tmp/agent/proof/t00-session"
   input="$TMP_ROOT/eci-ctl-edit.json"
   out="$TMP_ROOT/eci-ctl-edit.out"
   eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$pdir/eci_active"
@@ -702,7 +703,7 @@ test_eci_gate_blocks_control_file_edit() {
 test_eci_gate_deny_reason_names_control_state() {
   local home pdir input out
   home="$(eci_active_home eci-ctl-reason)"
-  pdir="$home/.cache/claude-proof/t00-session"
+  pdir="$home/tmp/agent/proof/t00-session"
   input="$TMP_ROOT/eci-ctl-reason.json"
   out="$TMP_ROOT/eci-ctl-reason.out"
   eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$pdir/eci_active"
@@ -726,7 +727,7 @@ test_eci_gate_blocks_control_file_without_marker() {
 test_eci_gate_blocks_control_file_write() {
   local home pdir input out
   home="$(eci_active_home eci-ctl-write)"
-  pdir="$home/.cache/claude-proof/t00-session"
+  pdir="$home/tmp/agent/proof/t00-session"
   input="$TMP_ROOT/eci-ctl-write.json"
   out="$TMP_ROOT/eci-ctl-write.out"
   eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:$p,content:"x"}}' --arg p "$pdir/goal_state"
@@ -736,7 +737,7 @@ test_eci_gate_blocks_control_file_write() {
 test_eci_gate_blocks_control_file_multiedit() {
   local home pdir input out
   home="$(eci_active_home eci-ctl-multi)"
-  pdir="$home/.cache/claude-proof/t00-session"
+  pdir="$home/tmp/agent/proof/t00-session"
   input="$TMP_ROOT/eci-ctl-multi.json"
   out="$TMP_ROOT/eci-ctl-multi.out"
   eci_input "$input" '{session_id:"t00-session",tool_name:"MultiEdit",cwd:$cwd,tool_input:{file_path:$p,edits:[{old_string:"old",new_string:"new"}]}}' --arg p "$pdir/eci_active"
@@ -746,7 +747,7 @@ test_eci_gate_blocks_control_file_multiedit() {
 test_eci_gate_blocks_control_file_notebookedit() {
   local home pdir input out
   home="$(eci_active_home eci-ctl-notebook)"
-  pdir="$home/.cache/claude-proof/t00-session"
+  pdir="$home/tmp/agent/proof/t00-session"
   input="$TMP_ROOT/eci-ctl-notebook.json"
   out="$TMP_ROOT/eci-ctl-notebook.out"
   eci_input "$input" '{session_id:"t00-session",tool_name:"NotebookEdit",cwd:$cwd,tool_input:{notebook_path:$p,new_source:"x = 1"}}' --arg p "$pdir/eci_wait"
@@ -757,7 +758,7 @@ test_eci_gate_blocks_control_file_notebookedit() {
 test_eci_gate_blocks_codex_control_names() {
   local home pdir name input out
   home="$(eci_active_home eci-codex-names)"
-  pdir="$home/.cache/claude-proof/t00-session"
+  pdir="$home/tmp/agent/proof/t00-session"
   input="$TMP_ROOT/eci-codex-names.json"
   out="$TMP_ROOT/eci-codex-names.out"
   for name in eci-blocker-report.md disengage.md user-closed.md stop_loop_state eci-required-critics.json baseline_head instructions.md; do
@@ -771,14 +772,14 @@ test_eci_gate_blocks_codex_control_names() {
 test_eci_gate_allows_names_outside_codex_list() {
   local home pdir name input out
   home="$(eci_active_home eci-removed-names)"
-  pdir="$home/.cache/claude-proof/t00-session"
+  pdir="$home/tmp/agent/proof/t00-session"
   input="$TMP_ROOT/eci-removed-names.json"
   out="$TMP_ROOT/eci-removed-names.out"
   for name in eci_teammate_pending ate_active task_active skip_stop summary-to-print.md parent_session_id gitleaks-findings.txt git-status-at-accept.txt last-result.md; do
     eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:$p,content:"x"}}' --arg p "$pdir/$name"
     run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out" || return 1
   done
-  eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:$p,content:"x"}}' --arg p "$home/.cache/claude-proof/copilot/x.txt"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:$p,content:"x"}}' --arg p "$home/tmp/agent/proof/copilot/x.txt"
   run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
 }
 
@@ -786,7 +787,7 @@ test_eci_gate_allows_names_outside_codex_list() {
 test_eci_gate_blocks_repair_authorize_claim_descendant() {
   local home pdir input out
   home="$(eci_active_home eci-repair-claim)"
-  pdir="$home/.cache/claude-proof/t00-session"
+  pdir="$home/tmp/agent/proof/t00-session"
   input="$TMP_ROOT/eci-repair-claim.json"
   out="$TMP_ROOT/eci-repair-claim.out"
   eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$pdir/eci-wait-repair-authorize.claim/inner.txt"
@@ -796,7 +797,7 @@ test_eci_gate_blocks_repair_authorize_claim_descendant() {
 test_eci_gate_blocks_accidental_override_claim_descendant() {
   local home pdir input out
   home="$(eci_active_home eci-accidental-claim)"
-  pdir="$home/.cache/claude-proof/t00-session"
+  pdir="$home/tmp/agent/proof/t00-session"
   input="$TMP_ROOT/eci-accidental-claim.json"
   out="$TMP_ROOT/eci-accidental-claim.out"
   eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$pdir/.eci-accidental-mistake-override.claim/inner.txt"
@@ -807,7 +808,7 @@ test_eci_gate_blocks_accidental_override_claim_descendant() {
 test_eci_gate_blocks_markdown_control_file() {
   local home pdir input out
   home="$(eci_active_home eci-md-ctl)"
-  pdir="$home/.cache/claude-proof/t00-session"
+  pdir="$home/tmp/agent/proof/t00-session"
   input="$TMP_ROOT/eci-md-ctl.json"
   out="$TMP_ROOT/eci-md-ctl.out"
   eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:$p,content:"# x"}}' --arg p "$pdir/eci-blocker-report.md"
@@ -890,7 +891,7 @@ test_eci_gate_allows_when_no_marker() {
 test_eci_gate_blocks_control_file_with_role_env() {
   local home pdir input out
   home="$(eci_active_home eci-role-env)"
-  pdir="$home/.cache/claude-proof/t00-session"
+  pdir="$home/tmp/agent/proof/t00-session"
   input="$TMP_ROOT/eci-role-env.json"
   out="$TMP_ROOT/eci-role-env.out"
   eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$pdir/eci_active"
@@ -902,7 +903,7 @@ test_eci_gate_blocks_control_file_with_role_env() {
 test_eci_gate_blocks_control_file_subagent_agent_id() {
   local home pdir input out
   home="$(eci_active_home eci-agent-id)"
-  pdir="$home/.cache/claude-proof/t00-session"
+  pdir="$home/tmp/agent/proof/t00-session"
   input="$TMP_ROOT/eci-agent-id.json"
   out="$TMP_ROOT/eci-agent-id.out"
   eci_input "$input" '{session_id:"t00-session",agent_id:"sub-uuid",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$pdir/eci_active"
@@ -915,7 +916,7 @@ test_eci_gate_blocks_control_file_subagent_agent_id() {
 test_eci_gate_blocks_control_file_subagent_agent_type() {
   local home pdir input out
   home="$(eci_active_home eci-agent-type)"
-  pdir="$home/.cache/claude-proof/t00-session"
+  pdir="$home/tmp/agent/proof/t00-session"
   input="$TMP_ROOT/eci-agent-type.json"
   out="$TMP_ROOT/eci-agent-type.out"
   eci_input "$input" '{session_id:"t00-session",agent_type:"general-purpose",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$pdir/eci_active"
@@ -927,7 +928,7 @@ test_eci_gate_blocks_control_file_subagent_agent_type() {
 test_eci_gate_blocks_other_session_ledger() {
   local home pdir other input out
   home="$(eci_active_home eci-other-ledger)"
-  other="$home/.cache/claude-proof/t01-other"
+  other="$home/tmp/agent/proof/t01-other"
   input="$TMP_ROOT/eci-other-ledger.json"
   out="$TMP_ROOT/eci-other-ledger.out"
   eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:$p,content:"x"}}' --arg p "$other/project-understanding.yaml"
@@ -937,7 +938,7 @@ test_eci_gate_blocks_other_session_ledger() {
 test_eci_gate_allows_own_session_working_doc() {
   local home pdir input out
   home="$(eci_active_home eci-own-doc)"
-  pdir="$home/.cache/claude-proof/t00-session"
+  pdir="$home/tmp/agent/proof/t00-session"
   input="$TMP_ROOT/eci-own-doc.json"
   out="$TMP_ROOT/eci-own-doc.out"
   eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:$p,content:"x"}}' --arg p "$pdir/project-understanding.yaml"
@@ -951,7 +952,7 @@ test_eci_gate_allows_own_session_working_doc() {
 test_eci_gate_allows_non_control_ledger_in_proof_root() {
   local home pdir input out
   home="$(eci_active_home eci-noncontrol)"
-  pdir="$home/.cache/claude-proof/t00-session"
+  pdir="$home/tmp/agent/proof/t00-session"
   input="$TMP_ROOT/eci-noncontrol.json"
   out="$TMP_ROOT/eci-noncontrol.out"
   eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:$p,content:"x"}}' --arg p "$pdir/latest-status-report.yaml"
@@ -966,10 +967,10 @@ test_eci_gate_allows_non_control_ledger_in_proof_root() {
 test_eci_gate_blocks_reserved_proof_dir_descendant() {
   local home pdir input out
   home="$(eci_active_home eci-reserved)"
-  pdir="$home/.cache/claude-proof/t00-session"
+  pdir="$home/tmp/agent/proof/t00-session"
   input="$TMP_ROOT/eci-reserved.json"
   out="$TMP_ROOT/eci-reserved.out"
-  eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$home/.cache/claude-proof/reviewer/nested/state.json"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$home/tmp/agent/proof/reviewer/nested/state.json"
   run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" || return 1
   is_pretool_deny "$out" || return 1
   eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$pdir/nested/state.json"
@@ -981,7 +982,7 @@ test_eci_gate_blocks_reserved_proof_dir_descendant() {
 test_eci_gate_blocks_hardlink_alias_to_marker() {
   local home pdir work input out
   home="$(eci_active_home eci-hardlink)"
-  pdir="$home/.cache/claude-proof/t00-session"
+  pdir="$home/tmp/agent/proof/t00-session"
   work="$home/work"
   mkdir -p "$work" || return 1
   ln "$pdir/eci_active" "$work/alias.go" || return 1
@@ -999,7 +1000,7 @@ test_eci_gate_blocks_hardlink_alias_to_marker() {
 test_eci_gate_blocks_symlink_to_control_file() {
   local home pdir work input out
   home="$(eci_active_home eci-symlink)"
-  pdir="$home/.cache/claude-proof/t00-session"
+  pdir="$home/tmp/agent/proof/t00-session"
   work="$home/work"
   mkdir -p "$work" || return 1
   ln -s "$pdir/eci_active" "$work/link.go" || return 1
@@ -1013,7 +1014,7 @@ test_eci_gate_blocks_symlink_to_control_file() {
 test_eci_gate_skips_unsafe_session_id() {
   local home pdir input out
   home="$(eci_active_home eci-unsafe-sid)"
-  pdir="$home/.cache/claude-proof/t00-session"
+  pdir="$home/tmp/agent/proof/t00-session"
   input="$TMP_ROOT/eci-unsafe-sid.json"
   out="$TMP_ROOT/eci-unsafe-sid.out"
   eci_input "$input" '{session_id:"../bad",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$pdir/eci_active"
@@ -1023,7 +1024,7 @@ test_eci_gate_skips_unsafe_session_id() {
 test_eci_gate_skips_bad_json() {
   local home pdir input out
   home="$(eci_active_home eci-bad-json)"
-  pdir="$home/.cache/claude-proof/t00-session"
+  pdir="$home/tmp/agent/proof/t00-session"
   input="$TMP_ROOT/eci-bad-json.json"
   out="$TMP_ROOT/eci-bad-json.out"
   printf '{not json, "file_path": "%s/eci_active"' "$pdir" >"$input"
@@ -1034,7 +1035,7 @@ test_eci_gate_skips_bad_json() {
 test_eci_gate_skips_missing_cwd() {
   local home pdir input out
   home="$(eci_active_home eci-no-cwd)"
-  pdir="$home/.cache/claude-proof/t00-session"
+  pdir="$home/tmp/agent/proof/t00-session"
   input="$TMP_ROOT/eci-no-cwd.json"
   out="$TMP_ROOT/eci-no-cwd.out"
   jq -n --arg p "$pdir/eci_active" '{session_id:"t00-session",tool_name:"Edit",tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' >"$input"
@@ -1112,7 +1113,7 @@ test_eci_gate_blocks_own_working_doc_hardlink_to_inactive_control() {
 test_eci_gate_blocks_hardlink_into_reserved_namespace() {
   local home reserved work input out
   home="$(fresh_home eci-r1)"
-  reserved="$home/.cache/claude-proof/eci"
+  reserved="$home/tmp/agent/proof/eci"
   work="$home/work"
   mkdir -p "$reserved" "$work" || return 1
   printf 'state\n' >"$reserved/state.json" || return 1
@@ -1131,7 +1132,7 @@ test_eci_gate_blocks_hardlink_into_reserved_namespace() {
 test_eci_gate_allows_plain_own_proof_doc() {
   local home pdir input out
   home="$(eci_active_home eci-own-proof)"
-  pdir="$home/.cache/claude-proof/t00-session"
+  pdir="$home/tmp/agent/proof/t00-session"
   input="$TMP_ROOT/eci-own-proof.json"
   out="$TMP_ROOT/eci-own-proof.out"
   eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:$p,content:"x"}}' --arg p "$pdir/proof.md"
@@ -1143,7 +1144,7 @@ test_eci_gate_allows_plain_own_proof_doc() {
 test_eci_gate_checks_every_target_key() {
   local home pdir input out
   home="$(eci_active_home eci-every-key)"
-  pdir="$home/.cache/claude-proof/t00-session"
+  pdir="$home/tmp/agent/proof/t00-session"
   input="$TMP_ROOT/eci-every-key.json"
   out="$TMP_ROOT/eci-every-key.out"
   eci_input "$input" '{session_id:"t00-session",tool_name:"NotebookEdit",cwd:$cwd,tool_input:{file_path:"README.md",notebook_path:$p,new_source:"x = 1"}}' --arg p "$pdir/eci_wait"
@@ -1628,7 +1629,8 @@ test_pipefail_scripts_never_pipe_into_grep_or_an_early_exit_reader() {
   # stop-gate.sh must not be.
   scanned="$(pipefail_scanned_files)" || return 1
   for pinned in hooks/system-prompt-reviewer.sh hooks/validate-edit-write.sh hooks/validate-bash.sh \
-    hooks/lib/claude-pre-reviewer-state.sh bin/eci-active; do
+    hooks/lib/claude-pre-reviewer-state.sh hooks/validate-apply-patch.sh hooks/pretooluse-edit-dispatch.sh \
+    bin/eci-active; do
     case $'\n'"$scanned"$'\n' in *$'\n'"$ROOT/$pinned"$'\n'*) ;; *) note "     $pinned is not scanned"; return 1 ;; esac
   done
   case "$scanned" in *"/stop-gate.sh"*) note "     stop-gate.sh is scanned"; return 1 ;; esac
@@ -1768,7 +1770,7 @@ test_validate_bash_marks_shell_activity() {
   out="$TMP_ROOT/bash-mark.out"
   run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" HOME="$home"
   expect_no_output "$out" &&
-    [ -s "$home/.cache/claude-proof/activity/sessions/t00-session/shell" ]
+    [ -s "$home/tmp/agent/proof/activity/sessions/t00-session/shell" ]
 }
 
 test_validate_bash_skips_read_only_shell_activity() {
@@ -1781,7 +1783,7 @@ test_validate_bash_skips_read_only_shell_activity() {
   out="$TMP_ROOT/bash-readonly.out"
   run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" HOME="$home"
   expect_no_output "$out" && planner_received "$home" "$input" &&
-    [ ! -e "$home/.cache/claude-proof/activity/sessions/t00-session/shell" ]
+    [ ! -e "$home/tmp/agent/proof/activity/sessions/t00-session/shell" ]
 }
 
 test_validate_bash_skips_read_only_shell_chain_activity() {
@@ -1794,7 +1796,7 @@ test_validate_bash_skips_read_only_shell_chain_activity() {
   out="$TMP_ROOT/bash-readchain.out"
   run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" HOME="$home"
   expect_no_output "$out" && planner_received "$home" "$input" &&
-    [ ! -e "$home/.cache/claude-proof/activity/sessions/t00-session/shell" ]
+    [ ! -e "$home/tmp/agent/proof/activity/sessions/t00-session/shell" ]
 }
 
 test_validate_bash_marks_redirected_read_shell_activity() {
@@ -1806,12 +1808,12 @@ test_validate_bash_marks_redirected_read_shell_activity() {
   out="$TMP_ROOT/bash-readredir.out"
   run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" HOME="$home"
   expect_no_output "$out" &&
-    [ -s "$home/.cache/claude-proof/activity/sessions/t00-session/shell" ]
+    [ -s "$home/tmp/agent/proof/activity/sessions/t00-session/shell" ]
 }
 
 # Allow outcome for a write command (make build): the hook prints nothing and the
 # stub planner receives the input unchanged. Callers then check the shell-activity
-# marker, $home/.cache/claude-proof/activity/sessions/t00-session/shell, which only
+# marker, $home/tmp/agent/proof/activity/sessions/t00-session/shell, which only
 # the main thread gets. The hook writes that marker before it calls the planner,
 # so the stub does not make marking happen; it shows that nothing denied the
 # command first. Args: home name agent_id (empty agent_id is the main thread).
@@ -1829,14 +1831,14 @@ test_validate_bash_main_write_command_marks_shell_activity() {
   local home
   home="$(fresh_home bash-main-write-marker)" || return 1
   expect_write_command_forwarded "$home" bash-main-write-marker '' &&
-    [ -s "$home/.cache/claude-proof/activity/sessions/t00-session/shell" ]
+    [ -s "$home/tmp/agent/proof/activity/sessions/t00-session/shell" ]
 }
 
 test_validate_bash_subagent_write_command_leaves_no_shell_activity() {
   local home
   home="$(fresh_home bash-subagent-write-marker)" || return 1
   expect_write_command_forwarded "$home" bash-subagent-write-marker sub-uuid &&
-    [ ! -e "$home/.cache/claude-proof/activity/sessions/t00-session/shell" ]
+    [ ! -e "$home/tmp/agent/proof/activity/sessions/t00-session/shell" ]
 }
 
 # Subagent guard: `eci-active off` is denied for a subagent only. The deny reason
@@ -2328,7 +2330,7 @@ test_validate_edit_write_marks_edit_activity() {
   out="$TMP_ROOT/edit-marks.out"
   run_hook "$out" "$ROOT/hooks/validate-edit-write.sh" "$input" HOME="$home"
   expect_no_output "$out" &&
-    [ -s "$home/.cache/claude-proof/activity/sessions/t00-session/edit" ]
+    [ -s "$home/tmp/agent/proof/activity/sessions/t00-session/edit" ]
 }
 
 # ---- validate-edit-write session-file ownership gate ----
@@ -2471,8 +2473,8 @@ test_validate_edit_write_allows_edit_parent_sid_via_file_fallback() {
   own_sid="aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
   parent_sid="bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb"
   home="$(fresh_home owner-parent-sid-via-file)"
-  mkdir -p "$home/.cache/claude-proof/$own_sid"
-  printf '%s\n' "$parent_sid" >"$home/.cache/claude-proof/$own_sid/parent_session_id"
+  mkdir -p "$home/tmp/agent/proof/$own_sid"
+  printf '%s\n' "$parent_sid" >"$home/tmp/agent/proof/$own_sid/parent_session_id"
   input="$TMP_ROOT/owner-parent-sid-via-file.json"
   render_session_fixture "$FIXTURES/edit-parent-sid-proof-allow.json" "$home" "$input"
   out="$TMP_ROOT/owner-parent-sid-via-file.out"
@@ -2520,8 +2522,8 @@ test_validate_edit_write_blocks_edit_when_file_parent_mismatches() {
   own_sid="aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
   file_parent="dddddddd-dddd-4ddd-dddd-dddddddddddd"
   home="$(fresh_home owner-file-parent-mismatch)"
-  mkdir -p "$home/.cache/claude-proof/$own_sid"
-  printf '%s\n' "$file_parent" >"$home/.cache/claude-proof/$own_sid/parent_session_id"
+  mkdir -p "$home/tmp/agent/proof/$own_sid"
+  printf '%s\n' "$file_parent" >"$home/tmp/agent/proof/$own_sid/parent_session_id"
   input="$TMP_ROOT/owner-file-parent-mismatch.json"
   # Fixture: file belongs to bbb..., own is aaa..., file-parent says ddd... — should still deny.
   render_session_fixture "$FIXTURES/edit-parent-sid-proof-allow.json" "$home" "$input"
@@ -2540,7 +2542,7 @@ test_validate_edit_write_blocks_other_sid_under_paren_home() {
   local home input out
   home="$(fresh_home "paren (work)")" || return 1
   input="$TMP_ROOT/owner-paren-home.json"
-  jq -n --arg path "$home/.cache/claude-proof/bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb/foo" \
+  jq -n --arg path "$home/tmp/agent/proof/bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb/foo" \
     '{session_id:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",
       tool_name:"Edit",
       tool_input:{file_path:$path,old_string:"a",new_string:"b"}}' >"$input"
@@ -2603,7 +2605,7 @@ test_session_snapshot_saves_baseline() {
   out="$TMP_ROOT/session-snap.out"
   run_hook "$out" "$ROOT/hooks/session-snapshot.sh" "$FIXTURES/session-start.json" HOME="$home"
   expect_no_output "$out" &&
-    [ -s "$home/.cache/claude-proof/t00-session/baseline_head" ]
+    [ -s "$home/tmp/agent/proof/t00-session/baseline_head" ]
 }
 
 test_session_snapshot_skips_ephemeral_threads() {
@@ -2612,7 +2614,7 @@ test_session_snapshot_skips_ephemeral_threads() {
   out="$TMP_ROOT/session-ephem.out"
   run_hook "$out" "$ROOT/hooks/session-snapshot.sh" "$FIXTURES/session-start-ephemeral.json" HOME="$home"
   expect_no_output "$out" &&
-    [ ! -e "$home/.cache/claude-proof/t00-side/baseline_head" ]
+    [ ! -e "$home/tmp/agent/proof/t00-side/baseline_head" ]
 }
 
 test_session_snapshot_clears_legacy_skip_marker() {
@@ -2643,8 +2645,8 @@ test_session_snapshot_preserves_existing_baseline() {
 test_prompt_state_records_head_and_clears_bypass() {
   local home rdir prdir out expected
   home="$(fresh_home prompt-head)"
-  rdir="$home/.cache/claude-proof/reviewer/t00-session"
-  prdir="$home/.cache/claude-proof/pre-reviewer/t00-session"
+  rdir="$home/tmp/agent/proof/reviewer/t00-session"
+  prdir="$home/tmp/agent/proof/pre-reviewer/t00-session"
   mkdir -p "$rdir" "$prdir"
   touch "$rdir/bypass" "$prdir/bypass"
   expected="$(git -C "$ROOT" rev-parse HEAD)"
@@ -2664,7 +2666,7 @@ test_prompt_state_skips_state_for_invalid_session() {
   out="$TMP_ROOT/prompt-invalid.out"
   run_hook "$out" "$ROOT/hooks/prompt-task-reminder.sh" "$FIXTURES/user-prompt-invalid-session.json" HOME="$home"
   grep -q "PRE-WORK" "$out" &&
-    [ "$(find "$home/.cache/claude-proof" -name prompt_head 2>/dev/null | wc -l)" -eq 0 ]
+    [ "$(find "$home/tmp/agent/proof" -name prompt_head 2>/dev/null | wc -l)" -eq 0 ]
 }
 
 test_prompt_state_emits_skill_reload_for_coordinator_role() {
@@ -2711,7 +2713,7 @@ test_stop_gate_blocks_missing_proof_sections() {
   local home repo input out
   home="$(fresh_home stop-missing)"
   repo="$(make_git_repo stop-missing)" || return 1
-  install_proof_fixture "$home/.cache/claude-proof" "$FIXTURES/proof-missing-sections.md"
+  install_proof_fixture "$home/tmp/agent/proof" "$FIXTURES/proof-missing-sections.md"
   input="$TMP_ROOT/stop-missing.json"
   with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
   out="$TMP_ROOT/stop-missing.out"
@@ -2724,7 +2726,7 @@ test_stop_gate_accepts_complete_proof() {
   local home repo input out
   home="$(fresh_home stop-accept)"
   repo="$(make_git_repo stop-accept)" || return 1
-  install_proof_fixture "$home/.cache/claude-proof" "$FIXTURES/proof-complete.md"
+  install_proof_fixture "$home/tmp/agent/proof" "$FIXTURES/proof-complete.md"
   input="$TMP_ROOT/stop-accept.json"
   with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
   out="$TMP_ROOT/stop-accept.out"
@@ -2738,7 +2740,7 @@ test_stop_gate_blocks_clean_scan_empty_source() {
   local home repo input out
   home="$(fresh_home stop-empty-source)"
   repo="$(make_git_repo stop-empty-source)" || return 1
-  install_proof_fixture "$home/.cache/claude-proof" "$FIXTURES/proof-audit-clean-empty-source.md"
+  install_proof_fixture "$home/tmp/agent/proof" "$FIXTURES/proof-audit-clean-empty-source.md"
   input="$TMP_ROOT/stop-empty-source.json"
   with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
   out="$TMP_ROOT/stop-empty-source.out"
@@ -2751,7 +2753,7 @@ test_stop_gate_blocks_blocker_missing_input() {
   local home repo input out
   home="$(fresh_home stop-blocker-input)"
   repo="$(make_git_repo stop-blocker-input)" || return 1
-  install_proof_fixture "$home/.cache/claude-proof" "$FIXTURES/proof-audit-blocker-missing-input.md"
+  install_proof_fixture "$home/tmp/agent/proof" "$FIXTURES/proof-audit-blocker-missing-input.md"
   input="$TMP_ROOT/stop-blocker-input.json"
   with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
   out="$TMP_ROOT/stop-blocker-input.out"
@@ -2764,7 +2766,7 @@ test_stop_gate_blocks_blocker_missing_command() {
   local home repo input out
   home="$(fresh_home stop-blocker-cmd)"
   repo="$(make_git_repo stop-blocker-cmd)" || return 1
-  install_proof_fixture "$home/.cache/claude-proof" "$FIXTURES/proof-audit-blocker-missing-command.md"
+  install_proof_fixture "$home/tmp/agent/proof" "$FIXTURES/proof-audit-blocker-missing-command.md"
   input="$TMP_ROOT/stop-blocker-cmd.json"
   with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
   out="$TMP_ROOT/stop-blocker-cmd.out"
@@ -2777,7 +2779,7 @@ test_stop_gate_blocks_placeholder_blocker_command() {
   local home repo input out
   home="$(fresh_home stop-placeholder)"
   repo="$(make_git_repo stop-placeholder)" || return 1
-  install_proof_fixture "$home/.cache/claude-proof" "$FIXTURES/proof-audit-blocker-placeholder-command.md"
+  install_proof_fixture "$home/tmp/agent/proof" "$FIXTURES/proof-audit-blocker-placeholder-command.md"
   input="$TMP_ROOT/stop-placeholder.json"
   with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
   out="$TMP_ROOT/stop-placeholder.out"
@@ -2790,7 +2792,7 @@ test_stop_gate_blocks_fake_audit_commit() {
   local home repo input out
   home="$(fresh_home stop-fake-commit)"
   repo="$(make_git_repo stop-fake-commit)" || return 1
-  install_proof_fixture "$home/.cache/claude-proof" "$FIXTURES/proof-audit-fake-commit.md"
+  install_proof_fixture "$home/tmp/agent/proof" "$FIXTURES/proof-audit-fake-commit.md"
   input="$TMP_ROOT/stop-fake-commit.json"
   with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
   out="$TMP_ROOT/stop-fake-commit.out"
@@ -2812,12 +2814,12 @@ test_stop_gate_accepts_identical_audit_with_rescanned() {
   local home repo input out
   home="$(fresh_home stop-identical-rescan)"
   repo="$(make_git_repo stop-identical-rescan)" || return 1
-  install_proof_fixture "$home/.cache/claude-proof" "$FIXTURES/proof-complete-rescanned.md"
+  install_proof_fixture "$home/tmp/agent/proof" "$FIXTURES/proof-complete-rescanned.md"
   input="$TMP_ROOT/stop-id-rescan-1.json"
   with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
   run_hook_in_dir "$repo" "$TMP_ROOT/stop-id-rescan-1.out" "$ROOT/hooks/stop-gate.sh" "$input" \
     HOME="$home" CLAUDE_STOP_REVIEWER="" || true
-  install_proof_fixture "$home/.cache/claude-proof" "$FIXTURES/proof-complete-rescanned.md"
+  install_proof_fixture "$home/tmp/agent/proof" "$FIXTURES/proof-complete-rescanned.md"
   out="$TMP_ROOT/stop-id-rescan-2.out"
   run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" HOME="$home" CLAUDE_STOP_REVIEWER=""
   ! json_field_contains "$out" '.reason // empty' "byte-identical"
@@ -2962,7 +2964,7 @@ test_stop_gate_validates_proof_when_stop_hook_active() {
   local home repo input out
   home="$(fresh_home stop-active-validates)"
   repo="$(make_git_repo stop-active-validates)" || return 1
-  install_proof_fixture "$home/.cache/claude-proof" "$FIXTURES/proof-missing-sections.md"
+  install_proof_fixture "$home/tmp/agent/proof" "$FIXTURES/proof-missing-sections.md"
   input="$TMP_ROOT/stop-active-validates.json"
   jq --arg cwd "$repo" '.cwd = $cwd | .stop_hook_active = true' "$FIXTURES/stop-basic.json" >"$input"
   out="$TMP_ROOT/stop-active-validates.out"
@@ -2976,16 +2978,16 @@ test_stop_gate_blocks_preexisting_commit_after_head_advance() {
   home="$(fresh_home stop-old-commit)"
   repo="$(make_git_repo stop-old-commit)" || return 1
   old_commit="$(git -C "$repo" rev-parse HEAD)"
-  install_proof_fixture "$home/.cache/claude-proof" "$FIXTURES/proof-complete.md"
+  install_proof_fixture "$home/tmp/agent/proof" "$FIXTURES/proof-complete.md"
   input="$TMP_ROOT/stop-old-commit-1.json"
   with_cwd_path "$FIXTURES/stop-basic.json" "$input" "$repo"
   run_hook_in_dir "$repo" "$TMP_ROOT/stop-old-commit-1.out" "$ROOT/hooks/stop-gate.sh" "$input" \
     HOME="$home" CLAUDE_STOP_REVIEWER="" || true
   printf 'new\n' >>"$repo/file.txt"
   git -C "$repo" add file.txt && git -C "$repo" commit -qm "advance"
-  mkdir -p "$home/.cache/claude-proof/t00-session"
+  mkdir -p "$home/tmp/agent/proof/t00-session"
   sed "s/__OLD_COMMIT__/$old_commit/g" "$FIXTURES/proof-audit-old-commit-template.md" \
-    >"$home/.cache/claude-proof/t00-session/proof.md"
+    >"$home/tmp/agent/proof/t00-session/proof.md"
   out="$TMP_ROOT/stop-old-commit-2.out"
   run_hook_in_dir "$repo" "$out" "$ROOT/hooks/stop-gate.sh" "$input" HOME="$home" CLAUDE_STOP_REVIEWER=""
   is_stop_block "$out" &&
@@ -3052,7 +3054,8 @@ test_claude_init_tmp_unwritable_target_returns_nonzero() {
     fi
   ' >"$out" 2>"$out.err"
   grep -qx "INIT_FAIL" "$out" &&
-    grep -q "claude_init_tmp: /no/such/dir/path unwritable" "$out.err"
+    grep -qF "[ECI_TMPDIR_UNWRITABLE]" "$out.err" &&
+    grep -qF "target=/no/such/dir/path" "$out.err"
 }
 
 test_claude_fail_open_trap_exits_zero_on_err() {
@@ -3067,7 +3070,8 @@ test_claude_fail_open_trap_exits_zero_on_err() {
   rc=$?
   [ "$rc" -eq 0 ] &&
     ! grep -q "should-not-run" "$out" &&
-    grep -q "test-hook: aborted" "$out.err"
+    grep -qF "[ECI_HOOK_FAIL_OPEN]" "$out.err" &&
+    grep -qF "hook=test-hook," "$out.err"
 }
 
 # ===========================================================================
@@ -3623,8 +3627,8 @@ test_prompt_side_writes_marker() {
     "$FIXTURES/user-prompt-submit.json" >"$input"
   out="$TMP_ROOT/prompt-side-marker.out"
   run_hook "$out" "$ROOT/hooks/prompt-task-reminder.sh" "$input" HOME="$home"
-  sd="$home/.cache/claude-proof/side-stop/sessions/t00-parent"
-  cwd_marker="$(find "$home/.cache/claude-proof/side-stop/cwd" -mindepth 2 -maxdepth 2 -name side_stop 2>/dev/null | head -n1)"
+  sd="$home/tmp/agent/proof/side-stop/sessions/t00-parent"
+  cwd_marker="$(find "$home/tmp/agent/proof/side-stop/cwd" -mindepth 2 -maxdepth 2 -name side_stop 2>/dev/null | head -n1)"
   grep -q "PRE-WORK" "$out" &&
     [ -f "$sd/side_stop" ] &&
     grep -qx 'command: /side' "$sd/side_stop" &&
@@ -3644,7 +3648,7 @@ test_prompt_non_side_writes_no_marker() {
   out="$TMP_ROOT/prompt-no-side-marker.out"
   run_hook "$out" "$ROOT/hooks/prompt-task-reminder.sh" "$input" HOME="$home"
   grep -q "PRE-WORK" "$out" &&
-    [ "$(find "$home/.cache/claude-proof" -name side_stop 2>/dev/null | wc -l)" -eq 0 ]
+    [ "$(find "$home/tmp/agent/proof" -name side_stop 2>/dev/null | wc -l)" -eq 0 ]
 }
 
 test_stop_gate_side_marker_allows_child_not_parent() {
@@ -3835,6 +3839,36 @@ run_case "sm-gate ignores non-SendMessage tool" \
   test_sm_gate_ignores_non_sendmessage_tool
 run_case "sm-gate ignores SendMessage with no recipient field" \
   test_sm_gate_ignores_missing_recipient
+
+# ---- pretooluse-edit-dispatch.sh (Codex edit dispatch) ----
+# The dispatch runs validate-edit-write.sh and eci-active-gate.sh on the same
+# input and relays the first well-formed deny; ordinary edits pass silently.
+test_edit_dispatch_relays_eci_gate_deny() {
+  local home pdir input out
+  home="$(eci_active_home dispatch-ctl)"
+  pdir="$home/tmp/agent/proof/t00-session"
+  input="$TMP_ROOT/dispatch-ctl.json"
+  out="$TMP_ROOT/dispatch-ctl.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$pdir/eci_active"
+  run_hook "$out" "$ROOT/hooks/pretooluse-edit-dispatch.sh" "$input" HOME="$home" TMPDIR="$home/tmp" &&
+    is_pretool_deny "$out" &&
+    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "ECI_CONTROL_OWNER_REQUIRED"
+}
+
+test_edit_dispatch_allows_ordinary_edit() {
+  local home input out
+  home="$(fresh_home dispatch-plain)"
+  input="$TMP_ROOT/dispatch-plain.json"
+  out="$TMP_ROOT/dispatch-plain.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Edit",cwd:$cwd,tool_input:{file_path:$p,old_string:"a",new_string:"b"}}' --arg p "$home/work/notes.txt"
+  run_hook "$out" "$ROOT/hooks/pretooluse-edit-dispatch.sh" "$input" HOME="$home" TMPDIR="$home/tmp" &&
+    expect_no_output "$out"
+}
+
+run_case "edit dispatch relays the eci-active-gate deny for a control file" \
+  test_edit_dispatch_relays_eci_gate_deny
+run_case "edit dispatch allows an ordinary edit" \
+  test_edit_dispatch_allows_ordinary_edit
 
 note ""
 note "SUMMARY pass=$PASS_COUNT fail=$FAIL_COUNT"

@@ -14,7 +14,7 @@
 . "${BASH_SOURCE[0]%/*}/claude-proof-state.sh"
 
 # Canonical proof root (ancestor symlinks resolved). claude_proof_root gives
-# the configured value (CLAUDE_PROOF_ROOT or $HOME/.cache/claude-proof).
+# the configured value (CLAUDE_PROOF_ROOT or claude_default_proof_root).
 claude_resolved_proof_root() {
   local configured canonical
 
@@ -101,7 +101,7 @@ claude_path_is_eci_control_alias() {
   [[ "$links" =~ ^[0-9]+$ ]] && [ "$links" -gt 1 ] || return 1
 
   roots=("$(claude_resolved_proof_root)")
-  default_root="$(cd -- "${HOME:-}/.cache/claude-proof" 2>/dev/null && pwd -P || true)"
+  default_root="$(cd -- "$(claude_default_proof_root)" 2>/dev/null && pwd -P || true)"
   if [ -n "$default_root" ] && [ "$default_root" != "${roots[0]}" ]; then
     roots+=("$default_root")
   fi
@@ -139,7 +139,7 @@ claude_path_is_eci_control_file() {
   filename="${path##*/}"
 
   actual_root="$(claude_resolve_hook_path "$PWD" "$(claude_resolved_proof_root)" 2>/dev/null || claude_resolved_proof_root)"
-  default_root="$(claude_resolve_hook_path "$PWD" "${HOME:-}/.cache/claude-proof" 2>/dev/null || printf '%s\n' "${HOME:-}/.cache/claude-proof")"
+  default_root="$(claude_resolve_hook_path "$PWD" "$(claude_default_proof_root)" 2>/dev/null || claude_default_proof_root)"
   for root in "$actual_root" "$default_root"; do
     [ -n "$root" ] || continue
     case "$path" in
@@ -226,7 +226,7 @@ claude_path_owner_session_id() {
   [ -n "$path" ] || return 1
 
   root="$(claude_resolved_proof_root)"
-  default_root="${HOME:-}/.cache/claude-proof"
+  default_root="$(claude_default_proof_root)"
   for root in "$root" "$default_root"; do
     [ -n "$root" ] || continue
     case "$path" in

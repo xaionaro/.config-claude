@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # TODO: Reconcile retired ECI lifecycle controls when the remaining marker-dependent hooks migrate.
 # Synchronize one provider's hook runtime through an explicit coordinator route.
+#
+# Claude copy of ~/.codex/hooks/lib/eci-runtime-sync.sh. Its Codex names stay on
+# purpose: they name the shared planner runtime, which Claude uses and does not
+# own. The Go tools (eci-command-plan, eci-safe-import, eci-hook-helper) live
+# under ~/tmp/eci-runtime/<codex|kimi>/ and are built from the ~/.codex sources
+# by ~/.codex/bin/eci-runtime-sync. The provider list (codex|kimi),
+# CODEX_RUNTIME_ROOTS and the ~/.codex roots below all describe that runtime.
+# codex-file-lock.sh is a lib that Claude and Codex share under the same name.
 
 source "${BASH_SOURCE[0]%/*}/eci-native-binary.sh"
 source "${BASH_SOURCE[0]%/*}/codex-file-lock.sh"

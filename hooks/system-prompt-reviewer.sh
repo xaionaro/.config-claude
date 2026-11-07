@@ -29,7 +29,10 @@ claude_init_tmp || true
 # Invocation log set up FIRST so even early-exit failures (malformed env,
 # missing config) get a record. Lives outside $PROOF_DIR so it survives
 # the stop-cycle wipe.
-LOG_DIR="$HOME/.cache/claude-proof/reviewer"
+# Proof root from its single definition in lib/claude-proof-state.sh.
+. "$HOME/.claude/hooks/lib/claude-proof-state.sh"
+PROOF_ROOT="$(claude_configured_proof_root)"
+LOG_DIR="$PROOF_ROOT/reviewer"
 mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/invocations.log"
 log() { printf '%s pid=%d %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$" "$*" >> "$LOG"; }
@@ -85,7 +88,7 @@ esac
 # The transcript JSONL is always present for any session that ever ran.
 
 # State outside $PROOF_DIR so it survives stop-cycle wipe.
-STATE_DIR="$HOME/.cache/claude-proof/reviewer/$SESSION_ID"
+STATE_DIR="$PROOF_ROOT/reviewer/$SESSION_ID"
 mkdir -p "$STATE_DIR"
 BYPASS_MARKER="$STATE_DIR/bypass"
 STREAK_FILE="$STATE_DIR/streak"
@@ -350,7 +353,7 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
       echo ""
     fi
   }
-  ECI_MARKER="$HOME/.cache/claude-proof/$SESSION_ID/eci_active"
+  ECI_MARKER="$PROOF_ROOT/$SESSION_ID/eci_active"
   if [ -n "${CLAUDE_ROLE:-}" ] || [ -e "$ECI_MARKER" ]; then
     SKIP_REASON=""
     [ -n "${CLAUDE_ROLE:-}" ] && SKIP_REASON="CLAUDE_ROLE=${CLAUDE_ROLE} (orchestrator session — teammates may be mid-edit)"
@@ -678,7 +681,7 @@ SCHEMA=$(cat "$HOOK_DIR/lib/reviewer-schema.json")
 
 # Archive what was sent so the user can inspect later. Same path for both
 # backends; the dump file's `model` and `_backend` fields disambiguate.
-DUMP_DIR="$HOME/.cache/claude-proof/reviewer-dumps/$SESSION_ID"
+DUMP_DIR="$PROOF_ROOT/reviewer-dumps/$SESSION_ID"
 mkdir -p "$DUMP_DIR"
 DUMP_PATH="$DUMP_DIR/$(date -u +%Y%m%dT%H%M%SZ).json"
 

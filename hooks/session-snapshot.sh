@@ -7,6 +7,7 @@ set -euo pipefail
 . "$HOME/.claude/hooks/lib/claude-tmp.sh"
 claude_init_tmp || true
 claude_install_fail_open_trap session-snapshot
+. "$HOME/.claude/hooks/lib/claude-proof-state.sh"
 
 INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id')
@@ -21,7 +22,9 @@ fi
 # state. Mirrors stop-gate.sh ephemeral skip.
 [ -n "$TRANSCRIPT_PATH" ] || exit 0
 
-PROOF_DIR="$HOME/.cache/claude-proof/$SESSION_ID"
+# Proof root from its single definition in lib/claude-proof-state.sh.
+ROOT="$(claude_configured_proof_root)"
+PROOF_DIR="$ROOT/$SESSION_ID"
 BASELINE="$PROOF_DIR/baseline_head"
 
 # Only save if baseline doesn't exist yet (preserve across compact/clear)
@@ -36,10 +39,12 @@ rm -f "$PROOF_DIR/skip_stop"
 
 # Janitor: prune session state older than 30 days. Sessions that ended
 # without STOP_ACTIVE=true (crash, kill, timeout) leave dirs behind under
-# ~/.cache/claude-proof/. Each peer dir holds its own per-session keys so
-# pruning is safe — current session always has fresh mtime.
-ROOT="$HOME/.cache/claude-proof"
-find "$ROOT" -mindepth 1 -maxdepth 1 -type d -mtime +30 -exec rm -rf {} + 2>/dev/null || true
+# $ROOT. Each peer dir holds its own per-session keys so pruning is safe —
+# current session always has fresh mtime. The root is shared with Codex, so
+# only UUID-named session dirs are pruned, never Codex reserved dirs.
+find "$ROOT" -mindepth 1 -maxdepth 1 -type d -mtime +30 -regextype posix-extended \
+  -regex '.*/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' \
+  -exec rm -rf {} + 2>/dev/null || true
 find "$ROOT/history"  -mindepth 1 -maxdepth 1 -type f -mtime +30 -delete 2>/dev/null || true
 find "$ROOT/skills"   -mindepth 1 -maxdepth 1 -type d -mtime +30 -exec rm -rf {} + 2>/dev/null || true
 find "$ROOT/audit"    -mindepth 1 -maxdepth 1 -type d -mtime +30 -exec rm -rf {} + 2>/dev/null || true

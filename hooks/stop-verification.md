@@ -2,7 +2,7 @@ STOP BLOCKED — Write verification proof before stopping.
 NEVER end your turn to ask a question. Use the AskUserQuestion tool instead — always.
 
 Proof file: {{PROOF}} (mkdir -p {{PROOF_DIR}} first).
-Evidence bundle: BUNDLE=$HOME/.cache/claude-proof/$(date -u +%Y%m%dT%H%M%SZ) — mkdir -p $BUNDLE, save all commands and outputs there.
+Evidence bundle: BUNDLE=$HOME/tmp/agent/proof/$(date -u +%Y%m%dT%H%M%SZ) — mkdir -p $BUNDLE, save all commands and outputs there.
 
 ## FAST EXIT
 
