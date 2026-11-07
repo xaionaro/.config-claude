@@ -216,11 +216,13 @@ PY
 #
 # Word formation is modelled only as quote removal (plus the $' and $" prefix)
 # and backslash-newline joining. Everything else that builds a word is not
-# detected, so this guard does not deny it, and the planner does not reliably
-# deny it either: with an active marker it allowed
-# ~/.claude/bin/eci-active {off,} and ~/.claude/bin/eci-active off$'\000y',
-# for a subagent and for the main thread, and its verdict on other forms
-# depends on the executable path and the caller. The forms are brace expansion
+# detected, so this guard does not deny it. The planner was probed on
+# 2026-11-07 (codex eci-command-plan, sha256 23c29a46...): with an active marker
+# it allowed ~/.claude/bin/eci-active {off,} and
+# ~/.claude/bin/eci-active off$'\000y', for a subagent and for the main thread,
+# and its verdict on other forms depended on the executable path and the
+# caller. That is what that build did, not a property of the planner; a newer
+# build can differ, so probe again before relying on it. The forms are brace expansion
 # (eci-active {off,}), parameter expansion
 # including $IFS (o${X}ff, eci-active${IFS}off), command substitution
 # (o"$(printf f)"f), pathname expansion (o?f beside a file named off),
@@ -230,11 +232,17 @@ PY
 #
 # A NUL escape is one such miss. Bash cuts an ANSI-C string at the NUL, so
 # eci-active off$'\0x' r.md runs eci-active off r.md. These spellings cut the
-# word the same way (each was probed): \0, \00, \000, \x0, \x00, \u0000,
-# \U00000000, \c@, \c` and \c<space>. The matcher sees off0x there (offx00,
-# offu0000, offc@ for the other spellings): the $' normalization removed the $
-# that used to follow off and end the match, and the match needs a non-word
-# character after off.
+# word the same way (each was probed in bash 5.3 on 2026-11-07): \0, \00, \000,
+# \0000 (\000 then a 0), \400 (octal 400 wraps to NUL), \x0, \x00, \x000,
+# \u0, \u00, \u000, \u0000, \U0, \U00000000, \U000000000, \c@, \c` and
+# \c<space>. \1000, \c\x40, \c\100, \1, \x1 and \u1 do not. For
+# eci-active off$'<spelling>x' r.md the matcher sees off followed by the spelling
+# without its backslash and quotes, then x: off0x, off00x, off000x, off0000x,
+# off400x, offx0x, offx00x, offx000x, offu0x, offu00x, offu000x, offu0000x,
+# offU0x, offU00000000x, offU000000000x, offc@x, offc`x, and offc (the space
+# ends the word). The $' normalization removed the $ that used to follow off and
+# end the match, and the match needs a non-word character after off; each form
+# has a letter or digit there, so none is denied.
 command_mentions_eci_off() {
   local text="$1"
   text=${text//$'\\\n'/}

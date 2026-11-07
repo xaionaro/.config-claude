@@ -19,9 +19,7 @@
 
 set -uo pipefail
 
-# Pipes here end in a reader that consumes all its input; see
-# test_pipefail_scripts_never_pipe_into_grep_or_an_early_exit_reader
-# in hooks/tests/run.sh.
+# Pipe rule for this script: see pipe_hazards_in in hooks/tests/run.sh.
 
 . "$HOME/.claude/hooks/lib/claude-tmp.sh"
 claude_init_tmp || true

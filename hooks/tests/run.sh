@@ -1351,7 +1351,7 @@ planner_received() {
 }
 
 # True when hook output file $1 is the subagent-guard deny (verdict deny, reason
-# starts "Only the main thread") and the stub planner in HOME $2 never ran, so
+# contains "Only the main thread") and the stub planner in HOME $2 never ran, so
 # the guard denied before the planner.
 subagent_guard_denied() {
   is_pretool_deny "$1" &&
@@ -2191,8 +2191,9 @@ test_validate_edit_write_blocks_edit_when_file_parent_mismatches() {
 # Regression: $HOME containing ERE meta-chars must not silently disable the
 # ownership gate. With an under-escaped HOME_RE, extract_owner_sid would
 # return empty for any path under a paren-bearing $HOME and the gate would
-# pass-through a cross-session edit. Build a fake HOME at "$TMP_ROOT/home-paren (work)"
-# (parens unescaped become an ERE group) and verify the deny still fires.
+# pass-through a cross-session edit. Build a fake HOME whose name has parens
+# (fresh_home "paren (work)"; unescaped parens become an ERE group) and verify
+# the deny still fires.
 test_validate_edit_write_blocks_other_sid_under_paren_home() {
   local home input out
   home="$(fresh_home "paren (work)")" || return 1
