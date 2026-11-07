@@ -6,10 +6,25 @@
   let ws = null;
   let eventQueue = [];
 
+  const IDLE_HINT = 'Click an option above, then return to the terminal';
+  const NO_CHOICES_HINT = 'Nothing to select on this screen. Continue in the terminal';
+  // Elements that already handle Enter/Space and focus natively.
+  const NATIVE_CONTROLS = 'a[href], button, input, select, textarea, summary';
+
+  // Mirror the socket state in the frame header. Full-document screens have no
+  // header, so a missing element is not an error.
+  function setStatus(state, text) {
+    const status = document.querySelector('.header .status');
+    if (!status || status.dataset.state === state) return;
+    status.dataset.state = state;
+    status.textContent = text;
+  }
+
   function connect() {
     ws = new WebSocket(WS_URL);
 
     ws.onopen = () => {
+      setStatus('connected', 'Connected');
       eventQueue.forEach(e => ws.send(JSON.stringify(e)));
       eventQueue = [];
     };
@@ -22,6 +37,7 @@
     };
 
     ws.onclose = () => {
+      setStatus('disconnected', 'Disconnected, retrying…');
       setTimeout(connect, 1000);
     };
   }
@@ -54,15 +70,47 @@
       const container = target.closest('.options') || target.closest('.cards');
       const selected = container ? container.querySelectorAll('.selected') : [];
       if (selected.length === 0) {
-        indicator.textContent = 'Click an option above, then return to the terminal';
-      } else if (selected.length === 1) {
-        const label = selected[0].querySelector('h3, .content h3, .card-body h3')?.textContent?.trim() || selected[0].dataset.choice;
-        indicator.innerHTML = '<span class="selected-text">' + label + ' selected</span> — return to terminal to continue';
-      } else {
-        indicator.innerHTML = '<span class="selected-text">' + selected.length + ' selected</span> — return to terminal to continue';
+        indicator.textContent = IDLE_HINT;
+        return;
       }
+      const summary = selected.length === 1
+        ? (selected[0].querySelector('h3, .content h3, .card-body h3')?.textContent?.trim() || selected[0].dataset.choice) + ' selected'
+        : selected.length + ' selected';
+      // Build nodes rather than innerHTML so labels containing < or & render as text.
+      const highlight = document.createElement('span');
+      highlight.className = 'selected-text';
+      highlight.textContent = summary;
+      indicator.replaceChildren(highlight, ' — return to terminal to continue');
     }, 0);
   });
+
+  // Choices are usually <div onclick>. Enter and Space activate a focused choice
+  // through the same click path a mouse uses.
+  document.addEventListener('keydown', (e) => {
+    if ((e.key !== 'Enter' && e.key !== ' ') || e.repeat) return;
+    const target = e.target.closest('[data-choice]');
+    if (!target || target !== e.target || target.matches(NATIVE_CONTROLS)) return;
+    e.preventDefault(); // Space would otherwise scroll the page.
+    target.click();
+  });
+
+  function syncPressed(items) {
+    items.forEach(o => o.setAttribute('aria-pressed', String(o.classList.contains('selected'))));
+  }
+
+  // Give choices button semantics so keyboard and screen-reader users can reach
+  // them, and replace the click hint when the screen has nothing to click.
+  function enhanceChoices() {
+    const choices = document.querySelectorAll('[data-choice]');
+    choices.forEach(el => {
+      if (el.matches(NATIVE_CONTROLS)) return;
+      if (!el.hasAttribute('tabindex')) el.tabIndex = 0;
+      if (!el.hasAttribute('role')) el.setAttribute('role', 'button');
+    });
+    syncPressed(document.querySelectorAll('.options [data-choice], .cards [data-choice]'));
+    const indicator = document.getElementById('indicator-text');
+    if (indicator && choices.length === 0) indicator.textContent = NO_CHOICES_HINT;
+  }
 
   // Frame UI: selection tracking
   window.selectedChoice = null;
@@ -78,6 +126,7 @@
     } else {
       el.classList.add('selected');
     }
+    syncPressed(container ? container.querySelectorAll('[data-choice]') : [el]);
     window.selectedChoice = el.dataset.choice;
   };
 
@@ -87,5 +136,10 @@
     choice: (value, metadata = {}) => sendEvent({ type: 'choice', value, ...metadata })
   };
 
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', enhanceChoices);
+  } else {
+    enhanceChoices();
+  }
   connect();
 })();

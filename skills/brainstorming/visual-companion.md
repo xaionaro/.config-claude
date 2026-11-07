@@ -100,10 +100,13 @@ Use `--url-host` to control what hostname is printed in the returned URL JSON.
 
    ```html
    <!-- filename: waiting.html (or waiting-2.html, etc.) -->
-   <div style="display:flex;align-items:center;justify-content:center;min-height:60vh">
-     <p class="subtitle">Continuing in terminal...</p>
+   <div class="empty-state">
+     <h2>Continuing in the terminal</h2>
+     <p>The next question is in your terminal. This page updates when there is something to look at.</p>
    </div>
    ```
+
+   On a screen with no `data-choice` elements, the bottom bar says there is nothing to select.
 
    This prevents the user from staring at a resolved choice while the conversation has moved on. When the next visual question comes up, push a new content file as usual.
 
@@ -138,6 +141,12 @@ Write just the content that goes inside the page. The server wraps it in the fra
 ```
 
 That's it. No `<html>`, no CSS, no `<script>` tags needed. The server provides all of that.
+
+The frame also provides:
+
+- **Keyboard and screen-reader access:** every `data-choice` element becomes focusable with button semantics, and Enter or Space selects it. Do not add your own `tabindex` or key handlers.
+- **Connection status:** the header shows Connecting, Connected, or "Disconnected, retrying". While disconnected, clicks queue and send on reconnect. If the server has stopped, they are lost.
+- **Phone layout:** `.cards`, `.split`, and `.pros-cons` collapse to one column on narrow screens. Avoid fixed widths over 320px in mockups.
 
 ## CSS Classes Available
 
@@ -226,6 +235,8 @@ The frame template provides these CSS classes for your content:
 - `.subtitle` — secondary text below title
 - `.section` — content block with bottom margin
 - `.label` — small uppercase label text
+- `.empty-state` — centered block for waiting or "continue in terminal" screens
+- `pre`, `code` — monospace; `pre` scrolls horizontally instead of widening the page
 
 ## Browser Events Format
 
