@@ -1494,6 +1494,35 @@ test_validate_bash_marks_redirected_read_shell_activity() {
     [ -s "$home/.cache/claude-proof/activity/sessions/t00-session/shell" ]
 }
 
+# Shell-activity marker for a non-read-only command, written for the main thread
+# only. Runs the hook for a write command (planner stub in place, so the hook
+# reaches the marking step) and requires the planner to receive the input
+# unchanged. Marker path: $home/.cache/claude-proof/activity/sessions/t00-session/shell.
+# Args: home name agent_id (empty agent_id is the main thread).
+run_bash_write_command() {
+  local home="$1" input out
+  make_planner_stub "$home" || return 1
+  input="$TMP_ROOT/$2.json"
+  write_bash_input "$input" t00-session "$ROOT" 'make build' "$3"
+  out="$TMP_ROOT/$2.out"
+  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" HOME="$home"
+  expect_no_output "$out" && planner_received "$home" "$input"
+}
+
+test_validate_bash_main_write_command_marks_shell_activity() {
+  local home
+  home="$(fresh_home bash-main-write-marker)" || return 1
+  run_bash_write_command "$home" bash-main-write-marker '' &&
+    [ -s "$home/.cache/claude-proof/activity/sessions/t00-session/shell" ]
+}
+
+test_validate_bash_subagent_write_command_leaves_no_shell_activity() {
+  local home
+  home="$(fresh_home bash-subagent-write-marker)" || return 1
+  run_bash_write_command "$home" bash-subagent-write-marker sub-uuid &&
+    [ ! -e "$home/.cache/claude-proof/activity/sessions/t00-session/shell" ]
+}
+
 # Subagent guard: `eci-active off` is denied for a subagent only. The deny reason
 # is the verbatim message (it names the over-denial and says not to retry).
 test_validate_bash_blocks_subagent_eci_active_off() {
@@ -1856,6 +1885,53 @@ test_validate_bash_non_json_stdin_is_forwarded_unchanged() {
   input="$TMP_ROOT/bash-non-json.in"
   printf 'not json\n' >"$input"
   expect_forwarded_unchanged bash-non-json "$input"
+}
+
+# In-memory input: when mktemp cannot stage the hook input, validate-bash keeps it
+# in memory ("cannot stage hook input"). TMPDIR and CLAUDE_TMPDIR (which
+# claude_init_tmp would otherwise turn into $HOME/tmp) sit under a regular file,
+# so mktemp fails even for root. The HOME has a stub planner so that "the planner
+# ran" is observable (it must not on this path). Args: name agent_id command [proof].
+run_bash_unstageable() {
+  local home input tmpdir proof="${4:-}"
+  home="$(fresh_home "$1")" || return 1
+  make_planner_stub "$home" || return 1
+  : >"$TMP_ROOT/$1.not-a-dir" || return 1
+  tmpdir="$TMP_ROOT/$1.not-a-dir/tmp"
+  # Precondition: staging really fails here, otherwise the rows below test nothing.
+  ! mktemp "$tmpdir/validate-bash.XXXXXX" >/dev/null 2>&1 || return 1
+  input="$TMP_ROOT/$1.json"
+  write_bash_input "$input" t00-session "$ROOT" "$3" "$2"
+  [ -n "$proof" ] || proof="$(fresh_proof_root "$1")"
+  run_hook "$TMP_ROOT/$1.out" "$ROOT/hooks/validate-bash.sh" "$input" HOME="$home" \
+    CLAUDE_PROOF_ROOT="$proof" TMPDIR="$tmpdir" CLAUDE_TMPDIR="$tmpdir"
+}
+
+# Subagent guard on in-memory input: denied, and the planner never runs.
+expect_unstageable_subagent_denied() {
+  local out="$TMP_ROOT/$1.out"
+  run_bash_unstageable "$1" sub-uuid "$2" || return 1
+  is_pretool_deny "$out" &&
+    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "Only the main thread" &&
+    [ ! -e "$TMP_ROOT/home-$1/planner-stdin" ]
+}
+
+# No guard fires: no stdout, the "cannot stage" advisory on stderr, planner never runs.
+# Args: name agent_id command.
+expect_unstageable_fails_open() {
+  local out="$TMP_ROOT/$1.out"
+  run_bash_unstageable "$1" "$2" "$3" || return 1
+  expect_no_output "$out" && grep -q 'ECI planner unavailable: cannot stage hook input' "$out.err" &&
+    [ ! -e "$TMP_ROOT/home-$1/planner-stdin" ]
+}
+
+# Active ECI marker: the same unstageable input denies, as for any unusable planner.
+test_validate_bash_unstageable_input_fails_closed_under_active_eci() {
+  local out="$TMP_ROOT/bash-unstageable-active.out" proof
+  proof="$(active_eci_proof_root bash-unstageable-active)" || return 1
+  run_bash_unstageable bash-unstageable-active '' 'ls' "$proof" || return 1
+  is_pretool_deny "$out" &&
+    json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "cannot stage hook input"
 }
 
 # Codex parity: same command, cwd, session and proof root give the same planner decision.
@@ -2834,6 +2910,10 @@ run_case "validate-bash skips activity for read-only shell chain (planner still 
   test_validate_bash_skips_read_only_shell_chain_activity
 run_case "validate-bash marks activity for redirected read shell" \
   test_validate_bash_marks_redirected_read_shell_activity
+run_case "validate-bash marks shell activity for a main-thread write command (planner stub)" \
+  test_validate_bash_main_write_command_marks_shell_activity
+run_case "validate-bash leaves no shell activity marker for a subagent write command (planner stub)" \
+  test_validate_bash_subagent_write_command_leaves_no_shell_activity
 run_case "validate-bash blocks subagent eci-active off" \
   test_validate_bash_blocks_subagent_eci_active_off
 run_case "validate-bash denies subagent eci-active off at argv head in all forms" \
@@ -3020,6 +3100,14 @@ run_case "validate-bash forwards stdin with two trailing newlines byte-exact" \
   test_validate_bash_forwards_stdin_with_two_trailing_newlines
 run_case "validate-bash forwards non-JSON stdin unchanged" \
   test_validate_bash_non_json_stdin_is_forwarded_unchanged
+run_case "validate-bash in-memory input (cannot stage): subagent eci-active off is denied" \
+  expect_unstageable_subagent_denied in-mem-sub-deny 'bash -c "~/.claude/bin/eci-active off r.md"'
+run_case "validate-bash in-memory input (cannot stage): main thread eci-active off is not denied" \
+  expect_unstageable_fails_open in-mem-main-fwd '' 'bash -c "~/.claude/bin/eci-active off r.md"'
+run_case "validate-bash in-memory input (cannot stage): subagent harmless command is not denied" \
+  expect_unstageable_fails_open in-mem-sub-fwd sub-uuid 'ls'
+run_case "validate-bash in-memory input (cannot stage): fails closed under active ECI" \
+  test_validate_bash_unstageable_input_fails_closed_under_active_eci
 test_validate_bash_wrapper_matches_codex_shim
 
 # validate-edit-write activity
