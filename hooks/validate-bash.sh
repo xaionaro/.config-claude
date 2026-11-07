@@ -204,14 +204,23 @@ PY
 # argv-head parser that missed wrapper and continuation forms; ECI guards
 # accidental deviation, not adversarial input, so a text match is enough.
 # Accepted over-denial: the same text in echo, heredoc bodies, grep patterns
-# and commit messages. Not detected:
-# indirection (E=...eci-active; "$E" off), escapes inside $'..' ($'o\x66f') or
-# a script file that runs it. Two more known gaps, both allowed for subagents:
-#   - eci-active off$'\0x' r.md. Bash cuts the word at the NUL escape, so this
-#     is an invocation. It regressed when the $'..' normalization was added: the
-#     $ it now removes used to follow off and end the match. Only a planner
-#     pass that evaluates ANSI-C words closes it.
-#   - Brace expansion: eci-active {off,}. The text match never handled it.
+# and commit messages.
+#
+# Word formation is modelled only as quote removal (plus the $' and $" prefix)
+# and backslash-newline joining. Everything else that builds a word is not
+# detected, so it is not denied by this guard (the planner still decides
+# afterwards): brace expansion (eci-active {off,}), parameter expansion
+# including $IFS (o${X}ff, eci-active${IFS}off), command substitution
+# (o"$(printf f)"f), pathname expansion (o?f beside a file named off),
+# ANSI-C expansion (escapes inside $'..', such as $'o\x66f'), and arguments
+# supplied at run time (E=...eci-active; "$E" off, or a script file that runs
+# it). Only a planner pass that evaluates the words closes these.
+#
+# A NUL escape is one such miss. Bash cuts an ANSI-C string at the NUL, so
+# eci-active off$'\0x' r.md runs eci-active off r.md; \x00, \u0000 and \c@ cut
+# it the same way. The matcher sees off0x there: the $' normalization removed
+# the $ that used to follow off and end the match, and the match needs a
+# non-word character after off.
 command_mentions_eci_off() {
   local text="$1"
   text=${text//$'\\\n'/}
