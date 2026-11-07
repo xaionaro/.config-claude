@@ -196,7 +196,12 @@ PY
 # input, so a text match is enough. Accepted over-denial: the same text in
 # echo, heredoc bodies, grep patterns and commit messages. Not detected:
 # indirection (E=...eci-active; "$E" off), escapes inside $'..' ($'o\x66f') or
-# a script file that runs it.
+# a script file that runs it. Two more known gaps, both allowed for subagents:
+#   - eci-active off$'\0x' r.md. Bash cuts the word at the NUL escape, so this
+#     is an invocation. It regressed when the $'..' normalization was added: the
+#     $ it now removes used to follow off and end the match. Only a planner
+#     pass that evaluates ANSI-C words closes it.
+#   - Brace expansion: eci-active {off,}. The text match never handled it.
 command_mentions_eci_off() {
   local text="$1"
   text=${text//\$\'/\'}
