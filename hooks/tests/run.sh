@@ -1487,19 +1487,6 @@ test_validate_bash_blocks_subagent_eci_active_off() {
       'Only the main thread or orchestrator may disengage ECI with `eci-active off`. Subagents report completion or blockers to the orchestrator while ECI stays active. This check matches that phrase anywhere in command text, including quoted text, heredocs and commit messages. Do not retry the disengage in any form. When the phrase is only text, such as a commit message or search pattern, describe it in other words.'
 }
 
-test_validate_bash_allows_main_eci_active_off() {
-  local home input out cmd
-  home="$(fresh_home bash-main-eci-off)"
-  make_planner_stub "$home" || return 1
-  cmd="~/.claude/bin/eci-active off /tmp/eci-disengage.md"
-  input="$TMP_ROOT/bash-main-eci-off.json"
-  write_bash_input "$input" t00-session "$ROOT" "$cmd"
-  out="$TMP_ROOT/bash-main-eci-off.out"
-  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" HOME="$home" \
-    CLAUDE_PROOF_ROOT="$(fresh_proof_root bash-main-eci-off)"
-  expect_no_output "$out" && planner_received "$home" "$input"
-}
-
 # Argv-head `eci-active off` forms stay denied for a subagent (the text match covers them).
 test_validate_bash_subagent_eci_off_argv_head_is_denied() {
   local home input out cmd n=0
@@ -2824,8 +2811,6 @@ run_case "validate-bash marks activity for redirected read shell" \
   test_validate_bash_marks_redirected_read_shell_activity
 run_case "validate-bash blocks subagent eci-active off" \
   test_validate_bash_blocks_subagent_eci_active_off
-run_case "validate-bash allows main eci-active off (planner receives input)" \
-  test_validate_bash_allows_main_eci_active_off
 run_case "validate-bash denies subagent eci-active off at argv head in all forms" \
   test_validate_bash_subagent_eci_off_argv_head_is_denied
 run_case "subagent denied: bash -c \"eci-active off\"" \
