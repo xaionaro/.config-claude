@@ -136,8 +136,8 @@ fi
 # bash writes a multi-line value one line at a time, so the writer can still be
 # writing, die of SIGPIPE (rc 141), make the pipeline read as failed and skip
 # the deny. A here-string has no writer process. The static check
-# test_validate_edit_write_has_no_echo_grep_pipeline in hooks/tests/run.sh pins
-# this.
+# test_pipefail_hooks_never_pipe_into_grep in hooks/tests/run.sh pins this for
+# every hook.
 #
 # Block edits to vendored code: source must be edited, then revendored.
 # Covers all common vendored-dir conventions, case-insensitive:

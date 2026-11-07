@@ -674,7 +674,12 @@ if [ -f "$PROOF" ]; then
         # silently before the byte-identical-audit block can fire. The empty
         # fallback is the intended behavior — no rescanned line means
         # RESCAN_LINE stays empty and the block at the next check fires.
-        RESCAN_LINE=$(printf %s "$AUDIT_SECTION" | grep -iE '^[[:space:]]*rescanned:[[:space:]]+' | head -n1 || true)
+        # This script never pipes into grep; a variable is read with a here-string
+        # (`grep ... <<<"$VAR"`), not `printf %s "$VAR" | grep`. An early-exiting
+        # grep (-q) can SIGPIPE the writer, and under pipefail the pipeline then
+        # reads as failed (rc 141) although the pattern matched. The static check
+        # test_pipefail_hooks_never_pipe_into_grep in hooks/tests/run.sh pins this.
+        RESCAN_LINE=$(grep -iE '^[[:space:]]*rescanned:[[:space:]]+' <<<"$AUDIT_SECTION" | head -n1 || true)
         RESCAN_OK=0
         if [ -n "$RESCAN_LINE" ]; then
           RESCAN_OK=$(printf %s "$RESCAN_LINE" | awk '
@@ -693,9 +698,9 @@ if [ -f "$PROOF" ]; then
       # When HEAD advanced, cited commits must include one reachable from the
       # PREV_HEAD → HEAD range. Check only within the audit section.
       if [ -n "$CUR_HEAD" ] && [ -n "$PREV_HEAD" ] && [ "$CUR_HEAD" != "$PREV_HEAD" ]; then
-        if printf %s "$AUDIT_SECTION" | grep -qE '^[[:space:]]*commit:[[:space:]]+[0-9a-f]{7,40}'; then
+        if grep -qE '^[[:space:]]*commit:[[:space:]]+[0-9a-f]{7,40}' <<<"$AUDIT_SECTION"; then
           RANGE_OK=0
-          for H in $(printf %s "$AUDIT_SECTION" | grep -oE '^[[:space:]]*commit:[[:space:]]+[0-9a-f]{7,40}' | awk '{print $NF}'); do
+          for H in $(grep -oE '^[[:space:]]*commit:[[:space:]]+[0-9a-f]{7,40}' <<<"$AUDIT_SECTION" | awk '{print $NF}'); do
             if [ "$H" != "$PREV_HEAD" ] && git merge-base --is-ancestor "$PREV_HEAD" "$H" 2>/dev/null; then
               RANGE_OK=1; break
             fi
@@ -788,14 +793,15 @@ if [ -f "$BASELINE_FILE" ]; then
   BASELINE_HEAD=$(cat "$BASELINE_FILE")
 fi
 
-CODE_CHANGES=$(
+CHANGED_FILES=$(
   {
     git diff --name-only 2>/dev/null
     git diff --cached --name-only 2>/dev/null
     [ -n "$BASELINE_HEAD" ] && git diff "$BASELINE_HEAD"..HEAD --name-only 2>/dev/null
-  } |
-    sort -u |
-    grep -v -E '\.(json|yaml|yml|toml|md|txt|env|lock|ini|cfg|conf|csv|svg|png|jpg|gif|ico)$' |
+  } | sort -u
+) || true
+CODE_CHANGES=$(
+  grep -v -E '\.(json|yaml|yml|toml|md|txt|env|lock|ini|cfg|conf|csv|svg|png|jpg|gif|ico)$' <<<"$CHANGED_FILES" |
     head -1
 ) || true
 

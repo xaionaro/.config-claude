@@ -1335,27 +1335,113 @@ test_validate_edit_write_allows_remote_multiedit_gomod_replace() {
   expect_no_output "$out"
 }
 
-# True when a non-comment line of file $1 pipes echo or printf into grep. Under
-# pipefail, grep -q exits at the first match and the writer can die of SIGPIPE
-# (rc 141), which turns a matching `if` false and skips the deny. A static pin,
-# not a timing test: that failure needs a scheduling race to show.
-writer_grep_pipeline_in() {
+# True when file $1 sets pipefail on a non-comment line (`set -euo pipefail`,
+# `set -o pipefail`, ...).
+sets_pipefail() {
   awk '
-    !/^[[:space:]]*#/ && /(^|[^[:alnum:]_])(echo|printf)[^|]*\|[[:space:]]*(grep|egrep|fgrep)([^[:alnum:]_]|$)/ { found = 1 }
+    !/^[[:space:]]*#/ && /(^|[;&|[:space:]])set[[:space:]]+([^#]*[[:space:]])?-[A-Za-z]*o[[:space:]]+pipefail/ { found = 1 }
     END { exit found ? 0 : 1 }
   ' "$1"
 }
 
-test_validate_edit_write_has_no_echo_grep_pipeline() {
-  local probe="$TMP_ROOT/writer-grep-probe.sh"
-  # Detector falsification: known-bad lines are flagged, known-good lines are not.
-  printf '%s\n' 'if echo "$TEXT" | grep -qE x; then' >"$probe"
-  writer_grep_pipeline_in "$probe" || return 1
-  printf '%s\n' 'if [ -n "$P" ] && printf "%s\n" "$P" | grep -Eiq x; then' >"$probe"
-  writer_grep_pipeline_in "$probe" || return 1
-  printf '%s\n' 'if grep -qE x <<<"$TEXT"; then' '# echo "$T" | grep -q x' 'T=$(echo "$I" | jq -r .a)' >"$probe"
-  ! writer_grep_pipeline_in "$probe" || return 1
-  ! writer_grep_pipeline_in "$ROOT/hooks/validate-edit-write.sh"
+# True when a non-comment command line of file $1 pipes into grep, egrep, fgrep
+# or rg (also behind `command`, `builtin`, VAR=value or a /usr/bin prefix). What
+# feeds the pipe does not matter: echo, printf, jq, cat, a variable expansion
+# and a longer chain all count. Under pipefail, grep -q exits at the first match
+# and the writer can die of SIGPIPE (rc 141), which turns a matching `if` false
+# and skips the deny; the fix is `grep ... <<<"$VAR"` or `grep ... <"$file"`. A
+# static pin, not a timing test: that failure needs a scheduling race to show.
+# A physical line ending in `|` or `\` continues on the next one. The pipe must
+# follow whitespace, a quote, `)` or `}`, so that a regex alternation such as
+# /^(cat|grep|head)$/ inside an embedded awk program does not read as a pipe.
+pipe_into_grep_in() {
+  awk '
+    BEGIN {
+      tool = "(grep|egrep|fgrep|rg)"
+      prefix = "(command[[:space:]]+|builtin[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(/usr/bin/|/bin/)?"
+      into_grep = "(^|[[:space:]\"\047)}])[|][[:space:]]*" prefix tool "([^[:alnum:]_-]|$)"
+    }
+    /^[[:space:]]*#/ { next }
+    {
+      line = $0
+      if (continued) { sub(/^[[:space:]]+/, "", line); line = joined " " line }
+      if (line ~ /\\[[:space:]]*$/) { sub(/\\[[:space:]]*$/, "", line); joined = line; continued = 1; next }
+      if (line ~ /(^|[^|])[|][[:space:]]*$/) { joined = line; continued = 1; next }
+      continued = 0
+      if (line ~ into_grep) found = 1
+    }
+    END { if (continued && joined ~ into_grep) found = 1; exit found ? 0 : 1 }
+  ' "$1"
+}
+
+# Detector falsification row. Args: verdict(flag|clean) line... Each line is one
+# physical line of a probe script.
+pipe_into_grep_row() {
+  local want="$1" probe="$TMP_ROOT/pipe-grep-probe.sh"; shift
+  printf '%s\n' "$@" >"$probe"
+  case "$want" in
+  flag) pipe_into_grep_in "$probe" ;;
+  clean) ! pipe_into_grep_in "$probe" ;;
+  *) return 1 ;;
+  esac
+}
+
+# No hook that sets pipefail pipes into grep. The rows first show that the
+# detectors flag known-bad lines (every left-hand form and grep flavour) and
+# pass known-good ones; then they run over every hooks/*.sh.
+test_pipefail_hooks_never_pipe_into_grep() {
+  local hook probe="$TMP_ROOT/pipefail-probe.sh" pinned
+  # sets_pipefail falsification.
+  printf '%s\n' 'set -euo pipefail' >"$probe"
+  sets_pipefail "$probe" || return 1
+  printf '%s\n' 'set -uo pipefail' >"$probe"
+  sets_pipefail "$probe" || return 1
+  printf '%s\n' 'set -e -o pipefail' >"$probe"
+  sets_pipefail "$probe" || return 1
+  printf '%s\n' '# set -euo pipefail' 'set -eu' >"$probe"
+  ! sets_pipefail "$probe" || return 1
+  # pipe_into_grep_in falsification: known-bad lines are flagged.
+  pipe_into_grep_row flag $'if echo "$TEXT" | grep -qE x; then' || return 1
+  pipe_into_grep_row flag $'if [ -n "$P" ] && printf "%s\\n" "$P" | grep -Eiq x; then' || return 1
+  pipe_into_grep_row flag $'X=$(printf %s "$V" | grep -oE x | head -n1 || true)' || return 1
+  pipe_into_grep_row flag $'if jq -r .a <<<"$J" | grep -q x; then' || return 1
+  pipe_into_grep_row flag $'jq -r .a "$F" | egrep x' || return 1
+  pipe_into_grep_row flag $'cat "$F" | grep -q x' || return 1
+  pipe_into_grep_row flag $'"${CMD[@]}" "$ARG" | grep -q x' || return 1
+  pipe_into_grep_row flag $'echo "$T"|grep -q x' || return 1
+  pipe_into_grep_row flag $'printf %s "$V" |' $'  grep -q x' || return 1
+  pipe_into_grep_row flag $'printf %s "$V" \\' $'  | grep -q x' || return 1
+  pipe_into_grep_row flag $'printf %s "$V" |' $'  # why' $'  grep -q x' || return 1
+  pipe_into_grep_row flag $'} |' $'  sort -u |' $'  grep -v -E x |' $'  head -1' || return 1
+  pipe_into_grep_row flag $'printf %s "$V" | command grep -q x' || return 1
+  pipe_into_grep_row flag $'printf %s "$V" | LC_ALL=C grep -q x' || return 1
+  pipe_into_grep_row flag $'printf %s "$V" | LC_ALL=C command grep -q x' || return 1
+  pipe_into_grep_row flag $'printf %s "$V" | /usr/bin/grep -q x' || return 1
+  pipe_into_grep_row flag $'printf %s "$V" | fgrep -q x' || return 1
+  pipe_into_grep_row flag $'printf %s "$V" | rg -q x' || return 1
+  # pipe_into_grep_in falsification: known-good lines are not flagged.
+  pipe_into_grep_row clean $'if grep -qE x <<<"$TEXT"; then' || return 1
+  pipe_into_grep_row clean $'grep -q x <"$file"' || return 1
+  pipe_into_grep_row clean $'grep -q x "$file" || true' || return 1
+  pipe_into_grep_row clean $'a || grep -q x' || return 1
+  pipe_into_grep_row clean $'# echo "$T" | grep -q x' || return 1
+  pipe_into_grep_row clean $'T=$(echo "$I" | jq -r .a)' || return 1
+  pipe_into_grep_row clean $'printf %s "$V" | tr -d x' || return 1
+  pipe_into_grep_row clean $'grep -oE x <<<"$V" | head -n1 || true' || return 1
+  pipe_into_grep_row clean $'return cmd ~ /^(cat|cut|grep|head|rg)$/' || return 1
+  pipe_into_grep_row clean $'printf %s "$V" |' $'  # a grep follows' $'  tr -d x' || return 1
+  # Every hook that sets pipefail is clean. The pinned hooks must be among them,
+  # so a broken sets_pipefail cannot skip the files this guards.
+  for pinned in stop-gate system-prompt-reviewer validate-edit-write validate-bash; do
+    sets_pipefail "$ROOT/hooks/$pinned.sh" || return 1
+  done
+  for hook in "$ROOT"/hooks/*.sh; do
+    sets_pipefail "$hook" || continue
+    if pipe_into_grep_in "$hook"; then
+      note "     ${hook#"$ROOT"/} pipes into grep"
+      return 1
+    fi
+  done
 }
 
 # ---- eci-pending-set ----
@@ -2934,8 +3020,8 @@ run_case "validate-edit-write allows remote Write go.mod replace" \
   test_validate_edit_write_allows_remote_write_gomod_replace
 run_case "validate-edit-write allows remote MultiEdit go.mod replace" \
   test_validate_edit_write_allows_remote_multiedit_gomod_replace
-run_case "validate-edit-write pipes no echo or printf into grep (SIGPIPE under pipefail skips a deny)" \
-  test_validate_edit_write_has_no_echo_grep_pipeline
+run_case "no hook that sets pipefail pipes into grep (SIGPIPE under pipefail skips a deny)" \
+  test_pipefail_hooks_never_pipe_into_grep
 
 # eci-pending-set
 run_case "eci-pending-set arms the teammate marker for the main thread (no agent_id)" \
