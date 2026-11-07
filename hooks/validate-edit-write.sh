@@ -132,10 +132,11 @@ if [ -n "$FILE_PATH" ]; then
 fi
 
 # The policy checks below test a variable with `grep -q ... <<<"$VAR"`, never
-# `echo "$VAR" | grep -q`. Under pipefail, grep -q exits at the first match;
-# bash writes a multi-line value one line at a time, so the writer can still be
-# writing, die of SIGPIPE (rc 141), make the pipeline read as failed and skip
-# the deny. A here-string has no writer process. The static check
+# with `echo "$VAR" | grep -q` or `printf %s "$VAR" | grep -q`. Under pipefail,
+# grep -q exits at the first match; bash's echo and printf write a multi-line
+# value one line at a time, so the writer can still be writing, die of SIGPIPE
+# (rc 141), make the pipeline read as failed and skip the deny. A here-string
+# has no writer process. The static check
 # test_pipefail_hooks_never_pipe_into_grep in hooks/tests/run.sh pins this for
 # every hook.
 #
