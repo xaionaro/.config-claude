@@ -133,14 +133,86 @@ const MIME_TYPES = {
 
 // ========== Templates and Constants ==========
 
+// Served before the first screen exists. Tokens, dark mode and .empty-state
+// match frame-template.html so the page does not restyle when the first screen
+// replaces it. Keep the two in sync.
 const WAITING_PAGE = `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><title>Brainstorm Companion</title>
-<style>body { font-family: system-ui, sans-serif; padding: 2rem; max-width: 800px; margin: 0 auto; }
-h1 { color: #333; } p { color: #666; }</style>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude Brainstorming</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ===== THEME VARIABLES ===== */
+    /* Text tokens meet WCAG AA (4.5:1) on every surface they are used on. */
+    :root {
+      color-scheme: light dark;
+      --bg-primary: #f5f5f7;
+      --bg-secondary: #ffffff;
+      --bg-tertiary: #e5e5e7;
+      --border: #d1d1d6;
+      --text-primary: #1d1d1f;
+      --text-secondary: #636366;
+      --text-tertiary: #6e6e73;
+      --accent: #0071e3;
+      --accent-text: #0066cc;
+      --accent-hover: #0077ed;
+      --success: #1f7a35;
+      --warning: #ff9f0a;
+      --error: #d70015;
+      --selected-bg: #e8f4fd;
+      --selected-border: #0071e3;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-primary: #1d1d1f;
+        --bg-secondary: #2d2d2f;
+        --bg-tertiary: #3d3d3f;
+        --border: #424245;
+        --text-primary: #f5f5f7;
+        --text-secondary: #aeaeb2;
+        --text-tertiary: #98989d;
+        --accent: #0071e3;
+        --accent-text: #4aa3ff;
+        --accent-hover: #409cff;
+        --success: #30d158;
+        --error: #ff6961;
+        --selected-bg: rgba(10, 132, 255, 0.15);
+        --selected-border: #0a84ff;
+      }
+    }
+
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.5;
+    }
+
+    .shell { max-width: 800px; margin: 0 auto; padding: clamp(1rem, 4vw, 2rem); }
+    .shell h1 { font-size: 0.85rem; font-weight: 500; color: var(--text-secondary); }
+
+    /* ===== EMPTY STATE (waiting / continuing in terminal) ===== */
+    .empty-state {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 0.5rem; min-height: 60vh; text-align: center; color: var(--text-secondary);
+    }
+    .empty-state h2 { font-size: 1.5rem; font-weight: 600; color: var(--text-primary); }
+  </style>
 </head>
-<body><h1>Brainstorm Companion</h1>
-<p>Waiting for the agent to push a screen...</p></body></html>`;
+<body>
+  <main class="shell">
+    <h1>Claude Brainstorming</h1>
+    <div class="empty-state">
+      <h2>Waiting for the first screen…</h2>
+      <p>The next screen appears here automatically.</p>
+    </div>
+  </main>
+</body>
+</html>`;
 
 const frameTemplate = fs.readFileSync(path.join(__dirname, 'frame-template.html'), 'utf-8');
 const helperScript = fs.readFileSync(path.join(__dirname, 'helper.js'), 'utf-8');
