@@ -10,7 +10,7 @@
 set -euo pipefail
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-. "$HOOK_DIR/lib/codex-proof-state.sh"
+. "$HOOK_DIR/lib/claude-proof-state.sh"
 . "$HOOK_DIR/lib/eci-diagnostic.sh"
 
 usage() {
@@ -188,17 +188,18 @@ allow_aggregate_current_target_or_refresh() {
 }
 
 phase="${1:-}"
-session_id="${2:-${CODEX_SESSION_ID:-${CODEX_THREAD_ID:-}}}"
+# Claude Code exports CLAUDE_CODE_SESSION_ID; it has no thread id variable.
+session_id="${2:-${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-}}}"
 case "$phase" in
   commit|final|off|prewrite) ;;
   *) usage; exit 2 ;;
 esac
-codex_valid_session_id "$session_id" || fail_gate 'ECI required-critic review gate needs a valid session id.'
+claude_valid_session_id "$session_id" || fail_gate 'ECI required-critic review gate needs a valid session id.'
 
-root="$(codex_proof_root)"
-codex_proof_root_is_safe || fail_gate "ECI required-critic review gate rejected an unsafe proof root: $root"
+root="$(claude_proof_root)"
+claude_proof_root_is_safe || fail_gate "ECI required-critic review gate rejected an unsafe proof root: $root"
 session_dir="$root/$session_id"
-codex_session_dir_is_safe "$root" "$session_id" ||
+claude_session_dir_is_safe "$root" "$session_id" ||
   fail_gate "ECI required-critic review gate rejected an unsafe session directory: $session_dir"
 [ -d "$session_dir" ] && [ ! -L "$session_dir" ] ||
   fail_gate "ECI required-critic review gate needs the canonical session directory: $session_dir"
@@ -207,9 +208,9 @@ aggregate_mode=false
 aggregate_repo_id="${ECI_AGGREGATE_REPO_ID:-}"
 aggregate_parent_cwd=""
 if [ -n "$aggregate_repo_id" ]; then
-  codex_eci_aggregate_repo_id_is_valid "$aggregate_repo_id" ||
+  claude_eci_aggregate_repo_id_is_valid "$aggregate_repo_id" ||
     fail_gate 'ECI aggregate review gate requires a bounded repository ID.'
-  aggregate_parent_cwd="$(codex_canonical_cwd "$PWD")"
+  aggregate_parent_cwd="$(claude_canonical_cwd "$PWD")"
   [ "${ECI_AGGREGATE_PARENT_CWD:-}" = "$aggregate_parent_cwd" ] ||
     fail_gate 'ECI aggregate review gate requires its caller to remain at the parent marker cwd.'
   aggregate_mode=true
@@ -228,10 +229,10 @@ if [ "$phase" = off ]; then
   else
     off_cwd="${ECI_REVIEW_CWD:-$PWD}"
   fi
-  off_cwd="$(codex_canonical_cwd "$off_cwd")"
-  codex_eci_marker_path_owner_is_valid "$marker" ||
+  off_cwd="$(claude_canonical_cwd "$off_cwd")"
+  claude_eci_marker_path_owner_is_valid "$marker" ||
     fail_gate 'ECI required-critic review gate rejected teardown: the direct marker path/owner binding is malformed; marker retained.'
-  codex_eci_marker_is_valid_for_cwd "$marker" "$off_cwd" ||
+  claude_eci_marker_is_valid_for_cwd "$marker" "$off_cwd" ||
     fail_gate 'ECI required-critic review gate rejected teardown: the direct marker cwd binding is malformed or belongs to another cwd; marker retained.'
 fi
 

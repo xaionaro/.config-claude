@@ -5,9 +5,9 @@
 set -euo pipefail
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-. "$HOOK_DIR/lib/codex-proof-state.sh"
-. "$HOOK_DIR/lib/codex-tmp.sh"
-codex_install_fail_open_trap session-snapshot
+. "$HOOK_DIR/lib/claude-proof-state.sh"
+. "$HOOK_DIR/lib/claude-tmp.sh"
+claude_install_fail_open_trap session-snapshot
 
 input=$(cat)
 if ! printf '%s' "$input" | jq -e '
@@ -23,24 +23,25 @@ transcript_path=$(printf '%s' "$input" | jq -r '.transcript_path // empty' 2>/de
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null || true)
 [ -z "$cwd" ] && cwd="$PWD"
 
-codex_valid_session_id "$session_id" || exit 0
+claude_valid_session_id "$session_id" || exit 0
 # A checkout contains sources only. Bootstrap before hooks need Go helpers,
 # including SessionStart payloads that do not yet have a transcript path.
+# Kept Codex root: the Go helpers are the shared runtime built from ~/.codex.
 . "$HOOK_DIR/lib/eci-runtime-sync.sh"
-eci_runtime_build_missing "$(cd "$HOOK_DIR/.." && pwd -P)" || true
+eci_runtime_build_missing "$HOME/.codex" || true
 
 [ -n "$transcript_path" ] || exit 0
 
-root="$(codex_proof_root)"
-codex_proof_root_is_safe || exit 0
+root="$(claude_proof_root)"
+claude_proof_root_is_safe || exit 0
 
 if [ ! -d "$root" ]; then
   mkdir -p "$root" || exit 0
-  codex_proof_root_is_safe || exit 0
+  claude_proof_root_is_safe || exit 0
 fi
 
 lock_held=false
-lock_path="$(codex_eci_lock_path 2>/dev/null || true)"
+lock_path="$(claude_eci_lock_path 2>/dev/null || true)"
 if [ -n "$lock_path" ] &&
   { [ ! -e "$lock_path" ] || [ -f "$lock_path" ]; } && [ ! -L "$lock_path" ]; then
   if exec {eci_lock_fd}>>"$lock_path" 2>/dev/null &&
@@ -58,13 +59,13 @@ fi
 # mutation lock have all been validated. Lock-busy and unsafe-input branches
 # remain read-only.
 if [ "$lock_held" = true ]; then
-  codex_init_tmp || true
+  claude_init_tmp || true
 fi
 
-side_stop=$(codex_existing_state_file side-stop side_stop "$session_id" "$cwd" 2>/dev/null || true)
-if codex_side_stop_is_active_for_session "$side_stop" "$session_id"; then
+side_stop=$(claude_existing_state_file side-stop side_stop "$session_id" "$cwd" 2>/dev/null || true)
+if claude_side_stop_is_active_for_session "$side_stop" "$session_id"; then
   if [ "$lock_held" = true ]; then
-    codex_bind_side_stop_to_session "$side_stop" "$session_id" || true
+    claude_bind_side_stop_to_session "$side_stop" "$session_id" || true
   fi
   exit 0
 fi
@@ -83,7 +84,7 @@ nested_marker_is_active() {
   local -a lines=()
 
   [ -f "$nested_marker" ] && [ ! -L "$nested_marker" ] || return 1
-  codex_eci_marker_is_valid_for_cwd "$eci_marker" "$(codex_canonical_cwd "$cwd")" || return 1
+  claude_eci_marker_is_valid_for_cwd "$eci_marker" "$(claude_canonical_cwd "$cwd")" || return 1
   bytes="$(wc -c <"$nested_marker" 2>/dev/null || true)"
   case "$bytes" in
     ''|*[!0-9]*) return 1 ;;
@@ -101,7 +102,7 @@ nested_marker_is_active() {
   [ "${lines[2]}" = 'owner: ate' ] || return 1
   [[ "${lines[3]}" == writer_session_id:\ * ]] || return 1
   writer="${lines[3]#writer_session_id: }"
-  codex_valid_session_id "$writer" || return 1
+  claude_valid_session_id "$writer" || return 1
   [[ "${lines[4]}" =~ ^acceptance_version:[[:space:]]*[1-9][0-9]{0,8}$ ]] || return 1
   [[ "${lines[5]}" =~ ^step:[[:space:]]*(0|[1-9][0-9]{0,8})$ ]] || return 1
   [[ "${lines[6]}" =~ ^iteration:[[:space:]]*(0|[1-9][0-9]{0,8})$ ]] || return 1
@@ -110,13 +111,13 @@ nested_marker_is_active() {
 
 direct_marker_is_active() {
   [ -f "$eci_marker" ] && [ ! -L "$eci_marker" ] || return 1
-  codex_eci_marker_is_valid_for_cwd "$eci_marker" "$(codex_canonical_cwd "$cwd")"
+  claude_eci_marker_is_valid_for_cwd "$eci_marker" "$(claude_canonical_cwd "$cwd")"
 }
 
-codex_session_dir_is_safe "$root" "$session_id" || exit 0
+claude_session_dir_is_safe "$root" "$session_id" || exit 0
 
 if [ "$lock_held" != true ]; then
-  ctx='Load ~/.codex/CODEX.md and matching ~/.codex/skills when applicable.'
+  ctx='Load ~/.claude/CLAUDE.md and matching ~/.claude/skills when applicable.'
   eci_marker="$proof_dir/eci_active"
   if [ -d "$proof_dir" ] && [ ! -L "$proof_dir" ] &&
       { direct_marker_is_active || nested_marker_is_active; }; then
@@ -127,7 +128,7 @@ if [ "$lock_held" != true ]; then
 fi
 
 mkdir -p "$proof_dir"
-codex_session_dir_is_safe "$root" "$session_id" || exit 0
+claude_session_dir_is_safe "$root" "$session_id" || exit 0
 
 # A recovered aggregate session owns one non-Git parent marker and namespaced
 # member proof. Never create the singleton baseline files beside that plan,
@@ -135,10 +136,10 @@ codex_session_dir_is_safe "$root" "$session_id" || exit 0
 if [ -e "$aggregate_plan" ] || [ -L "$aggregate_plan" ]; then
   aggregate_plan_present=true
   if [ -f "$proof_dir/eci_active" ] && [ ! -L "$proof_dir/eci_active" ]; then
-    aggregate_outer_raw="$(codex_state_value "$proof_dir/eci_active" cwd false 2>/dev/null || true)"
+    aggregate_outer_raw="$(claude_state_value "$proof_dir/eci_active" cwd false 2>/dev/null || true)"
     if [ -n "$aggregate_outer_raw" ]; then
-      aggregate_outer="$(codex_canonical_cwd "$aggregate_outer_raw")"
-      if codex_eci_aggregate_plan_is_valid "$aggregate_plan" "$session_id" \
+      aggregate_outer="$(claude_canonical_cwd "$aggregate_outer_raw")"
+      if claude_eci_aggregate_plan_is_valid "$aggregate_plan" "$session_id" \
         "$aggregate_outer" "$proof_dir/eci_active"; then
         aggregate_active=true
       fi
@@ -153,11 +154,11 @@ fi
 # validated record bound to the current session/repository/cwd.
 baseline_context_is_valid() {
   local raw
-  baseline_repo="$(codex_git_repo_root_for_path "$cwd" 2>/dev/null || true)"
+  baseline_repo="$(claude_git_repo_root_for_path "$cwd" 2>/dev/null || true)"
   [ -n "$baseline_repo" ] || return 1
   baseline_repo="$(realpath -m -- "$baseline_repo" 2>/dev/null || true)"
-  baseline_git_dir_raw="$(codex_git_safe -C "$baseline_repo" rev-parse --git-dir 2>/dev/null || true)"
-  baseline_git_common_raw="$(codex_git_safe -C "$baseline_repo" rev-parse --git-common-dir 2>/dev/null || true)"
+  baseline_git_dir_raw="$(claude_git_safe -C "$baseline_repo" rev-parse --git-dir 2>/dev/null || true)"
+  baseline_git_common_raw="$(claude_git_safe -C "$baseline_repo" rev-parse --git-common-dir 2>/dev/null || true)"
   case "$baseline_git_dir_raw" in
     /*) baseline_git_dir="$baseline_git_dir_raw" ;;
     *) baseline_git_dir="$baseline_repo/$baseline_git_dir_raw" ;;
@@ -168,7 +169,7 @@ baseline_context_is_valid() {
   esac
   baseline_git_dir="$(realpath -m -- "$baseline_git_dir" 2>/dev/null || true)"
   baseline_git_common="$(realpath -m -- "$baseline_git_common" 2>/dev/null || true)"
-  baseline_cwd="$(codex_canonical_cwd "$cwd")"
+  baseline_cwd="$(claude_canonical_cwd "$cwd")"
   [ -n "$baseline_git_dir" ] && [ -n "$baseline_git_common" ] && [ -n "$baseline_cwd" ] || return 1
   [ -d "$baseline_repo" ] && [ ! -L "$baseline_repo" ] || return 1
   [ -d "$baseline_git_dir" ] && [ ! -L "$baseline_git_dir" ] || return 1
@@ -188,7 +189,7 @@ baseline_head_file_is_valid() {
   [ "${#baseline_lines[@]}" -eq 1 ] || return 1
   baseline_head="${baseline_lines[0]}"
   [[ "$baseline_head" =~ ^[0-9a-f]{40,64}$ ]] || return 1
-  codex_git_safe -C "$baseline_repo" cat-file -e "$baseline_head^{commit}" >/dev/null 2>&1
+  claude_git_safe -C "$baseline_repo" cat-file -e "$baseline_head^{commit}" >/dev/null 2>&1
 }
 
 baseline_binding_file_is_valid() {
@@ -211,7 +212,7 @@ baseline_binding_file_is_valid() {
   baseline_head="${baseline_binding_lines[6]#base_oid: }"
   [ "${baseline_binding_lines[6]}" = "base_oid: $baseline_head" ] || return 1
   [[ "$baseline_head" =~ ^[0-9a-f]{40,64}$ ]] || return 1
-  codex_git_safe -C "$baseline_repo" cat-file -e "$baseline_head^{commit}" >/dev/null 2>&1
+  claude_git_safe -C "$baseline_repo" cat-file -e "$baseline_head^{commit}" >/dev/null 2>&1
 }
 
 publish_baseline_head() {
@@ -266,13 +267,13 @@ if [ "$aggregate_plan_present" != true ] && baseline_context_is_valid; then
   elif [ "$baseline_present" = false ] && [ "$binding_present" = false ] &&
     [ ! -e "$baseline" ] && [ ! -L "$baseline" ] &&
     [ ! -e "$baseline_binding" ] && [ ! -L "$baseline_binding" ]; then
-    baseline_head="$(codex_git_safe -C "$baseline_repo" rev-parse HEAD 2>/dev/null || true)"
+    baseline_head="$(claude_git_safe -C "$baseline_repo" rev-parse HEAD 2>/dev/null || true)"
     if [[ "$baseline_head" =~ ^[0-9a-f]{40,64}$ ]] &&
-      codex_git_safe -C "$baseline_repo" cat-file -e "$baseline_head^{commit}" >/dev/null 2>&1; then
+      claude_git_safe -C "$baseline_repo" cat-file -e "$baseline_head^{commit}" >/dev/null 2>&1; then
       if publish_baseline_head; then
-        [ "${CODEX_SESSION_SNAPSHOT_FAIL_AFTER:-}" = baseline ] && exit 75
+        [ "${CLAUDE_SESSION_SNAPSHOT_FAIL_AFTER:-}" = baseline ] && exit 75
         if publish_baseline_binding; then
-          [ "${CODEX_SESSION_SNAPSHOT_FAIL_AFTER:-}" = binding ] && exit 75
+          [ "${CLAUDE_SESSION_SNAPSHOT_FAIL_AFTER:-}" = binding ] && exit 75
         else
           rm -f -- "$baseline"
         fi
@@ -304,6 +305,8 @@ prune_marker_dirs() {
     done
 }
 
+# Claude session ids are UUIDv4; Codex session dirs (019*) in the shared root
+# are left to the Codex janitor.
 while IFS= read -r -d '' dir; do
   marker="$dir/eci_active"
   if [ -d "$dir" ] && [ ! -L "$dir" ] &&
@@ -311,7 +314,9 @@ while IFS= read -r -d '' dir; do
     continue
   fi
   rm -rf -- "$dir"
-done < <(find "$root" -mindepth 1 -maxdepth 1 -type d -name '019*' -mtime +30 -print0 2>/dev/null)
+done < <(find "$root" -mindepth 1 -maxdepth 1 -type d -regextype posix-extended \
+  -regex '.*/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}' \
+  -mtime +30 -print0 2>/dev/null)
 find "$root/history" -mindepth 1 -maxdepth 1 -type f -mtime +30 -delete 2>/dev/null || true
 for state_root in skills audit reviewer reviewer-dumps; do
   find "$root/$state_root" -mindepth 1 -maxdepth 1 -mtime +30 -exec rm -rf {} + 2>/dev/null || true
@@ -323,7 +328,7 @@ prune_marker_dirs "$root/skip-stop/sessions" skip_stop
 prune_marker_dirs "$root/skip-stop/cwd" skip_stop
 prune_marker_dirs "$root/side-stop/sessions" side_stop
 
-ctx='Load ~/.codex/CODEX.md and matching ~/.codex/skills when applicable.'
+ctx='Load ~/.claude/CLAUDE.md and matching ~/.claude/skills when applicable.'
 eci_marker="$proof_dir/eci_active"
 if [ -d "$proof_dir" ] && [ ! -L "$proof_dir" ] &&
     { [ "$aggregate_active" = true ] || direct_marker_is_active || nested_marker_is_active; }; then

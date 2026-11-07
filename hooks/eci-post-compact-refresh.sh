@@ -2,14 +2,14 @@
 # TODO: Remove ECI marker discovery from this no-op callback; native goals own lifecycle.
 
 # PostCompact hook: validate the event without touching session state.
-# Codex 0.149 does not accept event-specific output fields for PostCompact, so
-# every path emits the provider-valid empty object and keeps diagnostics off
-# stdout.
+# Claude Code gives PostCompact no decision control or event-specific output
+# fields, so every path emits the provider-valid empty object and keeps
+# diagnostics off stdout.
 
 set -euo pipefail
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-. "$HOOK_DIR/lib/codex-proof-state.sh"
+. "$HOOK_DIR/lib/claude-proof-state.sh"
 
 postcompact_noop() {
   # PostCompact always requires one valid JSON object on stdout, including
@@ -34,18 +34,18 @@ session_id=$(printf '%s' "$input" | jq -r '.session_id' 2>/dev/null || true)
 cwd=$(printf '%s' "$input" | jq -r '.cwd' 2>/dev/null || true)
 [ -n "$cwd" ] || postcompact_noop
 
-codex_valid_session_id "$session_id" || postcompact_noop
+claude_valid_session_id "$session_id" || postcompact_noop
 case "$cwd" in
   *[![:print:]]*) postcompact_noop ;;
 esac
 
-root="$(codex_proof_root 2>/dev/null || true)"
+root="$(claude_proof_root 2>/dev/null || true)"
 proof_dir="$root/$session_id"
 marker="$proof_dir/eci_active"
 nested_marker="$proof_dir/ate_nested_eci_active"
 
-codex_proof_root_is_safe || postcompact_noop
-codex_session_dir_is_safe "$root" "$session_id" || postcompact_noop
+claude_proof_root_is_safe || postcompact_noop
+claude_session_dir_is_safe "$root" "$session_id" || postcompact_noop
 [ -d "$proof_dir" ] && [ ! -L "$proof_dir" ] || postcompact_noop
 
 nested_marker_is_active() {
@@ -55,7 +55,7 @@ nested_marker_is_active() {
   [ -f "$nested_marker" ] && [ ! -L "$nested_marker" ] || return 1
   # A nested marker is only meaningful under the validated outer ECI owner;
   # this prevents a stale/forged ATE file from activating refresh on its own.
-  codex_eci_marker_is_valid_for_cwd "$marker" "$(codex_canonical_cwd "$cwd")" || return 1
+  claude_eci_marker_is_valid_for_cwd "$marker" "$(claude_canonical_cwd "$cwd")" || return 1
   bytes="$(wc -c <"$nested_marker" 2>/dev/null || true)"
   case "$bytes" in
     ''|*[!0-9]*) return 1 ;;
@@ -73,7 +73,7 @@ nested_marker_is_active() {
   [ "${lines[2]}" = 'owner: ate' ] || return 1
   [[ "${lines[3]}" == writer_session_id:\ * ]] || return 1
   writer="${lines[3]#writer_session_id: }"
-  codex_valid_session_id "$writer" || return 1
+  claude_valid_session_id "$writer" || return 1
   [[ "${lines[4]}" =~ ^acceptance_version:[[:space:]]*[1-9][0-9]*$ ]] || return 1
   [[ "${lines[5]}" =~ ^step:[[:space:]]*[0-9]+$ ]] || return 1
   [[ "${lines[6]}" =~ ^iteration:[[:space:]]*[0-9]+$ ]] || return 1
@@ -83,7 +83,7 @@ nested_marker_is_active() {
 
 direct_marker_is_active() {
   [ -f "$marker" ] && [ ! -L "$marker" ] || return 1
-  codex_eci_marker_is_valid_for_cwd "$marker" "$(codex_canonical_cwd "$cwd")"
+  claude_eci_marker_is_valid_for_cwd "$marker" "$(claude_canonical_cwd "$cwd")"
 }
 
 if ! direct_marker_is_active && ! nested_marker_is_active; then

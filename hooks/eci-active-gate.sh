@@ -5,7 +5,9 @@
 set -euo pipefail
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-. "$HOOK_DIR/lib/codex-proof-state.sh"
+# claude-eci-control.sh is the Claude marker gate (decision F29); it sources
+# claude-proof-state.sh and supplies the control-path predicates.
+. "$HOOK_DIR/lib/claude-eci-control.sh"
 . "$HOOK_DIR/lib/eci-diagnostic.sh"
 
 input=$(cat)
@@ -14,7 +16,7 @@ input=$(cat)
 # active; with no marker the ordinary tool call keeps its normal validation.
 malformed_identity_exit() {
   local reason
-  if [ -n "$(codex_eci_marker_candidates_bounded 2>/dev/null)" ]; then
+  if [ -n "$(claude_eci_marker_candidates_bounded 2>/dev/null)" ]; then
     reason="$(eci_diagnostic_reason "ECI_HOOK_IDENTITY_MALFORMED" "PreToolUse" "edit-routing" "session=${session_id:-<missing>},cwd=${cwd:-<missing>}" "malformed hook identity: tool_name, session_id, and cwd must be typed strings while an active marker exists" "provide typed tool_name, session_id, and cwd fields, then retry")"
     jq -n --arg reason "$reason" '{
       hookSpecificOutput: {
@@ -116,7 +118,7 @@ current_session_working_document() {
     project-understanding.yaml|latest-status-report.md|latest-status-report.yaml|handoff.md|high_level_log.jsonl|high_level_log.anchor) ;;
     *) return 1 ;;
   esac
-  owner_session="$(codex_path_owner_session_id "$path" 2>/dev/null || true)"
+  owner_session="$(claude_path_owner_session_id "$path" 2>/dev/null || true)"
   [ "$owner_session" = "$session_id" ]
 }
 
@@ -128,17 +130,17 @@ tool_path_list="$(tool_paths)"
 # the Markdown fast path below permits ordinary documentation edits.
 while IFS= read -r control_path; do
   [ -n "$control_path" ] || continue
-  lexical_control_path="$(codex_lexical_hook_path "$cwd" "$control_path" 2>/dev/null || true)"
-  resolved_control_path="$(codex_resolve_hook_path "$cwd" "$control_path" 2>/dev/null || true)"
+  lexical_control_path="$(claude_lexical_hook_path "$cwd" "$control_path" 2>/dev/null || true)"
+  resolved_control_path="$(claude_resolve_hook_path "$cwd" "$control_path" 2>/dev/null || true)"
   control_alias=false
-  if [ -n "$lexical_control_path" ] && codex_path_is_eci_control_alias "$lexical_control_path"; then
+  if [ -n "$lexical_control_path" ] && claude_path_is_eci_control_alias "$lexical_control_path"; then
     control_alias=true
   elif [ -n "$resolved_control_path" ] && [ "$resolved_control_path" != "$lexical_control_path" ] &&
-    codex_path_is_eci_control_alias "$resolved_control_path"; then
+    claude_path_is_eci_control_alias "$resolved_control_path"; then
     control_alias=true
   fi
-  if { codex_path_is_eci_control_file "$lexical_control_path" ||
-       codex_path_is_eci_control_file "$resolved_control_path" ||
+  if { claude_path_is_eci_control_file "$lexical_control_path" ||
+       claude_path_is_eci_control_file "$resolved_control_path" ||
        [ "$control_alias" = true ]; } &&
      ! current_session_working_document "${resolved_control_path:-$lexical_control_path}"; then
     target_value="$(eci_diagnostic_value "${resolved_control_path:-$control_path}")"

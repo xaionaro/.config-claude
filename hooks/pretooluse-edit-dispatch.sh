@@ -7,8 +7,8 @@ hook_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 # Dispatch is advisory infrastructure around concrete target guards.  A
 # missing HOME, unusable scratch path, or child-health failure must never turn
 # an ordinary repository edit into a user-facing denial.
-tmp_parent="${TMPDIR:-${CODEX_TMPDIR:-/tmp}}"
-tmp_dir="$(mktemp -d "${tmp_parent%/}/codex-edit-dispatch.XXXXXX" 2>/dev/null)" || exit 0
+tmp_parent="${TMPDIR:-${CLAUDE_TMPDIR:-/tmp}}"
+tmp_dir="$(mktemp -d "${tmp_parent%/}/claude-edit-dispatch.XXXXXX" 2>/dev/null)" || exit 0
 trap 'rm -rf -- "$tmp_dir"' EXIT HUP INT TERM
 
 input_file="$tmp_dir/input.json"

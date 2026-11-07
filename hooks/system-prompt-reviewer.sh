@@ -1,36 +1,36 @@
 #!/usr/bin/env bash
 # TODO: Remove ECI marker-based VCS context suppression; native goals own lifecycle.
-# Stop reviewer: fail-open external compliance check for main Codex sessions.
+# Stop reviewer: fail-open external compliance check for main Claude sessions.
 
 set -uo pipefail
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-. "$HOOK_DIR/lib/codex-proof-state.sh"
-. "$HOOK_DIR/lib/codex-tmp.sh"
+. "$HOOK_DIR/lib/claude-proof-state.sh"
+. "$HOOK_DIR/lib/claude-tmp.sh"
 . "$HOOK_DIR/lib/reviewer-backend.sh"
 . "$HOOK_DIR/lib/compose-reviewer-prompt.sh"
 . "$HOOK_DIR/lib/reviewer-filter.sh"
 . "$HOOK_DIR/lib/reviewer-call.sh"
 . "$HOOK_DIR/lib/reviewer-redact.sh"
 . "$HOOK_DIR/lib/eci-diagnostic.sh"
-codex_init_tmp || true
+claude_init_tmp || true
 
 input=$(cat)
 session_id=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null || true)
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null || true)
 [ -z "$cwd" ] && cwd="$PWD"
 
-codex_valid_session_id "$session_id" || exit 0
-if [ "$(codex_hook_subagent_status "$input")" = subagent ]; then
+claude_valid_session_id "$session_id" || exit 0
+if [ "$(claude_hook_subagent_status "$input")" = subagent ]; then
   exit 0
 fi
 
-if ! parse_reviewer_env CODEX_STOP_REVIEWER; then
+if ! parse_reviewer_env CLAUDE_STOP_REVIEWER; then
   exit 0
 fi
 [ -n "$REVIEWER_BACKEND" ] || exit 0
 
-root="$(codex_proof_root)"
+root="$(claude_proof_root)"
 state_dir="$root/reviewer/$session_id"
 mkdir -p "$state_dir" 2>/dev/null || exit 0
 [ -f "$state_dir/bypass" ] && exit 0
@@ -42,14 +42,15 @@ find_transcript() {
     printf '%s\n' "$path"
     return 0
   fi
-  find "$HOME/.codex/sessions" -name "*${session_id}*.jsonl" -type f 2>/dev/null | head -n1
+  # Claude transcripts: ~/.claude/projects/<project-dir>/<session-id>.jsonl.
+  find "$HOME/.claude/projects" -name "*${session_id}*.jsonl" -type f 2>/dev/null | head -n1
 }
 
 filter_reviewer_processes() {
   awk '
     {
       lower = tolower($0)
-      if (lower ~ /\/\.codex\/hooks\//) next
+      if (lower ~ /\/\.claude\/hooks\//) next
       if (lower ~ /(system-prompt-reviewer|reviewer-call|reviewer-backend|compose-reviewer-prompt|stop-gate\.sh)/) next
       print
     }
@@ -209,8 +210,8 @@ append_repo_context() {
     redact_sensitive_text
 }
 
-rules_file=$(mktemp "$TMPDIR/codex-system-rules.XXXXXX")
-body_file=$(mktemp "$TMPDIR/codex-system-body.XXXXXX")
+rules_file=$(mktemp "$TMPDIR/claude-system-rules.XXXXXX")
+body_file=$(mktemp "$TMPDIR/claude-system-body.XXXXXX")
 trap 'rm -f "$rules_file" "$body_file"' EXIT
 
 compose_reviewer_prompt "$HOOK_DIR/reviewer-rules.md" >"$rules_file" || exit 0
@@ -225,24 +226,24 @@ transcript=$(find_transcript || true)
   append_repo_context "$cwd"
 } >"$body_file"
 
-redacted_body=$(mktemp "$TMPDIR/codex-system-redacted.XXXXXX")
+redacted_body=$(mktemp "$TMPDIR/claude-system-redacted.XXXXXX")
 if redact_sensitive_text <"$body_file" >"$redacted_body" 2>/dev/null; then
   mv "$redacted_body" "$body_file"
 else
   rm -f "$redacted_body"
 fi
 
-if [ -n "${CODEX_REVIEWER_DEBUG_BODY_PATH:-}" ]; then
-  cp "$body_file" "$CODEX_REVIEWER_DEBUG_BODY_PATH" 2>/dev/null || true
+if [ -n "${CLAUDE_REVIEWER_DEBUG_BODY_PATH:-}" ]; then
+  cp "$body_file" "$CLAUDE_REVIEWER_DEBUG_BODY_PATH" 2>/dev/null || true
 fi
 
 model="$REVIEWER_BACKEND"
 start_call=$(date +%s)
-if [ -n "${CODEX_REVIEWER_FAKE_RESULT:-}" ]; then
-  result=$(printf '%s' "$CODEX_REVIEWER_FAKE_RESULT" | reviewer_strip_fences)
+if [ -n "${CLAUDE_REVIEWER_FAKE_RESULT:-}" ]; then
+  result=$(printf '%s' "$CLAUDE_REVIEWER_FAKE_RESULT" | reviewer_strip_fences)
   model="fake"
 else
-  result=$(reviewer_call_chat "stop_reviewer" "$rules_file" "$body_file" "$HOOK_DIR/lib/reviewer-schema.json" "$CODEX_STOP_REVIEWER_TIMEOUT" 2>/dev/null) || {
+  result=$(reviewer_call_chat "stop_reviewer" "$rules_file" "$body_file" "$HOOK_DIR/lib/reviewer-schema.json" "$CLAUDE_STOP_REVIEWER_TIMEOUT" 2>/dev/null) || {
     printf '%s\n' "$(eci_diagnostic_reason "ECI_REVIEW_BACKEND_CALL_FAILED" "Stop" "external-review" "reviewer=$(eci_diagnostic_value "$REVIEWER_BACKEND"),session=$(eci_diagnostic_value "$session_id"),cwd=$(eci_diagnostic_value "$cwd")" "reviewer call failed; review skipped" "retry the reviewer when the backend is available; Stop admission remains unchanged")" >&2
     exit 0
   }

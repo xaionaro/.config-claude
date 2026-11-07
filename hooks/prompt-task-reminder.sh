@@ -54,11 +54,11 @@ helper="$(eci_runtime_hook_helper_path)" || exit 0
 input="$("$helper" stdin <"$input_file")" || exit 0
 rm -f "$input_file"
 trap - EXIT
-. "$HOOK_DIR/lib/codex-proof-state.sh"
+. "$HOOK_DIR/lib/claude-proof-state.sh"
 
 session_id=$(printf '%s' "$input" | jq -r 'if (.session_id? | type) == "string" then .session_id else "" end' 2>/dev/null || true)
 cwd=$(printf '%s' "$input" | jq -r 'if (.cwd? | type) == "string" then .cwd else "" end' 2>/dev/null || true)
-root="$(codex_proof_root)"
+root="$(claude_proof_root)"
 
 write_side_stop_marker() {
   local dir="$1"
@@ -71,10 +71,10 @@ write_side_stop_marker() {
   } >"$dir/side_stop"
 }
 
-if codex_valid_session_id "$session_id"; then
+if claude_valid_session_id "$session_id"; then
   reviewer_dir="$root/reviewer/$session_id"
   mkdir -p "$reviewer_dir"
-  head=$(git -C "$HOME/.codex" rev-parse HEAD 2>/dev/null || true)
+  head=$(git -C "$HOME/.claude" rev-parse HEAD 2>/dev/null || true)
   if [ -n "$head" ]; then
     printf '%s\n' "$head" >"$reviewer_dir/prompt_head"
   fi
@@ -83,7 +83,7 @@ if codex_valid_session_id "$session_id"; then
   if printf '%s\n' "$prompt" | grep -Eq '^[[:space:]]*/side([[:space:]]|$)'; then
     write_side_stop_marker "$root/side-stop/sessions/$session_id"
     if [ -n "$cwd" ]; then
-      side_dir="$(codex_ensure_cwd_state_dir side-stop "$cwd" 2>/dev/null || true)"
+      side_dir="$(claude_ensure_cwd_state_dir side-stop "$cwd" 2>/dev/null || true)"
       [ -n "$side_dir" ] && write_side_stop_marker "$side_dir"
     fi
   fi

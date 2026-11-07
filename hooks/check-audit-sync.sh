@@ -30,10 +30,10 @@ check_phrase() {
   fi
 }
 
-check_phrase "Rule-Compliance Self-Audit"
+check_phrase "Rule-compliance self-audit"
 check_phrase "The audit subject is the written rule"
 check_phrase "the last turn only"
-check_phrase "clean-scan: CODEX.md"
+check_phrase "clean-scan: CLAUDE.md"
 check_phrase "Violation:"
 check_phrase "correction marker"
 check_phrase "rescanned:"

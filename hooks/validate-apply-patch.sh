@@ -5,11 +5,11 @@
 set -euo pipefail
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-. "$HOOK_DIR/lib/codex-proof-state.sh"
-. "$HOOK_DIR/lib/codex-tmp.sh"
+. "$HOOK_DIR/lib/claude-proof-state.sh"
+. "$HOOK_DIR/lib/claude-tmp.sh"
 . "$HOOK_DIR/lib/eci-diagnostic.sh"
-codex_init_tmp || true
-codex_install_fail_open_trap validate-apply-patch
+claude_init_tmp || true
+claude_install_fail_open_trap validate-apply-patch
 
 input=$(cat)
 session_id=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null || true)
@@ -19,7 +19,7 @@ patch_text=$(printf '%s' "$input" | jq -r '.tool_input.command // .tool_input.pa
 
 # Thread ownership is resolved once.  "unknown" means the transcript could not
 # be verified; subagent-guarded control and ledger edits fail closed on it.
-hook_subagent_status="$(codex_hook_subagent_status "$input")"
+hook_subagent_status="$(claude_hook_subagent_status "$input")"
 
 [ -n "$patch_text" ] || exit 0
 
@@ -55,12 +55,12 @@ patch_paths=$(printf '%s\n' "$patch_text" | awk '
 # checked separately so an in-repo symlink cannot launder a proof-root target.
 while IFS= read -r path; do
   [ -n "$path" ] || continue
-  lexical_path="$(codex_lexical_hook_path "${cwd:-$PWD}" "$path" 2>/dev/null || true)"
-  resolved_path="$(codex_resolve_hook_path "${cwd:-$PWD}" "$path" 2>/dev/null || true)"
-  if codex_session_path_is_unsafe "$lexical_path"; then
+  lexical_path="$(claude_lexical_hook_path "${cwd:-$PWD}" "$path" 2>/dev/null || true)"
+  resolved_path="$(claude_resolve_hook_path "${cwd:-$PWD}" "$path" 2>/dev/null || true)"
+  if claude_session_path_is_unsafe "$lexical_path"; then
     deny "$(eci_diagnostic_reason "ECI_PROOF_PATH_ESCAPE_DENIED" "PreToolUse" "patch-validation" "$path" "Refusing unsafe session-scoped patch path ${path##*/}: proof-root and context-root ancestors and final components must not be symlinks." "use the current session's canonical path")"
   fi
-  if [ "$resolved_path" != "$lexical_path" ] && codex_session_path_is_unsafe "$resolved_path"; then
+  if [ "$resolved_path" != "$lexical_path" ] && claude_session_path_is_unsafe "$resolved_path"; then
     deny "$(eci_diagnostic_reason "ECI_PROOF_PATH_ESCAPE_DENIED" "PreToolUse" "patch-validation" "$path" "Refusing unsafe resolved session-scoped patch path ${path##*/}: resolved proof-root and context-root ancestors and final components must not be symlinks." "use the current session's canonical path")"
   fi
   if [[ "$path" == go.mod || "$path" == */go.mod ]] &&
@@ -72,21 +72,21 @@ done <<<"$patch_paths"
 if [ "$hook_subagent_status" != main ]; then
   while IFS= read -r path; do
     [ -n "$path" ] || continue
-    resolved_path="$(codex_resolve_hook_path "${cwd:-$PWD}" "$path" 2>/dev/null || true)"
-    lexical_path="$(codex_lexical_hook_path "${cwd:-$PWD}" "$path" 2>/dev/null || true)"
+    resolved_path="$(claude_resolve_hook_path "${cwd:-$PWD}" "$path" 2>/dev/null || true)"
+    lexical_path="$(claude_lexical_hook_path "${cwd:-$PWD}" "$path" 2>/dev/null || true)"
     control_alias=false
-    if [ -n "$lexical_path" ] && codex_path_is_eci_control_alias "$lexical_path"; then
+    if [ -n "$lexical_path" ] && claude_path_is_eci_control_alias "$lexical_path"; then
       control_alias=true
     elif [ -n "$resolved_path" ] && [ "$resolved_path" != "$lexical_path" ] &&
-          codex_path_is_eci_control_alias "$resolved_path"; then
+          claude_path_is_eci_control_alias "$resolved_path"; then
       control_alias=true
     fi
-    if { codex_path_is_session_ledger_file "$resolved_path" ||
-         codex_path_is_eci_control_file "$lexical_path" ||
-         codex_path_is_eci_control_file "$resolved_path" ||
+    if { claude_path_is_session_ledger_file "$resolved_path" ||
+         claude_path_is_eci_control_file "$lexical_path" ||
+         claude_path_is_eci_control_file "$resolved_path" ||
          [ "$control_alias" = true ] ||
-         codex_path_is_git_approval_file "$lexical_path" ||
-         codex_path_is_git_approval_file "$resolved_path"; }; then
+         claude_path_is_git_approval_file "$lexical_path" ||
+         claude_path_is_git_approval_file "$resolved_path"; }; then
       deny "$(eci_diagnostic_reason "ECI_CONTROL_OWNER_REQUIRED" "PreToolUse" "patch-validation" "$path" "Only the main thread may modify coordinator-owned ECI or authorization state." "route coordinator-owned ECI or authorization changes through the main/orchestrator")"
     fi
   done <<<"$patch_paths"
@@ -101,41 +101,41 @@ trap 'ownership_failure_deny' ERR
 # with no resolvable session id is denied rather than allowed through.
 while IFS= read -r path; do
   [ -n "$path" ] || continue
-  lexical_owner_path="$(codex_lexical_hook_path "${cwd:-$PWD}" "$path" 2>/dev/null || true)"
-  resolved_owner_path="$(codex_resolve_hook_path "${cwd:-$PWD}" "$path" 2>/dev/null || true)"
+  lexical_owner_path="$(claude_lexical_hook_path "${cwd:-$PWD}" "$path" 2>/dev/null || true)"
+  resolved_owner_path="$(claude_resolve_hook_path "${cwd:-$PWD}" "$path" 2>/dev/null || true)"
   # Ordinary repository paths have no session owner to resolve.  Skip the
   # metadata probe unless the target is under a proof or context root.
-  if ! codex_path_is_under_proof_root "$lexical_owner_path" &&
-     ! codex_path_is_under_proof_root "${resolved_owner_path:-}" &&
-     ! codex_context_session_rest "$lexical_owner_path" >/dev/null &&
-     ! codex_context_session_rest "${resolved_owner_path:-}" >/dev/null; then
+  if ! claude_path_is_under_proof_root "$lexical_owner_path" &&
+     ! claude_path_is_under_proof_root "${resolved_owner_path:-}" &&
+     ! claude_context_session_rest "$lexical_owner_path" >/dev/null &&
+     ! claude_context_session_rest "${resolved_owner_path:-}" >/dev/null; then
     continue
   fi
   owner_probe="${lexical_owner_path:-$path}"
-  owner_session_id="$(codex_path_owner_session_id "$owner_probe" 2>/dev/null || true)"
-  [ -n "$owner_session_id" ] || owner_session_id="$(codex_path_owner_session_id "${resolved_owner_path:-$path}" 2>/dev/null || true)"
+  owner_session_id="$(claude_path_owner_session_id "$owner_probe" 2>/dev/null || true)"
+  [ -n "$owner_session_id" ] || owner_session_id="$(claude_path_owner_session_id "${resolved_owner_path:-$path}" 2>/dev/null || true)"
   [ -n "$owner_session_id" ] || continue
-  mapfile -t allowed_session_ids < <(codex_hook_allowed_session_ids "$input" "$hook_subagent_status")
+  mapfile -t allowed_session_ids < <(claude_hook_allowed_session_ids "$input" "$hook_subagent_status")
   if [ "${#allowed_session_ids[@]}" -eq 0 ]; then
     deny "Session-scoped file ${path##*/} requires a current session id; none resolved. Refusing fail-open on a session-scoped path."
   fi
-  if ! codex_session_owner_allowed "$owner_session_id" "${allowed_session_ids[@]}"; then
+  if ! claude_session_owner_allowed "$owner_session_id" "${allowed_session_ids[@]}"; then
     deny "Refusing to edit ${path##*/}: file belongs to session $owner_session_id, allowed sessions are ${allowed_session_ids[*]}."
   fi
 done <<<"$patch_paths"
 trap - ERR
-codex_install_fail_open_trap validate-apply-patch
+claude_install_fail_open_trap validate-apply-patch
 
 # Active ECI edit callbacks are deliberately marker-only and read-only.  Keep
 # the legacy activity bookkeeping for ordinary edits, but do not take its
 # lock/write path while a direct marker is active.
-eci_direct_marker="$(codex_proof_root)/${session_id}/eci_active"
+eci_direct_marker="$(claude_proof_root)/${session_id}/eci_active"
 if [ ! -f "$eci_direct_marker" ] || [ -L "$eci_direct_marker" ]; then
   while IFS= read -r path; do
     [ -n "$path" ] || continue
-    codex_note_touched_repo "$session_id" "$cwd" "$path" || true
+    claude_note_touched_repo "$session_id" "$cwd" "$path" || true
   done <<<"$patch_paths"
   if [ "$hook_subagent_status" = main ]; then
-    codex_mark_activity "$session_id" "$cwd" edit || true
+    claude_mark_activity "$session_id" "$cwd" edit || true
   fi
 fi
