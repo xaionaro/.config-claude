@@ -19,11 +19,8 @@
 
 set -uo pipefail
 
-# This script never pipes into grep; a variable is read with a here-string
-# (`grep ... <<<"$VAR"`), not `printf %s "$VAR" | grep`. An early-exiting grep
-# (-q) can SIGPIPE the writer, and under pipefail the pipeline then reads as
-# failed (rc 141) although the pattern matched. The static check
-# test_pipefail_hooks_never_pipe_into_grep in hooks/tests/run.sh pins this.
+# Pipes here end in a reader that consumes all its input; see
+# test_pipefail_hooks_never_pipe_into_grep in hooks/tests/run.sh.
 
 . "$HOME/.claude/hooks/lib/claude-tmp.sh"
 claude_init_tmp || true
@@ -380,9 +377,9 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
           if [ -z "$porcelain" ]; then
             printf '### %s (git)\nclean — all changes committed\n\n' "$repo_dir"
           else
-            modified=$(grep -c '^.M' <<<"$porcelain")
-            staged=$(grep -cE '^[MADRC]' <<<"$porcelain")
-            untracked=$(grep -c '^??' <<<"$porcelain")
+            modified=$(printf '%s\n' "$porcelain" | awk '/^.M/ { n++ } END { print n + 0 }')
+            staged=$(printf '%s\n' "$porcelain" | awk '/^[MADRC]/ { n++ } END { print n + 0 }')
+            untracked=$(printf '%s\n' "$porcelain" | awk '/^\?\?/ { n++ } END { print n + 0 }')
             printf '### %s (git)\nDIRTY — modified=%s staged=%s untracked=%s\n' "$repo_dir" "$modified" "$staged" "$untracked"
             printf '%s\n\n' "$porcelain" | head -c 2048
           fi
@@ -393,11 +390,11 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
             printf '### %s (hg)\nclean — all changes committed\n\n' "$repo_dir"
           else
             # hg status format: 'M file', 'A file', 'R file', '? file', '! file'
-            modified=$(grep -c '^M ' <<<"$porcelain")
-            added=$(grep -c '^A ' <<<"$porcelain")
-            removed=$(grep -c '^R ' <<<"$porcelain")
-            untracked=$(grep -c '^? ' <<<"$porcelain")
-            missing=$(grep -c '^! ' <<<"$porcelain")
+            modified=$(printf '%s\n' "$porcelain" | awk '/^M / { n++ } END { print n + 0 }')
+            added=$(printf '%s\n' "$porcelain" | awk '/^A / { n++ } END { print n + 0 }')
+            removed=$(printf '%s\n' "$porcelain" | awk '/^R / { n++ } END { print n + 0 }')
+            untracked=$(printf '%s\n' "$porcelain" | awk '/^\? / { n++ } END { print n + 0 }')
+            missing=$(printf '%s\n' "$porcelain" | awk '/^! / { n++ } END { print n + 0 }')
             printf '### %s (hg)\nDIRTY — modified=%s added=%s removed=%s untracked=%s missing=%s\n' "$repo_dir" "$modified" "$added" "$removed" "$untracked" "$missing"
             printf '%s\n\n' "$porcelain" | head -c 2048
           fi
@@ -642,7 +639,7 @@ ANCHOR_IDX=${ANCHOR_IDX:-0}
       local name=$1 suffix=$2 cap=$3 lines=$4
       [ -z "$lines" ] && return 0
       local total
-      total=$(grep -c '^- ' <<<"$lines" || true)
+      total=$(printf '%s\n' "$lines" | awk '/^- / { n++ } END { print n + 0 }')
       printf '### %s %s\n' "$name" "$suffix"
       printf '%s' "$lines" | head -n "$cap"
       if [ "${total:-0}" -gt "$cap" ]; then
@@ -1104,7 +1101,8 @@ case "$VERDICT" in
     # waiting on input). The reviewer can only see the task store; if
     # tracking is wrong, the agent corrects it via TaskUpdate and re-stops.
     TASK_CORRECTIONS=""
-    if grep -qiE '\btasks?\b|tasks_visible_complete' <<<"$VIOLATIONS"; then
+    TASK_MENTIONS=$(printf '%s\n' "$VIOLATIONS" | awk 'tolower($0) ~ /(^|[^[:alnum:]_])tasks?([^[:alnum:]_]|$)|tasks_visible_complete/ { n++ } END { print n + 0 }')
+    if [ "$TASK_MENTIONS" -gt 0 ]; then
       TASK_DIR_C="$HOME/.claude/tasks/$SESSION_ID"
       if [ -d "$TASK_DIR_C" ]; then
         ACTIVE_NOW=$(ls -1 "$TASK_DIR_C"/*.json 2>/dev/null \

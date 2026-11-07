@@ -131,26 +131,22 @@ if [ -n "$FILE_PATH" ]; then
   claude_install_fail_open_trap validate-edit-write
 fi
 
-# The policy checks below test a variable with `grep -q ... <<<"$VAR"`, never
-# with `echo "$VAR" | grep -q` or `printf %s "$VAR" | grep -q`. Under pipefail,
-# grep -q exits at the first match; bash's echo and printf write a multi-line
-# value one line at a time, so the writer can still be writing, die of SIGPIPE
-# (rc 141), make the pipeline read as failed and skip the deny. A here-string
-# has no writer process. The static check
-# test_pipefail_hooks_never_pipe_into_grep in hooks/tests/run.sh pins this for
-# every hook.
+# The policy checks below count matching lines with awk, which reads all of its
+# input; see test_pipefail_hooks_never_pipe_into_grep in hooks/tests/run.sh.
 #
 # Block edits to vendored code: source must be edited, then revendored.
 # Covers all common vendored-dir conventions, case-insensitive:
 #   import/ imports/ vendor/                        (Go + xaionaro-go)
 #   3rdparty/ 3rd_party/ 3rd-party/ "3rd party/"    (numeric prefix)
 #   thirdparty/ third_party/ third-party/ "third party/" (word prefix)
-if [ -n "$FILE_PATH" ] && grep -Eiq '(^|/)(import|imports|vendor|(3rd|third)[ _-]?party)(/|$)' <<<"$FILE_PATH"; then
+VENDORED_PATH_LINES=$(printf '%s\n' "$FILE_PATH" | awk 'tolower($0) ~ /(^|\/)(import|imports|vendor|(3rd|third)[ _-]?party)(\/|$)/ { n++ } END { print n + 0 }')
+if [ -n "$FILE_PATH" ] && [ "$VENDORED_PATH_LINES" -gt 0 ]; then
   deny 'Do not edit files under import/, imports/, vendor/, or any third-party/3rdparty variant directly. Edit the original source and revendor the files. Worst case: edit the originals and rsync them into the vendored dir.'
 fi
 
 # Block plan-file edits under docs/plans or docs/superpowers/plans. Plans go to /tmp/claude-plans.
-if [ -n "$FILE_PATH" ] && grep -Eq '(^|/)docs/(superpowers/)?plans/' <<<"$FILE_PATH"; then
+PLAN_PATH_LINES=$(printf '%s\n' "$FILE_PATH" | awk '/(^|\/)docs\/(superpowers\/)?plans\// { n++ } END { print n + 0 }')
+if [ -n "$FILE_PATH" ] && [ "$PLAN_PATH_LINES" -gt 0 ]; then
   BASENAME=$(basename "$FILE_PATH")
   deny "Plans must not be saved inside the repo. Save to /tmp/claude-plans/$BASENAME instead."
 fi
@@ -174,6 +170,7 @@ else
 fi
 
 # Check for local path replace: => ../ or => ./
-if grep -qE '=>\s*\.\.?/' <<<"$TEXT"; then
+LOCAL_REPLACE_LINES=$(printf '%s\n' "$TEXT" | awk '/=>[[:space:]]*\.\.?\// { n++ } END { print n + 0 }')
+if [ "$LOCAL_REPLACE_LINES" -gt 0 ]; then
   deny 'Do not add local-path replace directives (=> ../something or => ./something) to go.mod. Use go.work for local module resolution. Remote fork replaces are fine.'
 fi

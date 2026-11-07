@@ -1341,6 +1341,48 @@ test_validate_edit_write_allows_remote_multiedit_gomod_replace() {
   expect_no_output "$out"
 }
 
+# bash writes a here-string longer than the pipe capacity (64 KiB) to a temp
+# file; when that write fails, the redirection fails, the command never runs and
+# its variable stays empty. `ulimit -f 32` (KiB, in a subshell) makes that write
+# fail for a text over 32 KiB while the small files a hook writes still work.
+# (An unwritable or missing TMPDIR does not: bash falls back to /tmp.)
+#
+# A go.mod Write of about 94 KB whose last line is $2. Args: name last-line
+# file-limit(32|unlimited) verdict(deny|allow).
+expect_large_gomod_write() {
+  local name="$1" last="$2" limit="$3" verdict="$4" home body input out
+  home="$(fresh_home "$name")" || return 1
+  body="$TMP_ROOT/$name.body"
+  awk 'BEGIN { for (i = 0; i < 2000; i++) printf "// filler line %05d of a large go.mod payload\n", i }' >"$body" || return 1
+  printf '%s\n' "$last" >>"$body" || return 1
+  [ "$(wc -c <"$body")" -gt 70000 ] || return 1
+  input="$TMP_ROOT/$name.json"
+  jq -n --rawfile content "$body" \
+    '{tool_name:"Write",tool_input:{file_path:"sample/go.mod",content:$content}}' >"$input" || return 1
+  out="$TMP_ROOT/$name.out"
+  ( ulimit -f "$limit" && run_hook "$out" "$ROOT/hooks/validate-edit-write.sh" "$input" HOME="$home" ) || return 1
+  case "$verdict" in
+  deny)
+    is_pretool_deny "$out" &&
+      json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "local-path replace"
+    ;;
+  allow) expect_no_output "$out" ;;
+  *) return 1 ;;
+  esac
+}
+
+test_validate_edit_write_denies_large_gomod_replace_when_a_temp_file_cannot_be_written() {
+  expect_large_gomod_write edit-big-gomod-deny 'replace example.com/m => ../m' 32 deny
+}
+
+test_validate_edit_write_denies_large_gomod_replace_when_a_temp_file_can_be_written() {
+  expect_large_gomod_write edit-big-gomod-deny-free 'replace example.com/m => ../m' unlimited deny
+}
+
+test_validate_edit_write_allows_large_remote_gomod_replace_when_a_temp_file_cannot_be_written() {
+  expect_large_gomod_write edit-big-gomod-allow 'replace example.com/m => example.com/fork v1.0.0' 32 allow
+}
+
 # True when file $1 sets pipefail on a non-comment line (`set -euo pipefail`,
 # `set -o pipefail`, ...).
 sets_pipefail() {
@@ -1355,8 +1397,13 @@ sets_pipefail() {
 # feeds the pipe does not matter: echo, printf, jq, cat, a variable expansion
 # and a longer chain all count. Under pipefail, grep -q exits at the first match
 # and the writer can die of SIGPIPE (rc 141), which turns a matching `if` false
-# and skips the deny; the fix is `grep ... <<<"$VAR"` or `grep ... <"$file"`. A
-# static pin, not a timing test: that failure needs a scheduling race to show.
+# and skips the deny. A value over the pipe capacity (64 KiB) fails every time:
+# a 1 MB value whose first line matches reads as "no match" in 200 of 200 runs;
+# a short value needs a scheduling race. The fix is a reader that consumes all
+# its input (awk with no early exit), so the writer cannot get SIGPIPE. A
+# here-string is no fix for a value over 64 KiB: bash writes it to a temp file
+# and, when that write fails, the grep never runs and the check allows. This is
+# the one full statement of the rule; the hooks point here. A static pin.
 # A physical line ending in `|` or `\` continues on the next one. The pipe must
 # follow whitespace, a quote, `)` or `}`, so that a regex alternation such as
 # /^(cat|grep|head)$/ inside an embedded awk program does not read as a pipe.
@@ -3023,6 +3070,12 @@ run_case "validate-edit-write allows remote Write go.mod replace" \
   test_validate_edit_write_allows_remote_write_gomod_replace
 run_case "validate-edit-write allows remote MultiEdit go.mod replace" \
   test_validate_edit_write_allows_remote_multiedit_gomod_replace
+run_case "validate-edit-write denies a large go.mod local replace when a temp file cannot be written" \
+  test_validate_edit_write_denies_large_gomod_replace_when_a_temp_file_cannot_be_written
+run_case "validate-edit-write denies a large go.mod local replace when a temp file can be written" \
+  test_validate_edit_write_denies_large_gomod_replace_when_a_temp_file_can_be_written
+run_case "validate-edit-write allows a large go.mod remote replace when a temp file cannot be written" \
+  test_validate_edit_write_allows_large_remote_gomod_replace_when_a_temp_file_cannot_be_written
 run_case "no hook that sets pipefail pipes into grep (SIGPIPE under pipefail skips a deny)" \
   test_pipefail_hooks_never_pipe_into_grep
 
