@@ -1592,6 +1592,33 @@ expect_bash_forwarded() {
   expect_no_output "$out" && planner_received "$home" "$input"
 }
 
+# Pins the subagent test of validate-bash (claude_hook_is_subagent_context: the
+# input's .agent_id // empty is non-empty) for one shape of the identity fields.
+# The command is the disengage text, so the verdict shows in the outcome: a
+# subagent is denied before the planner, the main thread is forwarded to it
+# unchanged. jq's `//` treats null and false as absent; "" is empty; 0 and any
+# string are present. Args: name verdict(deny|forward) identity-fields-json.
+expect_bash_identity_fields_verdict() {
+  local home input out
+  home="$(fresh_home "$1")" || return 1
+  make_planner_stub "$home" || return 1
+  input="$TMP_ROOT/$1.json"
+  jq -cn --arg cwd "$ROOT" --argjson identity "$3" \
+    '{session_id:"t00-session",cwd:$cwd,tool_name:"Bash",tool_input:{command:"~/.claude/bin/eci-active off r.md"}} + $identity' >"$input" || return 1
+  out="$TMP_ROOT/$1.out"
+  run_hook "$out" "$ROOT/hooks/validate-bash.sh" "$input" HOME="$home" \
+    CLAUDE_PROOF_ROOT="$(fresh_proof_root "$1")"
+  case "$2" in
+  deny)
+    is_pretool_deny "$out" &&
+      json_field_contains "$out" '.hookSpecificOutput.permissionDecisionReason // empty' "Only the main thread" &&
+      [ ! -e "$home/planner-stdin" ]
+    ;;
+  forward) expect_no_output "$out" && planner_received "$home" "$input" ;;
+  *) return 1 ;;
+  esac
+}
+
 # Push is denied unconditionally (CLAUDE.md: push only on request), with or without ECI.
 test_validate_bash_denies_git_push_with_eci_active() {
   local home proof input out
@@ -3062,6 +3089,20 @@ run_case "subagent allowed: echo inactive off (inactive is not eci-active)" \
   expect_bash_forwarded sub-fwd-17 sub-uuid 'echo inactive off'
 run_case "subagent allowed: backslash-newline inside another word (eci-active st\\<newline>atus joins to status)" \
   expect_bash_forwarded sub-fwd-18 sub-uuid "$(printf '~/.claude/bin/eci-active st\\\natus')"
+run_case "subagent predicate pin: no agent_id is the main thread (forwarded)" \
+  expect_bash_identity_fields_verdict identity-absent forward '{}'
+run_case "subagent predicate pin: agent_id \"\" is the main thread (forwarded)" \
+  expect_bash_identity_fields_verdict identity-empty forward '{"agent_id":""}'
+run_case "subagent predicate pin: agent_id null is the main thread (forwarded)" \
+  expect_bash_identity_fields_verdict identity-null forward '{"agent_id":null}'
+run_case "subagent predicate pin: agent_id false is the main thread (forwarded)" \
+  expect_bash_identity_fields_verdict identity-false forward '{"agent_id":false}'
+run_case "subagent predicate pin: agent_type without agent_id is the main thread (forwarded)" \
+  expect_bash_identity_fields_verdict identity-type-only forward '{"agent_type":"general-purpose"}'
+run_case "subagent predicate pin: agent_id 0 is a subagent (denied)" \
+  expect_bash_identity_fields_verdict identity-zero deny '{"agent_id":0}'
+run_case "subagent predicate pin: agent_id \"x\" is a subagent (denied)" \
+  expect_bash_identity_fields_verdict identity-string deny '{"agent_id":"x"}'
 run_case "validate-bash denies git push with ECI active" \
   test_validate_bash_denies_git_push_with_eci_active
 run_case "validate-bash denies chained git push without ECI" \
