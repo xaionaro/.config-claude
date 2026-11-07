@@ -9,6 +9,7 @@
   "permissions": {
     "defaultMode": "bypassPermissions"
   },
+  "model": "haiku",
   "hooks": {
     "SessionStart": [
       {
@@ -83,6 +84,10 @@
       }
     ]
   },
+  "statusLine": {
+    "type": "command",
+    "command": "$HOME/.claude/hooks/statusline.sh"
+  },
   "enabledPlugins": {
     "superpowers@superpowers-marketplace": true,
     "feature-dev@claude-plugins-official": true,
@@ -106,10 +111,12 @@
     }
   },
   "effortLevel": "high",
-  "statusLine": {
-    "type": "command",
-    "command": "$HOME/.claude/hooks/statusline.sh"
+  "modelSettings": {
+    "claude-haiku-5-5": {
+      "effortLevel": "high"
+    }
   },
   "skipDangerousModePermissionPrompt": true,
+  "theme": "dark",
   "skipAutoPermissionPrompt": true
 }
