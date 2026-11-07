@@ -1358,6 +1358,29 @@ test_validate_edit_write_has_no_echo_grep_pipeline() {
   ! writer_grep_pipeline_in "$ROOT/hooks/validate-edit-write.sh"
 }
 
+# ---- eci-pending-set ----
+# With ECI active for the session, the main thread arms $PROOF_DIR/eci_teammate_pending
+# on an Agent dispatch; a subagent (non-empty .agent_id, jq `//` semantics) does not.
+# Args: name armed(yes|no) identity-fields-json.
+expect_eci_pending_marker() {
+  local home input out marker
+  home="$(fresh_home "$1")" || return 1
+  mkdir -p "$home/.cache/claude-proof/t00-session" || return 1
+  : >"$home/.cache/claude-proof/t00-session/eci_active" || return 1
+  marker="$home/.cache/claude-proof/t00-session/eci_teammate_pending"
+  input="$TMP_ROOT/$1.json"
+  jq -cn --argjson identity "$3" \
+    '{session_id:"t00-session",tool_name:"Agent",tool_input:{prompt:"x"}} + $identity' >"$input" || return 1
+  out="$TMP_ROOT/$1.out"
+  run_hook "$out" "$ROOT/hooks/eci-pending-set.sh" "$input" HOME="$home" || return 1
+  expect_no_output "$out" || return 1
+  case "$2" in
+  yes) [ -e "$marker" ] ;;
+  no) [ ! -e "$marker" ] ;;
+  *) return 1 ;;
+  esac
+}
+
 # ---- validate-bash ----
 # validate-bash runs the Claude guards (git push, git reset gate, subagent
 # eci-active off), then delegates the ECI command plan to the Codex planner.
@@ -2913,6 +2936,16 @@ run_case "validate-edit-write allows remote MultiEdit go.mod replace" \
   test_validate_edit_write_allows_remote_multiedit_gomod_replace
 run_case "validate-edit-write pipes no echo or printf into grep (SIGPIPE under pipefail skips a deny)" \
   test_validate_edit_write_has_no_echo_grep_pipeline
+
+# eci-pending-set
+run_case "eci-pending-set arms the teammate marker for the main thread (no agent_id)" \
+  expect_eci_pending_marker pending-main yes '{}'
+run_case "eci-pending-set arms the teammate marker for agent_type without agent_id" \
+  expect_eci_pending_marker pending-type-only yes '{"agent_type":"general-purpose"}'
+run_case "eci-pending-set arms the teammate marker for agent_id null" \
+  expect_eci_pending_marker pending-null yes '{"agent_id":null}'
+run_case "eci-pending-set leaves the teammate marker unset for a subagent (agent_id)" \
+  expect_eci_pending_marker pending-subagent no '{"agent_id":"sub-uuid"}'
 
 # validate-bash tests
 run_case "validate-bash allows redirect to vendor paths (planner receives input)" \

@@ -28,11 +28,11 @@ if [ -z "$TRANSCRIPT_PATH" ]; then
   exit 0
 fi
 
-# Subagent exemption: .agent_id only. Claude docs: agent_id identifies a
+# Subagent exemption: .agent_id only, through the shared predicate
+# claude_hook_is_subagent_context. Claude docs: agent_id identifies a
 # subagent or in-process teammate; agent_type is also present for a
 # main-thread session started with --agent, so it does not mark a subagent.
-AGENT_ID=$(echo "$INPUT" | jq -r '.agent_id // empty')
-if [ -n "$AGENT_ID" ]; then
+if claude_hook_is_subagent_context "$INPUT"; then
   exit 0
 fi
 
@@ -53,7 +53,7 @@ esac
 PROOF_DIR="$HOME/.cache/claude-proof/$SESSION_ID"
 PROOF="$PROOF_DIR/proof.md"
 
-# Scope loop detection per session. (AGENT_ID exempted above, so
+# Scope loop detection per session. (Subagents exempted above, so
 # this branch always uses the unsuffixed timestamps file.)
 TIMESTAMPS="$PROOF_DIR/stop_timestamps"
 
