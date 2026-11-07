@@ -404,7 +404,7 @@ claude_resolve_hook_path() {
   [ -n "$cwd" ] || cwd="$PWD"
   case "$path" in
     "~") path="$HOME" ;;
-    "~/"*) path="$HOME/${path#~/}" ;;
+    "~/"*) path="$HOME/${path#"~/"}" ;;
   esac
   case "$path" in
     /*) ;;
@@ -422,7 +422,7 @@ claude_lexical_hook_path() {
   [ -n "$cwd" ] || cwd="$PWD"
   case "$path" in
     "~") path="$HOME" ;;
-    "~/"*) path="$HOME/${path#~/}" ;;
+    "~/"*) path="$HOME/${path#"~/"}" ;;
   esac
   # GNU realpath -ms performs lexical abspath/normpath without following
   # symlink ancestors and without starting an interpreter per callback.

@@ -334,6 +334,26 @@ test_eci_gate_blocks_control_file_write() {
   run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && is_pretool_deny "$out"
 }
 
+# A literal "~/" prefix is the home directory; the control-file check must not
+# treat it as a relative directory named "~".
+test_eci_gate_blocks_literal_tilde_control_write() {
+  local home input out
+  home="$(eci_active_home eci-ctl-tilde)"
+  input="$TMP_ROOT/eci-ctl-tilde.json"
+  out="$TMP_ROOT/eci-ctl-tilde.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:"~/tmp/agent/proof/t00-session/eci_active",content:"x"}}'
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && is_pretool_deny "$out"
+}
+
+test_eci_gate_allows_literal_tilde_non_control_write() {
+  local home input out
+  home="$(eci_active_home eci-src-tilde)"
+  input="$TMP_ROOT/eci-src-tilde.json"
+  out="$TMP_ROOT/eci-src-tilde.out"
+  eci_input "$input" '{session_id:"t00-session",tool_name:"Write",cwd:$cwd,tool_input:{file_path:"~/tmp/agent/proof/t00-session/notes.txt",content:"x"}}'
+  run_hook "$out" "$ROOT/hooks/eci-active-gate.sh" "$input" HOME="$home" && expect_no_output "$out"
+}
+
 test_eci_gate_blocks_control_file_multiedit() {
   local home pdir input out
   home="$(eci_active_home eci-ctl-multi)"
@@ -1912,6 +1932,10 @@ run_case "validate-edit-write allows a large go.mod remote replace when a temp f
 
 # validate-bash tests
 run_case "validate-bash allows redirect to vendor paths (planner receives input)" \
+run_case "ECI gate blocks Write of control file given as literal ~/ path" \
+  test_eci_gate_blocks_literal_tilde_control_write
+run_case "ECI gate allows Write of non-control file given as literal ~/ path" \
+  test_eci_gate_allows_literal_tilde_non_control_write
   test_validate_bash_allows_redirect_to_vendor_path
 run_case "validate-bash allows in-place imports paths (planner receives input)" \
   test_validate_bash_allows_in_place_imports_path
