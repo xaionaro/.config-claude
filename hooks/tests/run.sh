@@ -1392,58 +1392,159 @@ sets_pipefail() {
   ' "$1"
 }
 
-# True when a non-comment command line of file $1 pipes into grep, egrep, fgrep
-# or rg (also behind `command`, `builtin`, VAR=value or a /usr/bin prefix). What
-# feeds the pipe does not matter: echo, printf, jq, cat, a variable expansion
-# and a longer chain all count. Under pipefail, grep -q exits at the first match
-# and the writer can die of SIGPIPE (rc 141), which turns a matching `if` false
-# and skips the deny. A value over the pipe capacity (64 KiB) fails every time:
-# a 1 MB value whose first line matches reads as "no match" in 200 of 200 runs;
-# a short value needs a scheduling race. The fix is a reader that consumes all
-# its input (awk with no early exit), so the writer cannot get SIGPIPE. A
-# here-string is no fix for a value over 64 KiB: bash writes it to a temp file
-# and, when that write fails, the grep never runs and the check allows. This is
-# the one full statement of the rule; the hooks point here. A static pin.
-# A physical line ending in `|` or `\` continues on the next one. The pipe must
-# follow whitespace, a quote, `)` or `}`, so that a regex alternation such as
-# /^(cat|grep|head)$/ inside an embedded awk program does not read as a pipe.
-pipe_into_grep_in() {
+# Pipe hazards under pipefail. A writer in front of a pipe dies of SIGPIPE
+# (rc 141) when its reader exits before reading everything, and pipefail then
+# makes the whole pipeline read as failed. In `if printf %s "$V" | grep -q x`
+# that skips the deny or the block. It is not a rare race: with a value over the
+# pipe capacity (64 KiB) it happens every time. A 1 MB value whose first line
+# matches read as "no match" in 200 of 200 runs, a 70 KB value in 142 of 200,
+# a 15-byte value in 0 of 2000. The fix is a reader that consumes all its input
+# (awk with no early exit), so the writer cannot get SIGPIPE. A here-string is
+# no fix: bash writes one over 64 KiB to a temp file, and when that write fails
+# the command never runs, its variable stays empty and the check allows.
+#
+# pipe_hazards_in prints one "line: reason" per hazard in a file and succeeds
+# when it found one. A hazard is a pipe into
+#   - grep, egrep, fgrep or rg, with any options (grep -q, -l and -m exit at the
+#     first hit; the options are not worth parsing), or
+#   - head, sed with a q command, or awk with an exit outside its END block.
+# This comment is the one full statement of the rule; the hooks point here.
+#
+# How a pipe is read: a `|` that is not part of `||`, `\|` or `>|`. After it come
+# optional `&` (for `|&`), whitespace, `!`, `{` and `(`, then wrapper words
+# (command, builtin, exec, env, nohup, nice, ionice, stdbuf, timeout, time, with
+# their `-x` options and durations, and VAR=value words), then the tool, with a
+# leading backslash or a path removed. The tool must be followed by whitespace or
+# the end of the line, so that a regex alternation such as /^(cat|grep|head)$/
+# does not read as a pipe. A physical line ending in `|` or `\` continues on the
+# next one, comment-only lines are skipped, and the text of an awk program, which
+# may span lines, is read as one unit and not scanned for pipes. Known false
+# positives: a pipe inside a string literal and one inside a trailing comment
+# are flagged. Known misses: a pipe into a function or script that exits early.
+pipe_hazards_in() {
   awk '
-    BEGIN {
-      tool = "(grep|egrep|fgrep|rg)"
-      prefix = "(command[[:space:]]+|builtin[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(/usr/bin/|/bin/)?"
-      into_grep = "(^|[[:space:]\"\047)}])[|][[:space:]]*" prefix tool "([^[:alnum:]_-]|$)"
+    function skip_blank(s) { sub(/^[[:space:]]+/, "", s); return s }
+
+    # Sets CMD to the command word after a pipe (openers and wrappers stripped,
+    # path and backslash removed) and REST to the text after it.
+    function command_after_pipe(s,   wrapper, tok, base, after, guard) {
+      CMD = ""; REST = ""
+      sub(/^&/, "", s)
+      while (match(s, /^[[:space:]!{(]+/)) s = substr(s, RLENGTH + 1)
+      wrapper = 0
+      for (guard = 0; guard < 20; guard++) {
+        if (!match(s, /^[^[:space:]]+/)) return
+        tok = substr(s, 1, RLENGTH)
+        after = substr(s, RLENGTH + 1)
+        base = tok
+        sub(/^\\/, "", base)
+        sub(/^.*\//, "", base)
+        if (base ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { s = skip_blank(after); continue }
+        if (base ~ /^(command|builtin|exec|env|nohup|nice|ionice|stdbuf|timeout|time)$/) { wrapper = 1; s = skip_blank(after); continue }
+        if (wrapper && (tok ~ /^-/ || tok ~ /^[0-9.]+[smhd]?$/)) { s = skip_blank(after); continue }
+        CMD = base; REST = after
+        return
+      }
     }
-    /^[[:space:]]*#/ { next }
+
+    # True when awk program text prog has an exit outside its END block, so awk
+    # can stop reading before the writer is done.
+    function awk_exits_early(prog) {
+      if (match(prog, /(^|[^[:alnum:]_])END[[:space:]]*\{/)) prog = substr(prog, 1, RSTART)
+      return prog ~ /(^|[^[:alnum:]_])exit([^[:alnum:]_]|$)/
+    }
+
+    function report(lineno, why) { print lineno ": " why; found = 1 }
+
+    function classify(lineno,   quotes, tail) {
+      if (REST != "" && REST !~ /^[[:space:]]/) return
+      if (CMD ~ /^(grep|egrep|fgrep|rg)$/) { report(lineno, "pipes into " CMD); return }
+      if (CMD == "head") { report(lineno, "pipes into head, which exits early"); return }
+      if (CMD == "sed" && REST ~ /(^|[[:space:];{"\047])([0-9$]+(,[0-9$]+)?|\/[^\/]*\/)?[[:space:]]*q[0-9]*([[:space:];}"\047]|$)/) {
+        report(lineno, "pipes into sed q, which exits early"); return
+      }
+      if (CMD ~ /^(awk|gawk|mawk)$/) {
+        quotes = gsub(/\047/, "&", REST)
+        if (quotes % 2 == 0) {
+          if (awk_exits_early(REST)) report(lineno, "pipes into awk with exit")
+          tail = REST; sub(/^.*\047/, "", tail); scan(tail, lineno); rescanned = 1; return
+        }
+        awk_pending = 1; awk_buf = REST; awk_line = lineno
+      }
+    }
+
+    function scan(line, lineno,   i, n, p, nx) {
+      n = length(line)
+      for (i = 1; i <= n; i++) {
+        if (substr(line, i, 1) != "|") continue
+        p = (i > 1) ? substr(line, i - 1, 1) : ""
+        nx = substr(line, i + 1, 1)
+        if (p == "|" || nx == "|" || p == "\\" || p == ">") continue
+        command_after_pipe(substr(line, i + 1))
+        classify(lineno)
+        if (awk_pending || rescanned) { rescanned = 0; return }
+      }
+    }
+
     {
+      if (awk_pending) {
+        awk_buf = awk_buf "\n" $0
+        q = gsub(/\047/, "&", awk_buf)
+        if (q % 2 == 0) {
+          awk_pending = 0
+          if (awk_exits_early(awk_buf)) report(awk_line, "pipes into awk with exit")
+          tail = $0; sub(/^.*\047/, "", tail)
+          scan(tail, NR)
+        }
+        next
+      }
+      if ($0 ~ /^[[:space:]]*#/) next
       line = $0
       if (continued) { sub(/^[[:space:]]+/, "", line); line = joined " " line }
       if (line ~ /\\[[:space:]]*$/) { sub(/\\[[:space:]]*$/, "", line); joined = line; continued = 1; next }
       if (line ~ /(^|[^|])[|][[:space:]]*$/) { joined = line; continued = 1; next }
       continued = 0
-      if (line ~ into_grep) found = 1
+      scan(line, NR)
     }
-    END { if (continued && joined ~ into_grep) found = 1; exit found ? 0 : 1 }
+    END {
+      if (continued) scan(joined, NR)
+      if (awk_pending && awk_exits_early(awk_buf)) report(awk_line, "pipes into awk with exit")
+      exit found ? 0 : 1
+    }
   ' "$1"
 }
 
 # Detector falsification row. Args: verdict(flag|clean) line... Each line is one
 # physical line of a probe script.
-pipe_into_grep_row() {
-  local want="$1" probe="$TMP_ROOT/pipe-grep-probe.sh"; shift
+pipe_hazard_row() {
+  local want="$1" probe="$TMP_ROOT/pipe-hazard-probe.sh"; shift
   printf '%s\n' "$@" >"$probe"
   case "$want" in
-  flag) pipe_into_grep_in "$probe" ;;
-  clean) ! pipe_into_grep_in "$probe" ;;
+  flag) pipe_hazards_in "$probe" >/dev/null ;;
+  clean) ! pipe_hazards_in "$probe" >/dev/null ;;
   *) return 1 ;;
   esac
 }
 
-# No hook that sets pipefail pipes into grep. The rows first show that the
-# detectors flag known-bad lines (every left-hand form and grep flavour) and
-# pass known-good ones; then they run over every hooks/*.sh.
-test_pipefail_hooks_never_pipe_into_grep() {
-  local hook probe="$TMP_ROOT/pipefail-probe.sh" pinned
+# Files the static check reads: every hooks/*.sh and bin/* that sets pipefail,
+# and every hooks/lib/*.sh, which hooks source and which then run under their
+# pipefail. stop-gate.sh is left out on purpose: no settings.json event runs it
+# any more (Codex has no Stop hook), and it is frozen as a retired hook.
+pipefail_scanned_files() {
+  local file
+  for file in "$ROOT"/hooks/*.sh "$ROOT"/bin/*; do
+    [ -f "$file" ] || continue
+    [ "${file##*/}" = stop-gate.sh ] && continue
+    sets_pipefail "$file" && printf '%s\n' "$file"
+  done
+  printf '%s\n' "$ROOT"/hooks/lib/*.sh
+}
+
+# No script that runs under pipefail pipes into grep or into a reader that exits
+# early. The rows first show that the detector flags known-bad lines (every
+# spelling) and passes known-good ones; then it runs over every scanned file.
+test_pipefail_scripts_never_pipe_into_grep_or_an_early_exit_reader() {
+  local file probe="$TMP_ROOT/pipefail-probe.sh" scanned pinned bad=0 hazards
   # sets_pipefail falsification.
   printf '%s\n' 'set -euo pipefail' >"$probe"
   sets_pipefail "$probe" || return 1
@@ -1453,48 +1554,91 @@ test_pipefail_hooks_never_pipe_into_grep() {
   sets_pipefail "$probe" || return 1
   printf '%s\n' '# set -euo pipefail' 'set -eu' >"$probe"
   ! sets_pipefail "$probe" || return 1
-  # pipe_into_grep_in falsification: known-bad lines are flagged.
-  pipe_into_grep_row flag $'if echo "$TEXT" | grep -qE x; then' || return 1
-  pipe_into_grep_row flag $'if [ -n "$P" ] && printf "%s\\n" "$P" | grep -Eiq x; then' || return 1
-  pipe_into_grep_row flag $'X=$(printf %s "$V" | grep -oE x | head -n1 || true)' || return 1
-  pipe_into_grep_row flag $'if jq -r .a <<<"$J" | grep -q x; then' || return 1
-  pipe_into_grep_row flag $'jq -r .a "$F" | egrep x' || return 1
-  pipe_into_grep_row flag $'cat "$F" | grep -q x' || return 1
-  pipe_into_grep_row flag $'"${CMD[@]}" "$ARG" | grep -q x' || return 1
-  pipe_into_grep_row flag $'echo "$T"|grep -q x' || return 1
-  pipe_into_grep_row flag $'printf %s "$V" |' $'  grep -q x' || return 1
-  pipe_into_grep_row flag $'printf %s "$V" \\' $'  | grep -q x' || return 1
-  pipe_into_grep_row flag $'printf %s "$V" |' $'  # why' $'  grep -q x' || return 1
-  pipe_into_grep_row flag $'} |' $'  sort -u |' $'  grep -v -E x |' $'  head -1' || return 1
-  pipe_into_grep_row flag $'printf %s "$V" | command grep -q x' || return 1
-  pipe_into_grep_row flag $'printf %s "$V" | LC_ALL=C grep -q x' || return 1
-  pipe_into_grep_row flag $'printf %s "$V" | LC_ALL=C command grep -q x' || return 1
-  pipe_into_grep_row flag $'printf %s "$V" | /usr/bin/grep -q x' || return 1
-  pipe_into_grep_row flag $'printf %s "$V" | fgrep -q x' || return 1
-  pipe_into_grep_row flag $'printf %s "$V" | rg -q x' || return 1
-  # pipe_into_grep_in falsification: known-good lines are not flagged.
-  pipe_into_grep_row clean $'if grep -qE x <<<"$TEXT"; then' || return 1
-  pipe_into_grep_row clean $'grep -q x <"$file"' || return 1
-  pipe_into_grep_row clean $'grep -q x "$file" || true' || return 1
-  pipe_into_grep_row clean $'a || grep -q x' || return 1
-  pipe_into_grep_row clean $'# echo "$T" | grep -q x' || return 1
-  pipe_into_grep_row clean $'T=$(echo "$I" | jq -r .a)' || return 1
-  pipe_into_grep_row clean $'printf %s "$V" | tr -d x' || return 1
-  pipe_into_grep_row clean $'grep -oE x <<<"$V" | head -n1 || true' || return 1
-  pipe_into_grep_row clean $'return cmd ~ /^(cat|cut|grep|head|rg)$/' || return 1
-  pipe_into_grep_row clean $'printf %s "$V" |' $'  # a grep follows' $'  tr -d x' || return 1
-  # Every hook that sets pipefail is clean. The pinned hooks must be among them,
-  # so a broken sets_pipefail cannot skip the files this guards.
-  for pinned in stop-gate system-prompt-reviewer validate-edit-write validate-bash; do
-    sets_pipefail "$ROOT/hooks/$pinned.sh" || return 1
+  # pipe_hazards_in falsification: pipes into grep are flagged, every spelling.
+  pipe_hazard_row flag $'if echo "$TEXT" | grep -qE x; then' || return 1
+  pipe_hazard_row flag $'if [ -n "$P" ] && printf "%s\\n" "$P" | grep -Eiq x; then' || return 1
+  pipe_hazard_row flag $'X=$(printf %s "$V" | grep -oE x | head -n1 || true)' || return 1
+  pipe_hazard_row flag $'if jq -r .a <<<"$J" | grep -q x; then' || return 1
+  pipe_hazard_row flag $'jq -r .a "$F" | egrep x' || return 1
+  pipe_hazard_row flag $'cat "$F" | grep -q x' || return 1
+  pipe_hazard_row flag $'"${CMD[@]}" "$ARG" | grep -q x' || return 1
+  pipe_hazard_row flag $'echo "$T"|grep -q x' || return 1
+  pipe_hazard_row flag $'printf %s $X|grep -q y' || return 1
+  pipe_hazard_row flag $'echo $T|grep y' || return 1
+  pipe_hazard_row flag $'X=$(cmd|grep y)' || return 1
+  pipe_hazard_row flag $'cmd |& grep -q y' || return 1
+  pipe_hazard_row flag $'cmd | { grep -q y; }' || return 1
+  pipe_hazard_row flag $'cmd | ! grep -q y' || return 1
+  pipe_hazard_row flag $'cmd | (grep -q y)' || return 1
+  pipe_hazard_row flag $'cmd | timeout 1 grep -q y' || return 1
+  pipe_hazard_row flag $'cmd | timeout -k 1 5 grep -q y' || return 1
+  pipe_hazard_row flag $'cmd | env grep -q y' || return 1
+  pipe_hazard_row flag $'cmd | env -i LC_ALL=C grep -q y' || return 1
+  pipe_hazard_row flag $'cmd | \\grep -q y' || return 1
+  pipe_hazard_row flag $'cmd | command grep -q y' || return 1
+  pipe_hazard_row flag $'cmd | nice -n 5 grep -q y' || return 1
+  pipe_hazard_row flag $'printf %s "$V" | LC_ALL=C grep -q x' || return 1
+  pipe_hazard_row flag $'printf %s "$V" | LC_ALL=C command grep -q x' || return 1
+  pipe_hazard_row flag $'printf %s "$V" | /usr/bin/grep -q x' || return 1
+  pipe_hazard_row flag $'printf %s "$V" | /bin/grep -q x' || return 1
+  pipe_hazard_row flag $'printf %s "$V" | fgrep -q x' || return 1
+  pipe_hazard_row flag $'printf %s "$V" | rg -q x' || return 1
+  pipe_hazard_row flag $'printf %s "$V" |' $'  grep -q x' || return 1
+  pipe_hazard_row flag $'printf %s "$V" \\' $'  | grep -q x' || return 1
+  pipe_hazard_row flag $'printf %s "$V" |' $'  # why' $'  grep -q x' || return 1
+  pipe_hazard_row flag $'} |' $'  sort -u |' $'  grep -v -E x |' $'  head -1' || return 1
+  # pipe_hazards_in falsification: pipes into an early-exit reader are flagged.
+  pipe_hazard_row flag $'cmd | head' || return 1
+  pipe_hazard_row flag $'cmd | head -n1 || true' || return 1
+  pipe_hazard_row flag $'X=$(cmd|head -1)' || return 1
+  pipe_hazard_row flag $'cmd | env head -1' || return 1
+  pipe_hazard_row flag $'grep -oE x "$F" | head -n1 || true' || return 1
+  pipe_hazard_row flag $'cmd | sed q' || return 1
+  pipe_hazard_row flag $'cmd | sed 1q' || return 1
+  pipe_hazard_row flag $'cmd | sed -n \'1p;q\'' || return 1
+  pipe_hazard_row flag $'cmd | sed \'/x/q\'' || return 1
+  pipe_hazard_row flag $'cmd | sed -n \'/x/{p;q}\'' || return 1
+  pipe_hazard_row flag $'cmd | awk \'{ print; exit }\'' || return 1
+  pipe_hazard_row flag $'cmd | awk \'prev=="x" { print; exit } { prev=$0 }\'' || return 1
+  pipe_hazard_row flag $'cmd | awk -v a=1 \'' $'  /x/ { print }' $'  /y/ { exit }' $'\' "$F"' || return 1
+  pipe_hazard_row flag $'cmd | awk \'{ n++ }\' | head -1' || return 1
+  pipe_hazard_row flag $'cmd | awk -v a=1 \'' $'  { n++ }' $'\' | grep x' || return 1
+  # pipe_hazards_in falsification: known-good lines are not flagged.
+  pipe_hazard_row clean $'if grep -qE x <<<"$TEXT"; then' || return 1
+  pipe_hazard_row clean $'grep -q x <"$file"' || return 1
+  pipe_hazard_row clean $'grep -q x "$file" || true' || return 1
+  pipe_hazard_row clean $'a || grep -q x' || return 1
+  pipe_hazard_row clean $'a || head -1' || return 1
+  pipe_hazard_row clean $'# echo "$T" | grep -q x' || return 1
+  pipe_hazard_row clean $'    # cmd | head -1' || return 1
+  pipe_hazard_row clean $'T=$(echo "$I" | jq -r .a)' || return 1
+  pipe_hazard_row clean $'printf %s "$V" | tr -d x' || return 1
+  pipe_hazard_row clean $'printf %s "$V" | sort -u | tail -n1' || return 1
+  pipe_hazard_row clean $'cmd | sed -n 1p' || return 1
+  pipe_hazard_row clean $'cmd | sed \'s/a/b/\'' || return 1
+  pipe_hazard_row clean $'cmd | awk \'NR == 1\'' || return 1
+  pipe_hazard_row clean $'cmd | awk \'{ n++ } END { print n + 0 }\'' || return 1
+  pipe_hazard_row clean $'cmd | awk \'/x/ { n++ } END { if (n) exit 0; exit 1 }\'' || return 1
+  pipe_hazard_row clean $'cmd | awk \'$0 ~ /a|grep x/ { n++ } END { print n + 0 }\'' || return 1
+  pipe_hazard_row clean $'cmd | awk -v a=1 \'' $'  /x|head/ { print }' $'  END { print n }' $'\' "$F" | sort' || return 1
+  pipe_hazard_row clean $'return cmd ~ /^(cat|cut|grep|head|rg)$/' || return 1
+  pipe_hazard_row clean $'printf %s "$V" |' $'  # a grep follows' $'  tr -d x' || return 1
+  # Every file the check reads, and only those: the pinned ones must be among
+  # them, so a broken sets_pipefail cannot skip the files this guards, and
+  # stop-gate.sh must not be.
+  scanned="$(pipefail_scanned_files)" || return 1
+  for pinned in hooks/system-prompt-reviewer.sh hooks/validate-edit-write.sh hooks/validate-bash.sh \
+    hooks/lib/claude-pre-reviewer-state.sh bin/eci-active; do
+    case $'\n'"$scanned"$'\n' in *$'\n'"$ROOT/$pinned"$'\n'*) ;; *) note "     $pinned is not scanned"; return 1 ;; esac
   done
-  for hook in "$ROOT"/hooks/*.sh; do
-    sets_pipefail "$hook" || continue
-    if pipe_into_grep_in "$hook"; then
-      note "     ${hook#"$ROOT"/} pipes into grep"
-      return 1
-    fi
-  done
+  case "$scanned" in *"/stop-gate.sh"*) note "     stop-gate.sh is scanned"; return 1 ;; esac
+  while IFS= read -r file; do
+    hazards="$(pipe_hazards_in "$file")" && {
+      note "     ${file#"$ROOT"/}: ${hazards//$'\n'/; }"
+      bad=1
+    }
+  done <<<"$scanned"
+  [ "$bad" = 0 ]
 }
 
 # ---- eci-pending-set ----
@@ -3076,8 +3220,8 @@ run_case "validate-edit-write denies a large go.mod local replace when a temp fi
   test_validate_edit_write_denies_large_gomod_replace_when_a_temp_file_can_be_written
 run_case "validate-edit-write allows a large go.mod remote replace when a temp file cannot be written" \
   test_validate_edit_write_allows_large_remote_gomod_replace_when_a_temp_file_cannot_be_written
-run_case "no hook that sets pipefail pipes into grep (SIGPIPE under pipefail skips a deny)" \
-  test_pipefail_hooks_never_pipe_into_grep
+run_case "no script that runs under pipefail pipes into grep, head, sed q or awk exit" \
+  test_pipefail_scripts_never_pipe_into_grep_or_an_early_exit_reader
 
 # eci-pending-set
 run_case "eci-pending-set arms the teammate marker for the main thread (no agent_id)" \

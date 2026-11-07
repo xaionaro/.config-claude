@@ -132,7 +132,8 @@ if [ -n "$FILE_PATH" ]; then
 fi
 
 # The policy checks below count matching lines with awk, which reads all of its
-# input; see test_pipefail_hooks_never_pipe_into_grep in hooks/tests/run.sh.
+# input; see test_pipefail_scripts_never_pipe_into_grep_or_an_early_exit_reader
+# in hooks/tests/run.sh.
 #
 # Block edits to vendored code: source must be edited, then revendored.
 # Covers all common vendored-dir conventions, case-insensitive:
